@@ -37,6 +37,7 @@
   padding: 28px;
   min-height: 500px;
 }
+body { margin: 0; background: #0F1420; }
 .rb-root * { box-sizing: border-box; }
 .rb-h { font-family: 'Oswald', sans-serif; text-transform: uppercase; letter-spacing: 0.04em; }
 .rb-mono { font-family: 'IBM Plex Mono', monospace; }
@@ -71,6 +72,115 @@
 .rb-scrollbar::-webkit-scrollbar { width: 8px; }
 .rb-scrollbar::-webkit-scrollbar-thumb { background: var(--hairline); border-radius: 4px; }
 .rb-tag { font-size: 11px; background: var(--panel-alt); border: 1px solid var(--hairline); border-radius: 6px; padding: 6px 10px; margin-top: 4px; display: block; }
+.rb-home {
+  min-height: calc(100vh - 56px);
+  display: grid;
+  grid-template-columns: minmax(0, 1.1fr) minmax(320px, 0.72fr);
+  gap: 28px;
+  align-items: stretch;
+}
+.rb-home-hero {
+  position: relative;
+  overflow: hidden;
+  border: 1px solid var(--hairline);
+  border-radius: 12px;
+  min-height: 560px;
+  padding: 44px;
+  background:
+    linear-gradient(135deg, rgba(15,20,32,0.72), rgba(15,20,32,0.94)),
+    radial-gradient(circle at 18% 20%, rgba(201,162,39,0.22), transparent 32%),
+    linear-gradient(135deg, #171d2d 0%, #101622 48%, #261415 100%);
+}
+.rb-home-hero:before {
+  content: "";
+  position: absolute;
+  z-index: 0;
+  inset: auto -14% -34% 18%;
+  height: 56%;
+  transform: rotate(-8deg);
+  background:
+    repeating-linear-gradient(90deg, rgba(237,238,240,0.08) 0 2px, transparent 2px 110px),
+    linear-gradient(180deg, rgba(76,128,88,0.55), rgba(35,81,49,0.22));
+  border: 1px solid rgba(237,238,240,0.07);
+  border-radius: 100%;
+}
+.rb-home-hero:after {
+  content: "";
+  position: absolute;
+  z-index: 0;
+  right: 46px;
+  bottom: 44px;
+  width: 230px;
+  height: 230px;
+  border-radius: 50%;
+  border: 1px solid rgba(201,162,39,0.34);
+  background: radial-gradient(circle, rgba(201,162,39,0.16), rgba(201,162,39,0.03) 46%, transparent 68%);
+}
+.rb-home-logo {
+  width: 104px;
+  height: 104px;
+  border-radius: 24px;
+  object-fit: cover;
+  box-shadow: 0 18px 50px rgba(0,0,0,0.45);
+  border: 1px solid rgba(237,238,240,0.18);
+}
+.rb-home-title {
+  font-family: 'Oswald', sans-serif;
+  font-size: clamp(44px, 8vw, 88px);
+  line-height: 0.95;
+  letter-spacing: 0.02em;
+  margin: 28px 0 18px;
+  max-width: 700px;
+}
+.rb-home-copy {
+  font-size: 17px;
+  line-height: 1.6;
+  color: #C6CCD9;
+  max-width: 620px;
+}
+.rb-home-stats {
+  position: absolute;
+  left: 44px;
+  right: 44px;
+  bottom: 38px;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  max-width: 620px;
+}
+.rb-home-stat {
+  background: rgba(22,28,43,0.74);
+  border: 1px solid rgba(237,238,240,0.11);
+  border-radius: 8px;
+  padding: 14px;
+  backdrop-filter: blur(8px);
+}
+.rb-home-login {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: 30px;
+  min-height: 560px;
+}
+.rb-auth-step {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: var(--gold);
+  color: #1A1508;
+  font-weight: 700;
+  font-size: 12px;
+}
+@media (max-width: 860px) {
+  .rb-root { padding: 16px; border-radius: 0; }
+  .rb-home { grid-template-columns: 1fr; }
+  .rb-home-hero { min-height: 460px; padding: 28px; }
+  .rb-home-stats { position: relative; left: auto; right: auto; bottom: auto; margin-top: 42px; grid-template-columns: 1fr; }
+  .rb-home-login { min-height: auto; padding: 22px; }
+}
 </style>
 </head>
 <body>
@@ -94,7 +204,7 @@ let UI = { view: 'feed', threadId: null, showSubmitModal: false, submitting: fal
            commitError: null, commitStatus: null, updatingCommits: false, commitEditing: false,
            brandingFileName: '', brandingError: null, brandingStatus: null,
            submitTargetId: null, editOfferTarget: null, editError: null, prospectReturnView: 'feed',
-           pendingVisitEdit: null, adminMode: false };
+           pendingVisitEdit: null, adminMode: false, loginStep: 'account', pendingAuthEmail: '' };
 let dbReady = false, sessionReady = false;
 let summaryTimer = null;
 
@@ -242,7 +352,7 @@ async function loadAll(){
     const res = await getStored(SESSION_KEY, false);
     if (res && res.value) {
       const s = JSON.parse(res.value);
-      if (s && s.team && DB.teams[s.team] && DB.teams[s.team].pin === s.pin) SESSION = s;
+      if (s && s.team && (s.email || (DB.teams[s.team] && DB.teams[s.team].pin === s.pin))) SESSION = s;
     }
   } catch (e) { /* not logged in */ }
   sessionReady = true;
@@ -686,24 +796,59 @@ async function updateCommitsFromSheet(){
 
 // ---------- Login ----------
 
-function attemptLogin(team, pin){
-  team = team.trim(); pin = pin.trim();
-  if (!team || !pin){ UI.loginError = 'Enter both a team name and a PIN.'; render(); return; }
-  const existing = DB.teams[team];
-  if (existing){
-    if (existing.pin !== pin){ UI.loginError = 'Wrong PIN for ' + team + '.'; render(); return; }
-  } else {
-    DB.teams[team] = { pin: pin };
-    saveDB();
+function isValidEmail(email){
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(email || '').trim());
+}
+
+function beginAccountLogin(email, password){
+  email = String(email || '').trim();
+  password = String(password || '').trim();
+  if (!isValidEmail(email)){
+    UI.loginError = 'Enter a valid email.';
+    render(); return;
   }
-  SESSION = { team: team, pin: pin };
+  if (password.length < 6){
+    UI.loginError = 'Password must be at least 6 characters.';
+    render(); return;
+  }
+  UI.pendingAuthEmail = email;
+  UI.loginStep = 'team';
+  UI.loginError = null;
+  render();
+}
+
+function linkLoginTeam(team){
+  team = String(team || '').trim();
+  if (!team){
+    UI.loginError = 'Enter your team.';
+    render(); return;
+  }
+  const existing = DB.teams[team] || {};
+  DB.teams[team] = Object.assign({}, existing, {
+    linkedEmail: UI.pendingAuthEmail || existing.linkedEmail || '',
+    lastLoginAt: Date.now()
+  });
+  saveDB();
+  SESSION = { email: UI.pendingAuthEmail || '', team: team };
   setStored(SESSION_KEY, JSON.stringify(SESSION), false);
   UI.loginError = null;
+  UI.loginStep = 'account';
+  UI.pendingAuthEmail = '';
+  UI.view = 'feed';
+  render();
+}
+
+function resetLoginFlow(){
+  UI.loginError = null;
+  UI.loginStep = 'account';
+  UI.pendingAuthEmail = '';
   render();
 }
 
 function logout(){
   SESSION = null;
+  UI.loginStep = 'account';
+  UI.pendingAuthEmail = '';
   deleteStored(SESSION_KEY, false);
   render();
 }
@@ -1176,6 +1321,11 @@ function render(){
     root.innerHTML = '<p class="rb-mono" style="color:var(--slate)">Loading league data...</p>';
     return;
   }
+  if (!SESSION){
+    root.innerHTML = renderHomePage();
+    bindEvents();
+    return;
+  }
   let html = renderNav();
   if (UI.lastSummary) html += renderSummaryBanner();
   if (DB.unmatched.length) html += renderUnmatchedReview();
@@ -1194,6 +1344,73 @@ function render(){
   scheduleSummaryCountdown();
 }
 
+function teamLoginOptions(){
+  const names = [];
+  Object.keys(DB.teams || {}).forEach(function(team){
+    if (team && names.indexOf(team) === -1) names.push(team);
+  });
+  Object.keys(DB.teamBranding || {}).forEach(function(key){
+    const brand = DB.teamBranding[key];
+    if (brand && brand.region && names.indexOf(brand.region) === -1) names.push(brand.region);
+  });
+  names.sort(function(a,b){ return a.localeCompare(b); });
+  if (!names.length) return '';
+  return '<datalist id="rb-team-options">' + names.map(function(name){ return '<option value="' + escapeHtml(name) + '"></option>'; }).join('') + '</datalist>';
+}
+
+function renderHomePage(){
+  const prospectCount = Object.keys(DB.prospects || {}).length || DB.fullRoster.length || 0;
+  const offerCount = Object.keys(DB.offersByProspect || {}).reduce(function(sum, pid){
+    return sum + (DB.offersByProspect[pid] || []).length;
+  }, 0);
+  const commitCount = Object.keys(DB.prospects || {}).reduce(function(sum, pid){
+    return sum + (DB.prospects[pid] && DB.prospects[pid].commitTeam ? 1 : 0);
+  }, 0);
+  const statProspects = prospectCount ? prospectCount : 'Season';
+  const statOffers = offerCount ? offerCount : 'Every';
+  const statCommits = commitCount ? commitCount : 'Live';
+  let html = '<div class="rb-home">';
+  html += '<section class="rb-home-hero">' +
+    '<div style="position:relative;z-index:1;">' +
+      '<img class="rb-home-logo" src="NZCFL.jpg" alt="NZCFL logo">' +
+      '<div class="rb-home-title">NZCFL RecruitHQ</div>' +
+      '<div class="rb-home-copy">The recruiting room for the league: prospects, public offers, visits, commits, and promises all tracked in one clean place.</div>' +
+    '</div>' +
+    '<div class="rb-home-stats" style="position:relative;z-index:1;">' +
+      '<div class="rb-home-stat"><div class="rb-h" style="font-size:24px;">' + escapeHtml(statProspects) + '</div><div class="rb-mono" style="font-size:11px;color:var(--slate);">prospects loaded</div></div>' +
+      '<div class="rb-home-stat"><div class="rb-h" style="font-size:24px;">' + escapeHtml(statOffers) + '</div><div class="rb-mono" style="font-size:11px;color:var(--slate);">offers on record</div></div>' +
+      '<div class="rb-home-stat"><div class="rb-h" style="font-size:24px;">' + escapeHtml(statCommits) + '</div><div class="rb-mono" style="font-size:11px;color:var(--slate);">commit updates</div></div>' +
+    '</div>' +
+  '</section>';
+  html += '<section class="rb-card rb-home-login">' +
+    '<div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;">' +
+      '<span class="rb-auth-step">' + (UI.loginStep === 'team' ? '2' : '1') + '</span>' +
+      '<div><div class="rb-h" style="font-size:22px;">' + (UI.loginStep === 'team' ? 'Link Your Team' : 'Coach Login') + '</div>' +
+      '<div class="rb-mono" style="font-size:12px;color:var(--slate);margin-top:2px;">' + (UI.loginStep === 'team' ? escapeHtml(UI.pendingAuthEmail || 'account ready') : 'every offer, on the record') + '</div></div>' +
+    '</div>';
+  if (UI.loginStep === 'team'){
+    html += '<div style="display:flex;flex-direction:column;gap:12px;margin-top:12px;">' +
+      '<label style="font-size:12px;color:var(--slate);">Team</label>' +
+      '<input class="rb-input" id="rb-login-team-link" list="rb-team-options" placeholder="Michigan State" autocomplete="organization" style="font-size:15px;padding:12px 13px;">' +
+      teamLoginOptions() +
+      '<button class="rb-btn rb-btn-gold" id="rb-link-team-btn" style="padding:12px 16px;font-size:14px;">Enter RecruitHQ</button>' +
+      '<button class="rb-btn" id="rb-login-back-btn" style="padding:12px 16px;font-size:14px;">Use a different email</button>' +
+    '</div>';
+  } else {
+    html += '<div style="display:flex;flex-direction:column;gap:12px;margin-top:12px;">' +
+      '<label style="font-size:12px;color:var(--slate);">Email</label>' +
+      '<input class="rb-input" id="rb-login-email" type="email" placeholder="coach@nzcfl.com" autocomplete="email" style="font-size:15px;padding:12px 13px;">' +
+      '<label style="font-size:12px;color:var(--slate);">Password</label>' +
+      '<input class="rb-input" id="rb-login-password" type="password" placeholder="Password" autocomplete="current-password" style="font-size:15px;padding:12px 13px;">' +
+      '<button class="rb-btn rb-btn-gold" id="rb-account-login-btn" style="padding:12px 16px;font-size:14px;">Continue</button>' +
+    '</div>';
+  }
+  if (UI.loginError) html += '<div style="font-size:12px;color:var(--alert);margin-top:12px;">' + escapeHtml(UI.loginError) + '</div>';
+  html += '<div style="border-top:1px solid var(--hairline);margin-top:22px;padding-top:16px;color:var(--slate);font-size:12px;line-height:1.55;">For now, login is device-local while league permissions are being built. The team you link controls your offers, visits, and commits inside this browser.</div>';
+  html += '</section></div>';
+  return html;
+}
+
 function renderNav(){
   let html = '<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:20px;flex-wrap:wrap;gap:14px;">';
   html += '<div>' +
@@ -1210,14 +1427,6 @@ function renderNav(){
       (SESSION ? '<button class="rb-btn" data-nav="mycommits">My Commits</button>' : '') +
       '<button class="rb-btn" data-nav="setup">Settings</button>' +
     '</div>';
-  if (!SESSION){
-    html += '<div style="display:flex;gap:6px;align-items:center;">' +
-      '<input class="rb-input" id="rb-login-team" placeholder="Team name" style="width:140px;" />' +
-      '<input class="rb-input" id="rb-login-pin" placeholder="PIN" style="width:80px;" />' +
-      '<button class="rb-btn" id="rb-login-btn">Log in</button>' +
-    '</div>';
-    if (UI.loginError) html += '<div style="font-size:11px;color:var(--alert);">' + escapeHtml(UI.loginError) + '</div>';
-  }
   html += '</div></div>';
   return html;
 }
@@ -1923,10 +2132,26 @@ function bindEvents(){
     });
   };
 
-  const loginBtn = document.getElementById('rb-login-btn');
-  if (loginBtn) loginBtn.onclick = function(){
-    attemptLogin(document.getElementById('rb-login-team').value, document.getElementById('rb-login-pin').value);
+  const accountLoginBtn = document.getElementById('rb-account-login-btn');
+  const loginEmail = document.getElementById('rb-login-email');
+  const loginPassword = document.getElementById('rb-login-password');
+  const submitAccountLogin = function(){
+    beginAccountLogin(loginEmail ? loginEmail.value : '', loginPassword ? loginPassword.value : '');
   };
+  if (accountLoginBtn) accountLoginBtn.onclick = submitAccountLogin;
+  if (loginEmail) loginEmail.onkeydown = function(e){ if (e.key === 'Enter') submitAccountLogin(); };
+  if (loginPassword) loginPassword.onkeydown = function(e){ if (e.key === 'Enter') submitAccountLogin(); };
+
+  const linkTeamBtn = document.getElementById('rb-link-team-btn');
+  const linkTeamInput = document.getElementById('rb-login-team-link');
+  const submitTeamLink = function(){
+    linkLoginTeam(linkTeamInput ? linkTeamInput.value : '');
+  };
+  if (linkTeamBtn) linkTeamBtn.onclick = submitTeamLink;
+  if (linkTeamInput) linkTeamInput.onkeydown = function(e){ if (e.key === 'Enter') submitTeamLink(); };
+  const loginBackBtn = document.getElementById('rb-login-back-btn');
+  if (loginBackBtn) loginBackBtn.onclick = resetLoginFlow;
+
   const logoutLink = document.getElementById('rb-logout');
   if (logoutLink) logoutLink.onclick = function(e){ e.preventDefault(); logout(); };
 
