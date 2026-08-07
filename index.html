@@ -185,7 +185,7 @@ const ADMIN_MODE_KEY = 'rb-admin-mode-v1';
 
 let DB = { fullRoster: [], released: {}, wave1Released: false, wave2Released: false,
            prospects: {}, threads: [], offersByProspect: {}, unmatched: [], teams: {},
-           teamBranding: {}, commitSheetUrl: '', commitUpdatedAt: null };
+           teamBranding: {}, users: {}, commitSheetUrl: '', commitUpdatedAt: null };
 let SESSION = null;
 let UI = { view: 'feed', threadId: null, showSubmitModal: false, submitting: false,
            lastSummary: null, loginError: null, classError: null, classDraft: '', assignError: {},
@@ -193,7 +193,7 @@ let UI = { view: 'feed', threadId: null, showSubmitModal: false, submitting: fal
            commitError: null, commitStatus: null, updatingCommits: false, commitEditing: false,
            brandingFileName: '', brandingError: null, brandingStatus: null,
            submitTargetId: null, editOfferTarget: null, editError: null, prospectReturnView: 'feed',
-           pendingVisitEdit: null, adminMode: false, loginStep: 'account', pendingAuthEmail: '' };
+           pendingVisitEdit: null, adminMode: false, loginStep: 'account', loginMode: 'login', pendingAuthEmail: '' };
 let dbReady = false, sessionReady = false;
 let summaryTimer = null;
 
@@ -789,9 +789,44 @@ function isValidEmail(email){
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(email || '').trim());
 }
 
+function normalizeEmail(email){
+  return String(email || '').trim().toLowerCase();
+}
+
+function localPasswordHash(password){
+  try {
+    return btoa(unescape(encodeURIComponent(String(password || ''))));
+  } catch (e) {
+    return String(password || '');
+  }
+}
+
 function beginAccountLogin(email, password){
-  email = String(email || '').trim();
+  email = normalizeEmail(email);
   password = String(password || '').trim();
+  if (!isValidEmail(email)){
+    UI.loginError = 'Enter a valid email.';
+    render(); return;
+  }
+  const user = (DB.users || {})[email];
+  if (!user){
+    UI.loginError = 'No account exists for that email. Sign up first.';
+    render(); return;
+  }
+  if (user.passwordHash !== localPasswordHash(password)){
+    UI.loginError = 'Wrong password.';
+    render(); return;
+  }
+  UI.pendingAuthEmail = email;
+  UI.loginStep = 'team';
+  UI.loginError = null;
+  render();
+}
+
+function createAccount(email, password, confirmPassword){
+  email = normalizeEmail(email);
+  password = String(password || '').trim();
+  confirmPassword = String(confirmPassword || '').trim();
   if (!isValidEmail(email)){
     UI.loginError = 'Enter a valid email.';
     render(); return;
@@ -800,8 +835,26 @@ function beginAccountLogin(email, password){
     UI.loginError = 'Password must be at least 6 characters.';
     render(); return;
   }
+  if (password !== confirmPassword){
+    UI.loginError = 'Passwords do not match.';
+    render(); return;
+  }
+  if (!DB.users) DB.users = {};
+  if (DB.users[email]){
+    UI.loginError = 'That account already exists. Log in instead.';
+    render(); return;
+  }
+  DB.users[email] = { email: email, passwordHash: localPasswordHash(password), createdAt: Date.now() };
+  saveDB();
   UI.pendingAuthEmail = email;
   UI.loginStep = 'team';
+  UI.loginError = null;
+  render();
+}
+
+function setLoginMode(mode, email){
+  UI.loginMode = mode === 'signup' ? 'signup' : 'login';
+  if (email != null) UI.pendingAuthEmail = normalizeEmail(email);
   UI.loginError = null;
   render();
 }
@@ -830,6 +883,7 @@ function linkLoginTeam(team){
 function resetLoginFlow(){
   UI.loginError = null;
   UI.loginStep = 'account';
+  UI.loginMode = 'login';
   UI.pendingAuthEmail = '';
   render();
 }
@@ -837,6 +891,7 @@ function resetLoginFlow(){
 function logout(){
   SESSION = null;
   UI.loginStep = 'account';
+  UI.loginMode = 'login';
   UI.pendingAuthEmail = '';
   deleteStored(SESSION_KEY, false);
   render();
@@ -1359,8 +1414,8 @@ function renderHomePage(){
   html += '<section class="rb-card rb-home-login">' +
     '<div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;">' +
       '<span class="rb-auth-step">' + (UI.loginStep === 'team' ? '2' : '1') + '</span>' +
-      '<div><div class="rb-h" style="font-size:22px;">' + (UI.loginStep === 'team' ? 'Link Your Team' : 'Coach Login') + '</div>' +
-      '<div class="rb-mono" style="font-size:12px;color:var(--slate);margin-top:2px;">' + (UI.loginStep === 'team' ? escapeHtml(UI.pendingAuthEmail || 'account ready') : 'every offer, on the record') + '</div></div>' +
+      '<div><div class="rb-h" style="font-size:22px;">' + (UI.loginStep === 'team' ? 'Link Your Team' : (UI.loginMode === 'signup' ? 'Create Account' : 'Coach Login')) + '</div>' +
+      '<div class="rb-mono" style="font-size:12px;color:var(--slate);margin-top:2px;">' + (UI.loginStep === 'team' ? escapeHtml(UI.pendingAuthEmail || 'account ready') : (UI.loginMode === 'signup' ? 'new coaches start here' : 'welcome back')) + '</div></div>' +
     '</div>';
   if (UI.loginStep === 'team'){
     html += '<div style="display:flex;flex-direction:column;gap:12px;margin-top:12px;">' +
@@ -1371,16 +1426,21 @@ function renderHomePage(){
       '<button class="rb-btn" id="rb-login-back-btn" style="padding:12px 16px;font-size:14px;">Use a different email</button>' +
     '</div>';
   } else {
+    html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:14px 0 4px;">' +
+      '<button class="rb-btn' + (UI.loginMode === 'login' ? ' rb-btn-gold' : '') + '" id="rb-login-mode-login" style="padding:10px 12px;">Log in</button>' +
+      '<button class="rb-btn' + (UI.loginMode === 'signup' ? ' rb-btn-gold' : '') + '" id="rb-login-mode-signup" style="padding:10px 12px;">Sign up</button>' +
+    '</div>';
     html += '<div style="display:flex;flex-direction:column;gap:12px;margin-top:12px;">' +
       '<label style="font-size:12px;color:var(--slate);">Email</label>' +
-      '<input class="rb-input" id="rb-login-email" type="email" placeholder="coach@nzcfl.com" autocomplete="email" style="font-size:15px;padding:12px 13px;">' +
+      '<input class="rb-input" id="rb-login-email" type="email" placeholder="coach@nzcfl.com" autocomplete="email" style="font-size:15px;padding:12px 13px;" value="' + escapeHtml(UI.pendingAuthEmail || '') + '">' +
       '<label style="font-size:12px;color:var(--slate);">Password</label>' +
-      '<input class="rb-input" id="rb-login-password" type="password" placeholder="Password" autocomplete="current-password" style="font-size:15px;padding:12px 13px;">' +
-      '<button class="rb-btn rb-btn-gold" id="rb-account-login-btn" style="padding:12px 16px;font-size:14px;">Continue</button>' +
+      '<input class="rb-input" id="rb-login-password" type="password" placeholder="Password" autocomplete="' + (UI.loginMode === 'signup' ? 'new-password' : 'current-password') + '" style="font-size:15px;padding:12px 13px;">' +
+      (UI.loginMode === 'signup' ? '<label style="font-size:12px;color:var(--slate);">Confirm password</label><input class="rb-input" id="rb-login-confirm-password" type="password" placeholder="Confirm password" autocomplete="new-password" style="font-size:15px;padding:12px 13px;">' : '') +
+      '<button class="rb-btn rb-btn-gold" id="rb-account-login-btn" style="padding:12px 16px;font-size:14px;">' + (UI.loginMode === 'signup' ? 'Create account' : 'Continue') + '</button>' +
     '</div>';
   }
   if (UI.loginError) html += '<div style="font-size:12px;color:var(--alert);margin-top:12px;">' + escapeHtml(UI.loginError) + '</div>';
-  html += '<div style="border-top:1px solid var(--hairline);margin-top:22px;padding-top:16px;color:var(--slate);font-size:12px;line-height:1.55;">For now, login is device-local while league permissions are being built. The team you link controls your offers, visits, and commits inside this browser.</div>';
+  html += '<div style="border-top:1px solid var(--hairline);margin-top:22px;padding-top:16px;color:var(--slate);font-size:12px;line-height:1.55;">For now, accounts are device-local while league permissions are being built. Discord login is the right long-term version for one account per coach.</div>';
   html += '</section></div>';
   return html;
 }
@@ -2109,12 +2169,19 @@ function bindEvents(){
   const accountLoginBtn = document.getElementById('rb-account-login-btn');
   const loginEmail = document.getElementById('rb-login-email');
   const loginPassword = document.getElementById('rb-login-password');
+  const loginConfirmPassword = document.getElementById('rb-login-confirm-password');
   const submitAccountLogin = function(){
-    beginAccountLogin(loginEmail ? loginEmail.value : '', loginPassword ? loginPassword.value : '');
+    if (UI.loginMode === 'signup') createAccount(loginEmail ? loginEmail.value : '', loginPassword ? loginPassword.value : '', loginConfirmPassword ? loginConfirmPassword.value : '');
+    else beginAccountLogin(loginEmail ? loginEmail.value : '', loginPassword ? loginPassword.value : '');
   };
   if (accountLoginBtn) accountLoginBtn.onclick = submitAccountLogin;
   if (loginEmail) loginEmail.onkeydown = function(e){ if (e.key === 'Enter') submitAccountLogin(); };
   if (loginPassword) loginPassword.onkeydown = function(e){ if (e.key === 'Enter') submitAccountLogin(); };
+  if (loginConfirmPassword) loginConfirmPassword.onkeydown = function(e){ if (e.key === 'Enter') submitAccountLogin(); };
+  const loginModeLogin = document.getElementById('rb-login-mode-login');
+  if (loginModeLogin) loginModeLogin.onclick = function(){ setLoginMode('login', loginEmail ? loginEmail.value : ''); };
+  const loginModeSignup = document.getElementById('rb-login-mode-signup');
+  if (loginModeSignup) loginModeSignup.onclick = function(){ setLoginMode('signup', loginEmail ? loginEmail.value : ''); };
 
   const linkTeamBtn = document.getElementById('rb-link-team-btn');
   const linkTeamInput = document.getElementById('rb-login-team-link');
