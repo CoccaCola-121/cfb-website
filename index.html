@@ -145,6 +145,34 @@ body { margin: 0; background: #0F1420; }
   padding: 30px;
   min-height: 520px;
 }
+.rb-team-picker { position: relative; }
+.rb-team-results {
+  position: absolute;
+  z-index: 5;
+  top: calc(100% + 6px);
+  left: 0;
+  right: 0;
+  max-height: 220px;
+  overflow: auto;
+  background: #171A20;
+  border: 1px solid var(--hairline);
+  border-radius: 8px;
+  box-shadow: 0 16px 36px rgba(0,0,0,0.35);
+}
+.rb-team-option {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  background: transparent;
+  color: var(--chalk);
+  border: 0;
+  padding: 10px 12px;
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+}
+.rb-team-option:hover { background: var(--panel-alt); }
 .rb-auth-step {
   display: inline-flex;
   align-items: center;
@@ -193,7 +221,8 @@ let UI = { view: 'feed', threadId: null, showSubmitModal: false, submitting: fal
            rescindError: null, classFileName: '', myOfferSearch: '', confirmReset: null,
            commitError: null, commitStatus: null, updatingCommits: false, commitEditing: false,
            submitTargetId: null, editOfferTarget: null, editError: null, prospectReturnView: 'feed',
-           pendingVisitEdit: null, adminMode: false, loginStep: 'account', loginMode: 'login', pendingAuthEmail: '' };
+           pendingVisitEdit: null, adminMode: false, loginStep: 'account', loginMode: 'login',
+           pendingAuthEmail: '', teamLinkQuery: '', brandingStatus: null, brandingError: null, brandingFileName: '' };
 let dbReady = false, sessionReady = false;
 let summaryTimer = null;
 
@@ -256,11 +285,57 @@ function builtInTeamBranding(){
 }
 
 function allTeamBranding(){
-  return Object.assign({}, DB.teamBranding || {}, builtInTeamBranding());
+  return Object.assign({}, builtInTeamBranding(), DB.teamBranding || {});
 }
 
 function getTeamBranding(teamName){
   return allTeamBranding()[teamKey(teamName)] || null;
+}
+
+function activeTeamBrands(){
+  const seen = {};
+  const brands = [];
+  Object.keys(allTeamBranding()).forEach(function(key){
+    const brand = allTeamBranding()[key];
+    if (!brand || !brand.region || seen[teamKey(brand.region)]) return;
+    seen[teamKey(brand.region)] = true;
+    brands.push(brand);
+  });
+  return brands.sort(function(a,b){ return a.region.localeCompare(b.region); });
+}
+
+function userByEmail(email){
+  return (DB.users || {})[normalizeEmail(email)] || null;
+}
+
+function claimedTeamEmail(teamName){
+  const key = teamKey(teamName);
+  let claimedBy = '';
+  Object.keys(DB.users || {}).forEach(function(email){
+    const user = DB.users[email];
+    if (!claimedBy && user && user.team && teamKey(user.team) === key) claimedBy = email;
+  });
+  Object.keys(DB.teams || {}).forEach(function(team){
+    const row = DB.teams[team];
+    if (!claimedBy && row && row.linkedEmail && teamKey(team) === key) claimedBy = normalizeEmail(row.linkedEmail);
+  });
+  return claimedBy;
+}
+
+function isTeamAvailable(teamName, email){
+  const brand = getTeamBranding(teamName);
+  if (!brand) return false;
+  const claimedBy = claimedTeamEmail(brand.region || teamName);
+  return !claimedBy || claimedBy === normalizeEmail(email);
+}
+
+function teamMatchesForQuery(query, email){
+  const q = String(query || '').toLowerCase().trim();
+  if (!q) return [];
+  return activeTeamBrands().filter(function(brand){
+    if (!isTeamAvailable(brand.region, email)) return false;
+    return [brand.region, brand.abbrev, brand.displayName, brand.nickname].join(' ').toLowerCase().indexOf(q) !== -1;
+  }).slice(0, 8);
 }
 
 function renderTeamLogo(brand){
@@ -479,6 +554,53 @@ function loadClassFile(file){
     render();
   };
   reader.readAsText(file);
+}
+
+async function fileToText(file){
+  const buffer = await file.arrayBuffer();
+  if (/\.gz$/i.test(file.name || '')){
+    if (typeof DecompressionStream === 'undefined') throw new Error('This browser cannot read .gz files directly. Try an unzipped JSON export.');
+    const stream = new Blob([buffer]).stream().pipeThrough(new DecompressionStream('gzip'));
+    return await new Response(stream).text();
+  }
+  return new TextDecoder().decode(buffer);
+}
+
+async function loadTeamBrandingFile(file){
+  if (!file) return;
+  UI.brandingFileName = file.name || '';
+  UI.brandingError = null;
+  UI.brandingStatus = null;
+  render();
+  try {
+    const text = await fileToText(file);
+    const data = JSON.parse(text);
+    if (!data || !Array.isArray(data.teams)) throw new Error('No teams array found in that export.');
+    const branding = Object.assign({}, DB.teamBranding || {});
+    let count = 0;
+    data.teams.forEach(function(team){
+      if (!team || !team.region || team.disabled) return;
+      const colors = Array.isArray(team.colors) ? team.colors : [];
+      const brand = {
+        region: team.region || '',
+        nickname: team.name || '',
+        abbrev: team.abbrev || '',
+        displayName: (team.region || '') + (team.name ? ' ' + team.name : ''),
+        primary: colors[0] || '',
+        secondary: colors[1] || colors[2] || '',
+        logoUrl: team.imgURL || ''
+      };
+      teamBrandKeys(brand).forEach(function(key){ branding[key] = brand; });
+      count++;
+    });
+    DB.teamBranding = branding;
+    UI.brandingStatus = 'Branding updated for ' + count + ' active team' + (count === 1 ? '' : 's') + '.';
+    UI.brandingError = null;
+    saveDB(); render();
+  } catch (e) {
+    UI.brandingError = e.message || 'Could not import team branding.';
+    render();
+  }
 }
 
 function makeThread(title, prospectIds, stars){
@@ -782,6 +904,15 @@ function beginAccountLogin(email, password){
     UI.loginError = 'Wrong password.';
     render(); return;
   }
+  if (user.team){
+    SESSION = { email: email, team: user.team };
+    setStored(SESSION_KEY, JSON.stringify(SESSION), false);
+    UI.loginError = null;
+    UI.loginStep = 'account';
+    UI.pendingAuthEmail = '';
+    UI.view = 'feed';
+    render(); return;
+  }
   UI.pendingAuthEmail = email;
   UI.loginStep = 'team';
   UI.loginError = null;
@@ -826,21 +957,40 @@ function setLoginMode(mode, email){
 
 function linkLoginTeam(team){
   team = String(team || '').trim();
+  const email = normalizeEmail(UI.pendingAuthEmail);
   if (!team){
     UI.loginError = 'Enter your team.';
     render(); return;
   }
-  const existing = DB.teams[team] || {};
-  DB.teams[team] = Object.assign({}, existing, {
-    linkedEmail: UI.pendingAuthEmail || existing.linkedEmail || '',
+  const brand = getTeamBranding(team);
+  if (!brand){
+    UI.loginError = 'That team is not available.';
+    render(); return;
+  }
+  const canonicalTeam = brand.region || team;
+  const user = userByEmail(email);
+  if (user && user.team && teamKey(user.team) !== teamKey(canonicalTeam)){
+    UI.loginError = 'That account is already linked to ' + user.team + '.';
+    render(); return;
+  }
+  if (!isTeamAvailable(canonicalTeam, email)){
+    UI.loginError = canonicalTeam + ' is already linked to another account.';
+    render(); return;
+  }
+  const existing = DB.teams[canonicalTeam] || {};
+  DB.teams[canonicalTeam] = Object.assign({}, existing, {
+    linkedEmail: email || existing.linkedEmail || '',
     lastLoginAt: Date.now()
   });
+  if (!DB.users) DB.users = {};
+  if (DB.users[email]) DB.users[email].team = canonicalTeam;
   saveDB();
-  SESSION = { email: UI.pendingAuthEmail || '', team: team };
+  SESSION = { email: email || '', team: canonicalTeam };
   setStored(SESSION_KEY, JSON.stringify(SESSION), false);
   UI.loginError = null;
   UI.loginStep = 'account';
   UI.pendingAuthEmail = '';
+  UI.teamLinkQuery = '';
   UI.view = 'feed';
   render();
 }
@@ -850,6 +1000,7 @@ function resetLoginFlow(){
   UI.loginStep = 'account';
   UI.loginMode = 'login';
   UI.pendingAuthEmail = '';
+  UI.teamLinkQuery = '';
   render();
 }
 
@@ -858,6 +1009,7 @@ function logout(){
   UI.loginStep = 'account';
   UI.loginMode = 'login';
   UI.pendingAuthEmail = '';
+  UI.teamLinkQuery = '';
   deleteStored(SESSION_KEY, false);
   render();
 }
@@ -1353,19 +1505,15 @@ function render(){
   scheduleSummaryCountdown();
 }
 
-function teamLoginOptions(){
-  const names = [];
-  const branding = allTeamBranding();
-  Object.keys(DB.teams || {}).forEach(function(team){
-    if (team && names.indexOf(team) === -1) names.push(team);
-  });
-  Object.keys(branding).forEach(function(key){
-    const brand = branding[key];
-    if (brand && brand.region && names.indexOf(brand.region) === -1) names.push(brand.region);
-  });
-  names.sort(function(a,b){ return a.localeCompare(b); });
-  if (!names.length) return '';
-  return '<datalist id="rb-team-options">' + names.map(function(name){ return '<option value="' + escapeHtml(name) + '"></option>'; }).join('') + '</datalist>';
+function renderTeamAutocomplete(query, email){
+  const matches = teamMatchesForQuery(query, email);
+  if (!String(query || '').trim()) return '';
+  if (!matches.length){
+    return '<div class="rb-team-results rb-scrollbar"><div style="padding:11px 12px;color:var(--slate);font-size:13px;">No available teams match that.</div></div>';
+  }
+  return '<div class="rb-team-results rb-scrollbar">' + matches.map(function(brand){
+    return '<button type="button" class="rb-team-option" data-team-option="' + escapeHtml(brand.region) + '">' + renderTeamLogo(brand) + '<span>' + escapeHtml(brand.region) + '</span></button>';
+  }).join('') + '</div>';
 }
 
 function renderHomePage(){
@@ -1386,8 +1534,10 @@ function renderHomePage(){
   if (UI.loginStep === 'team'){
     html += '<div style="display:flex;flex-direction:column;gap:12px;margin-top:12px;">' +
       '<label style="font-size:12px;color:var(--slate);">Team</label>' +
-      '<input class="rb-input" id="rb-login-team-link" list="rb-team-options" placeholder="Michigan State" autocomplete="organization" style="font-size:15px;padding:12px 13px;">' +
-      teamLoginOptions() +
+      '<div class="rb-team-picker">' +
+        '<input class="rb-input" id="rb-login-team-link" placeholder="Michigan State" autocomplete="off" style="font-size:15px;padding:12px 13px;" value="' + escapeHtml(UI.teamLinkQuery || '') + '">' +
+        '<div id="rb-team-results-slot">' + renderTeamAutocomplete(UI.teamLinkQuery || '', UI.pendingAuthEmail) + '</div>' +
+      '</div>' +
       '<button class="rb-btn rb-btn-gold" id="rb-link-team-btn" style="padding:12px 16px;font-size:14px;">Enter RecruitHQ</button>' +
       '<button class="rb-btn" id="rb-login-back-btn" style="padding:12px 16px;font-size:14px;">Use a different email</button>' +
     '</div>';
@@ -1764,7 +1914,12 @@ function renderClassSetup(){
   html += '</div>';
   html += '<div class="rb-card" style="padding:20px 24px;max-width:640px;margin-top:14px;">';
   html += '<div class="rb-h" style="font-size:16px;margin-bottom:12px;">Team Branding</div>';
-  html += '<div class="rb-tag" style="display:inline-flex;margin:0;align-items:center;gap:8px;">Locked in from league export &middot; ' + escapeHtml((window.NZCFL_TEAM_BRANDS || []).length) + ' active teams</div>';
+  html += '<div class="rb-mono" style="font-size:12px;color:var(--slate);margin-bottom:12px;">' + escapeHtml((window.NZCFL_TEAM_BRANDS || []).length) + ' default teams loaded.</div>';
+  html += '<input class="rb-file-input" type="file" id="rb-branding-file" accept=".json,.gz,application/json" />';
+  html += '<label class="rb-file-label" for="rb-branding-file">Import branding update</label>';
+  if (UI.brandingFileName) html += '<span class="rb-mono" style="font-size:12px;color:var(--slate);margin-left:10px;">' + escapeHtml(UI.brandingFileName) + '</span>';
+  if (UI.brandingStatus) html += '<div style="font-size:12px;color:var(--gold);margin-top:8px;">' + escapeHtml(UI.brandingStatus) + '</div>';
+  if (UI.brandingError) html += '<div style="font-size:12px;color:var(--alert);margin-top:8px;">' + escapeHtml(UI.brandingError) + '</div>';
   html += '</div>';
   if (UI.adminMode){
     html += '<div class="rb-card" style="padding:20px 24px;max-width:640px;margin-top:14px;border-color:#6F1D1B;">';
@@ -2147,11 +2302,33 @@ function bindEvents(){
 
   const linkTeamBtn = document.getElementById('rb-link-team-btn');
   const linkTeamInput = document.getElementById('rb-login-team-link');
+  const bindTeamOptionClicks = function(){
+    document.querySelectorAll('[data-team-option]').forEach(function(el){
+      el.onclick = function(){
+        UI.teamLinkQuery = el.getAttribute('data-team-option') || '';
+        if (linkTeamInput) linkTeamInput.value = UI.teamLinkQuery;
+        const slot = document.getElementById('rb-team-results-slot');
+        if (slot) slot.innerHTML = '';
+        if (linkTeamInput) linkTeamInput.focus();
+      };
+    });
+  };
   const submitTeamLink = function(){
     linkLoginTeam(linkTeamInput ? linkTeamInput.value : '');
   };
   if (linkTeamBtn) linkTeamBtn.onclick = submitTeamLink;
-  if (linkTeamInput) linkTeamInput.onkeydown = function(e){ if (e.key === 'Enter') submitTeamLink(); };
+  if (linkTeamInput) {
+    linkTeamInput.oninput = function(){
+      UI.teamLinkQuery = linkTeamInput.value;
+      const slot = document.getElementById('rb-team-results-slot');
+      if (slot) {
+        slot.innerHTML = renderTeamAutocomplete(UI.teamLinkQuery, UI.pendingAuthEmail);
+        bindTeamOptionClicks();
+      }
+    };
+    linkTeamInput.onkeydown = function(e){ if (e.key === 'Enter') submitTeamLink(); };
+  }
+  bindTeamOptionClicks();
   const loginBackBtn = document.getElementById('rb-login-back-btn');
   if (loginBackBtn) loginBackBtn.onclick = resetLoginFlow;
 
@@ -2174,6 +2351,8 @@ function bindEvents(){
 
   const classFile = document.getElementById('rb-class-file');
   if (classFile) classFile.onchange = function(){ loadClassFile(classFile.files && classFile.files[0]); };
+  const brandingFile = document.getElementById('rb-branding-file');
+  if (brandingFile) brandingFile.onchange = function(){ loadTeamBrandingFile(brandingFile.files && brandingFile.files[0]); };
   const updateCommitsBtn = document.getElementById('rb-update-commits');
   if (updateCommitsBtn) updateCommitsBtn.onclick = updateCommitsFromSheet;
   const saveCommitSheetBtn = document.getElementById('rb-save-commit-sheet');
