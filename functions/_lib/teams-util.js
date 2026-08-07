@@ -1,7 +1,16 @@
 import { ACTIVE_TEAMS } from './teams.js';
 
+const TEAM_KEY_ALIASES = {
+  'alabama birmingham': 'uab',
+  'texas christian': 'tcu',
+  'california': 'cal',
+  'brigham young': 'byu',
+  'southern methodist': 'smu',
+};
+
 export function teamKey(value) {
-  return String(value || '').toLowerCase().replace(/&/g, 'and').replace(/[^a-z0-9]+/g, ' ').trim().replace(/\s+/g, ' ');
+  const key = String(value || '').toLowerCase().replace(/&/g, 'and').replace(/[^a-z0-9]+/g, ' ').trim().replace(/\s+/g, ' ');
+  return TEAM_KEY_ALIASES[key] || key;
 }
 
 export async function getAllTeams(env) {
