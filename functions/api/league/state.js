@@ -15,6 +15,7 @@ const STATE_FIELDS = [
   'commitSheetUrl',
   'commitUpdatedAt',
   'defaultClassLoaded',
+  'offersLocked',
 ];
 
 function sanitizeState(input) {
