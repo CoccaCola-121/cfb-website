@@ -125,6 +125,39 @@ body { margin: 0; background: #0F1420; }
   overflow: hidden;
 }
 .rb-mobile-admin-control { display: inline-flex; }
+.rb-team-card-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 14px;
+  align-items: center;
+}
+.rb-values-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(118px, 1fr));
+  gap: 7px;
+  margin-top: 12px;
+}
+.rb-value-chip {
+  position: relative;
+  overflow: hidden;
+  border: 1px solid var(--hairline);
+  border-radius: 6px;
+  background: var(--panel-alt);
+  padding: 7px 9px;
+}
+.rb-value-chip:before {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: var(--value-fill, 0%);
+  background: linear-gradient(90deg, rgba(210,86,76,0.32), rgba(201,162,39,0.34), rgba(88,191,114,0.36));
+  opacity: 0.9;
+}
+.rb-value-chip > span {
+  position: relative;
+  z-index: 1;
+}
+.rb-value-chip-strong { border-color: var(--gold-dim); }
 .rb-nav-shell {
   display: flex;
   justify-content: space-between;
@@ -278,6 +311,8 @@ body { margin: 0; background: #0F1420; }
   .rb-desktop-only { display: none !important; }
   .rb-mobile-only { display: inline !important; }
   .rb-mobile-admin-control { display: none !important; }
+  .rb-team-card-mobile { padding: 10px 12px !important; }
+  .rb-team-card-row { grid-template-columns: minmax(0, 1fr); gap: 6px; }
   .rb-nav-shell { align-items: stretch; }
   .rb-nav-side { align-items: stretch; width: 100%; }
   .rb-nav-session { justify-content: flex-start; }
@@ -446,6 +481,32 @@ function starsOrLabel(stars){
   let out = '';
   for (let i = 0; i < 5; i++) out += i < stars ? '<span class="rb-star">&#9733;</span>' : '<span class="rb-star-empty">&#9733;</span>';
   return out;
+}
+
+function formatRecruitValue(value){
+  const n = Number(value);
+  return Number.isFinite(n) ? n.toFixed(3) : '';
+}
+
+function renderRecruitValues(values){
+  values = values || {};
+  const rows = RECRUIT_VALUE_FIELDS.map(function(field){
+    return { field: field, value: values[field.key] };
+  }).filter(function(row){ return Number.isFinite(Number(row.value)); })
+    .sort(function(a,b){ return Number(b.value) - Number(a.value); });
+  if (!rows.length) return '';
+  let html = '<div class="rb-values-grid">';
+  rows.forEach(function(row, index){
+    const value = Math.max(0, Math.min(1, Number(row.value)));
+    html += '<div class="rb-value-chip ' + (index < 3 ? 'rb-value-chip-strong' : '') + '" style="--value-fill:' + Math.round(value * 100) + '%;">' +
+      '<span style="display:flex;justify-content:space-between;align-items:center;gap:8px;">' +
+        '<span class="rb-mono" style="font-size:10px;color:' + (index < 3 ? 'var(--gold)' : 'var(--slate)') + ';text-transform:uppercase;letter-spacing:0.04em;">' + escapeHtml(row.field.label) + '</span>' +
+        '<strong class="rb-mono" style="font-size:11px;color:var(--chalk);">' + escapeHtml(formatRecruitValue(value)) + '</strong>' +
+      '</span>' +
+    '</div>';
+  });
+  html += '</div>';
+  return html;
 }
 
 const TEAM_KEY_ALIASES = {
@@ -770,10 +831,15 @@ function applyDefaultClassData(text){
   const list = parseFullClass(text || '');
   if (!list || !list.length) return false;
   DB.fullRoster = list;
+  hydrateProspectValuesFromRoster();
   DB.defaultClassLoaded = true;
   UI.classFileName = DEFAULT_CLASS_NAME;
   UI.classError = null;
   return true;
+}
+
+function rosterHasRecruitValues(){
+  return DB.fullRoster.some(function(p){ return p && p.values && Object.keys(p.values).length; });
 }
 
 async function ensureDefaultSeasonData(){
@@ -795,6 +861,16 @@ async function ensureDefaultSeasonData(){
       UI.classError = 'Default class could not load automatically. Use the CSV upload if you are viewing from a local file.';
     }
   }
+  if (DB.fullRoster.length && !rosterHasRecruitValues()){
+    try {
+      const list = parseFullClass(window.NZCFL_DEFAULT_CLASS_CSV || '');
+      if (list && list.length){
+        DB.fullRoster = list;
+        changed = true;
+      }
+    } catch (e) { /* keep existing class data */ }
+  }
+  if (hydrateProspectValuesFromRoster()) changed = true;
   if (changed) saveDB();
 }
 
@@ -834,6 +910,61 @@ function headerIndex(header, names){
   return -1;
 }
 
+const RECRUIT_VALUE_FIELDS = [
+  { key: 'location', label: 'Location', names: ['Location'] },
+  { key: 'winning', label: 'Winning', names: ['Winning'] },
+  { key: 'playingTime', label: 'Playing Time', names: ['Playing Time', 'PlayingTime'] },
+  { key: 'coach', label: 'Coach', names: ['Coach'] },
+  { key: 'proPotential', label: 'Pro Potential', names: ['ProPotential', 'Pro Potential'] },
+  { key: 'prestige', label: 'Prestige', names: ['Prestige'] },
+  { key: 'education', label: 'Education', names: ['Education'] },
+  { key: 'campus', label: 'Campus', names: ['Campus'] },
+  { key: 'tradition', label: 'Tradition', names: ['Tradition'] }
+];
+
+function parseRecruitValues(row, header){
+  const values = {};
+  RECRUIT_VALUE_FIELDS.forEach(function(field){
+    const idx = headerIndex(header, field.names);
+    if (idx === -1) return;
+    const n = parseFloat(cleanCsvCell(row[idx]));
+    if (!Number.isFinite(n)) return;
+    values[field.key] = Math.max(0, Math.min(1, n));
+  });
+  return values;
+}
+
+function prospectFromRosterRow(p, id){
+  return {
+    id: id,
+    rank: p.rank,
+    name: p.name,
+    position: p.position,
+    rating: p.rating,
+    hometown: p.hometown,
+    storyline: p.storyline || '',
+    values: p.values || {},
+    stars: starsForRank(p.rank)
+  };
+}
+
+function hydrateProspectValuesFromRoster(){
+  if (!DB.fullRoster.length || !Object.keys(DB.prospects || {}).length) return false;
+  const rosterByRank = {};
+  DB.fullRoster.forEach(function(p){ rosterByRank[p.rank] = p; });
+  let changed = false;
+  Object.keys(DB.prospects || {}).forEach(function(pid){
+    const prospect = DB.prospects[pid];
+    const roster = prospect && rosterByRank[prospect.rank];
+    if (!prospect || !roster) return;
+    if (roster.values && JSON.stringify(prospect.values || {}) !== JSON.stringify(roster.values)){
+      prospect.values = roster.values;
+      changed = true;
+    }
+  });
+  return changed;
+}
+
 function parseFullClass(text){
   const rows = parseCsvRows(text);
   let headerIdx = -1;
@@ -862,7 +993,8 @@ function parseFullClass(text){
       position: cleanCsvCell(r[posIdx]).toUpperCase(),
       rating: cleanCsvCell(r[ovrIdx]) + '/' + cleanCsvCell(r[potIdx]),
       hometown: cleanCsvCell(r[hometownIdx]),
-      storyline: cleanCsvCell(r[storylineIdx])
+      storyline: cleanCsvCell(r[storylineIdx]),
+      values: parseRecruitValues(r, header)
     });
   }
   list.sort(function(a,b){ return a.rank - b.rank; });
@@ -887,6 +1019,7 @@ function loadClassData(raw){
     render(); return;
   }
   DB.fullRoster = list;
+  hydrateProspectValuesFromRoster();
   UI.classError = null;
   saveDB(); render();
 }
@@ -975,7 +1108,7 @@ function releaseWave1(){
     if (p.rank > 500 || DB.released[p.rank]) return;
     const stars = starsForRank(p.rank);
     const id = 'r' + p.rank;
-    DB.prospects[id] = { id: id, rank: p.rank, name: p.name, position: p.position, rating: p.rating, hometown: p.hometown, storyline: p.storyline || '', stars: stars };
+    DB.prospects[id] = prospectFromRosterRow(p, id);
     DB.released[p.rank] = true;
     if (stars === 5) g5.push(id); else if (stars === 4) g4.push(id); else g3.push(id);
   });
@@ -993,7 +1126,7 @@ function releaseWave2(){
     if (p.rank <= 500 || DB.released[p.rank]) return;
     const stars = starsForRank(p.rank);
     const id = 'r' + p.rank;
-    DB.prospects[id] = { id: id, rank: p.rank, name: p.name, position: p.position, rating: p.rating, hometown: p.hometown, storyline: p.storyline || '', stars: stars };
+    DB.prospects[id] = prospectFromRosterRow(p, id);
     DB.released[p.rank] = true;
     if (stars === 2) g2.push(id); else if (stars === 1) g1.push(id); else g0.push(id);
   });
@@ -2439,8 +2572,8 @@ function renderTeamsPage(){
     const pendingSwitch = link && pending.switches && pending.switches[link.discordId];
     const pendingRole = link && pending.roles && pending.roles[link.discordId];
     const rowSearch = [brand.region, brand.abbrev, brand.nickname, brand.displayName, link && link.displayName, link && link.username, canAdmin && link && link.discordId].join(' ').toLowerCase();
-    html += '<div class="rb-card" data-team-card="1" data-open-team-commits="' + escapeHtml(brand.region) + '" data-search="' + escapeHtml(rowSearch) + '" style="padding:14px 18px;border-color:' + escapeHtml(brand.primary || 'var(--hairline)') + '66;cursor:pointer;">';
-    html += '<div class="rb-mobile-stack" style="display:grid;grid-template-columns:minmax(0,1fr) auto;gap:14px;align-items:center;">';
+    html += '<div class="rb-card rb-team-card-mobile" data-team-card="1" data-open-team-commits="' + escapeHtml(brand.region) + '" data-search="' + escapeHtml(rowSearch) + '" style="padding:14px 18px;border-color:' + escapeHtml(brand.primary || 'var(--hairline)') + '66;cursor:pointer;">';
+    html += '<div class="rb-team-card-row">';
     html += '<div style="min-width:0;display:flex;align-items:center;gap:12px;">' + renderTeamLogo(brand) +
       '<div style="min-width:0;"><div style="font-weight:700;color:var(--chalk);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + escapeHtml(brand.region) + '</div></div></div>';
     html += '<div style="display:flex;align-items:center;gap:10px;justify-content:flex-end;flex-wrap:wrap;">';
@@ -2682,6 +2815,7 @@ function renderProspectDetail(){
     '<span>' + starsOrLabel(p.stars) + '</span></div>';
   html += '</div>';
   html += renderStorylineLine(p.storyline, 'margin-top:8px;');
+  html += renderRecruitValues(p.values);
   html += '</div>';
   if (!offers.length){
     html += '<div class="rb-card" style="padding:28px;text-align:center;color:var(--slate);">No offers yet.</div>';
