@@ -228,8 +228,9 @@ let UI = { view: 'feed', threadId: null, showSubmitModal: false, submitting: fal
            submitTargetId: null, editOfferTarget: null, editError: null, prospectReturnView: 'feed',
            pendingVisitEdit: null, adminMode: false, loginStep: 'account', pendingDiscordUser: null,
            teamLinkQuery: '', unavailableTeamKeys: [], teamLinks: {}, teamSearch: '',
+           teamFilterCoached: false,
            teamChangeDiscordId: '', teamChangeTeam: '', teamPending: { unlinks: {}, switches: {}, roles: {} },
-           teamCommitsTeam: '',
+           teamCommitsTeam: '', teamOffersTeam: '',
            brandingStatus: null, brandingError: null,
            brandingFileName: '', adminActionStatus: null, adminActionError: null };
 let dbReady = false, sessionReady = false;
@@ -244,6 +245,7 @@ function userAccessLevel(user){ return String((user && user.accessLevel) || 'coa
 function canUseAdminMode(){ return !!(SESSION && (SESSION.accessLevel === 'commissioner' || SESSION.accessLevel === 'moderator' || SESSION.isAdmin)); }
 function canUseDangerZone(){ return !!(SESSION && SESSION.accessLevel === 'commissioner'); }
 function canManageAccess(){ return canUseDangerZone(); }
+function canViewSettings(){ return canUseAdminMode(); }
 function hasPendingTeamChanges(){
   const p = UI.teamPending || {};
   const hasDraftSwitch = !!(UI.teamChangeDiscordId && String(UI.teamChangeTeam || '').trim());
@@ -267,6 +269,7 @@ function navigateTo(view, options){
   if (options.threadId != null) UI.threadId = options.threadId;
   if (options.prospectId != null) UI.prospectId = options.prospectId;
   if (options.teamCommitsTeam != null) UI.teamCommitsTeam = options.teamCommitsTeam;
+  if (options.teamOffersTeam != null) UI.teamOffersTeam = options.teamOffersTeam;
   render();
   if (UI.view === 'teams') loadTeamAvailability().then(render);
 }
@@ -1572,17 +1575,40 @@ function extractPromises(text){
     const rest = text.slice(start);
     const nextHeaderMatch = rest.slice(1).match(/\n\s*[A-Za-z][A-Za-z &/-]{1,34}:\s*/);
     const nextHeader = nextHeaderMatch ? nextHeaderMatch.index + 1 : rest.length;
-    let end = nextHeader;
+    const paragraphBreak = rest.search(/\n\s*\n/);
+    const hardStop = paragraphBreak !== -1 ? Math.min(nextHeader, paragraphBreak) : nextHeader;
+    let end = hardStop;
     const sentenceRe = /[.!?](?=\s|$)/g;
     let sentenceMatch;
     while ((sentenceMatch = sentenceRe.exec(rest))){
-      if (sentenceMatch.index >= nextHeader) break;
+      if (sentenceMatch.index >= hardStop) break;
       end = sentenceMatch.index + 1;
       break;
     }
     addPromise(rest.slice(0, end), start);
   }
   return promises;
+}
+
+function sanitizePromiseText(text){
+  let out = String(text || '').replace(/\*\*/g, '').replace(/\s+/g, ' ').trim();
+  const header = out.search(/\s[A-Za-z][A-Za-z &/-]{1,34}:\s/);
+  if (header > 0) out = out.slice(0, header).trim();
+  return out;
+}
+
+function cleanDisplayPromises(offer){
+  const source = (offer && offer.promises && offer.promises.length) ? offer.promises : extractPromises((offer && offer.text) || '');
+  const seen = {};
+  const cleaned = [];
+  (source || []).forEach(function(p){
+    const text = sanitizePromiseText(p && p.text);
+    const key = text.toLowerCase();
+    if (!text || seen[key]) return;
+    seen[key] = true;
+    cleaned.push(Object.assign({}, p, { text: text }));
+  });
+  return cleaned;
 }
 
 function titleForPromise(offer, promise){
@@ -1823,13 +1849,14 @@ function render(){
   if (UI.lastSummary) html += renderSummaryBanner();
   if (DB.unmatched.length) html += renderUnmatchedReview();
   if (UI.view === 'feed') html += renderFeed();
-  else if (UI.view === 'setup') html += renderClassSetup();
+  else if (UI.view === 'setup') html += canViewSettings() ? renderClassSetup() : renderAccessDenied();
   else if (UI.view === 'thread') html += renderThread();
   else if (UI.view === 'prospect') html += renderProspectDetail();
   else if (UI.view === 'myoffers') html += renderMyOffers();
   else if (UI.view === 'mycommits') html += renderMyCommits();
   else if (UI.view === 'teams') html += renderTeamsPage();
   else if (UI.view === 'teamcommits') html += renderTeamCommits();
+  else if (UI.view === 'teamoffers') html += renderTeamOffers();
   if (UI.showSubmitModal) html += renderSubmitModal();
   if (UI.editOfferTarget) html += renderEditOfferModal();
   if (UI.pendingVisitEdit) html += renderVisitConfirmModal();
@@ -1900,7 +1927,7 @@ function renderNav(){
       (SESSION ? '<button class="rb-btn" data-nav="myoffers">My Offers</button>' : '') +
       (SESSION ? '<button class="rb-btn" data-nav="mycommits">My Commits</button>' : '') +
       (SESSION ? '<button class="rb-btn" data-nav="teams">Teams</button>' : '') +
-      '<button class="rb-btn" data-nav="setup">Settings</button>' +
+      (canViewSettings() ? '<button class="rb-btn" data-nav="setup">Settings</button>' : '') +
     '</div>';
   html += '</div></div>';
   return html;
@@ -2075,7 +2102,7 @@ function getCommitRowsForTeam(team){
 function renderPromiseChips(offers){
   const chips = [];
   (offers || []).forEach(function(o){
-    (o.promises || []).forEach(function(p){
+    cleanDisplayPromises(o).forEach(function(p){
       if (chips.length >= 3) return;
       const title = titleForPromise(o, p);
       chips.push('<span class="rb-tag" style="display:block;margin:0 0 6px 0;white-space:normal;line-height:1.35;"><span class="rb-mono" style="color:var(--gold);font-size:10px;text-transform:uppercase;letter-spacing:0.05em;">' + escapeHtml(String(title).replace(/_/g, ' ')) + ':</span> ' + escapeHtml(p.text || '') + '</span>');
@@ -2132,8 +2159,42 @@ function renderMyCommits(){
 function renderTeamCommits(){
   const team = UI.teamCommitsTeam || '';
   if (!team) return '<div class="rb-card" style="padding:28px;text-align:center;color:var(--slate);">No team selected.</div>';
-  return '<div style="margin-bottom:16px;"><button class="rb-btn" data-nav="teams">&larr; Back to Teams</button></div>' +
+  return '<div style="margin-bottom:16px;display:flex;gap:10px;align-items:center;flex-wrap:wrap;"><button class="rb-btn" data-nav="teams">&larr; Back to Teams</button><button class="rb-btn rb-btn-gold" data-open-team-offers="' + escapeHtml(team) + '">View Offers</button></div>' +
     renderCommitsForTeam(team, team + ' Commits');
+}
+
+function renderTeamOffers(){
+  const team = UI.teamOffersTeam || UI.teamCommitsTeam || '';
+  if (!team) return '<div class="rb-card" style="padding:28px;text-align:center;color:var(--slate);">No team selected.</div>';
+  const rows = getOfferRowsForTeam(team);
+  let html = '<div style="margin-bottom:16px;display:flex;gap:10px;align-items:center;flex-wrap:wrap;"><button class="rb-btn" data-nav="teams">&larr; Back to Teams</button><button class="rb-btn" data-open-team-commits-button="' + escapeHtml(team) + '">View Commits</button></div>';
+  html += '<div class="rb-card" style="padding:18px 20px;margin-bottom:14px;">';
+  html += '<div class="rb-h" style="font-size:18px;margin-bottom:6px;">' + escapeHtml(team) + ' Offers</div>';
+  html += '<div style="font-size:13px;color:var(--slate);margin-bottom:12px;">' + rows.length + ' offer' + (rows.length === 1 ? '' : 's') + ' from ' + escapeHtml(team) + '.</div>';
+  html += '<input class="rb-input" id="rb-my-offer-search" placeholder="Search offers by recruit name, rank, position, or hometown" />';
+  html += '</div>';
+  if (!rows.length) return html + '<div class="rb-card" style="padding:28px;text-align:center;color:var(--slate);">No offers yet.</div>';
+  html += '<div style="display:flex;flex-direction:column;gap:10px;">';
+  rows.forEach(function(row){
+    const p = row.prospect || {};
+    const o = row.offer;
+    const searchText = [p.rank, '#' + p.rank, p.name, p.position, p.hometown, p.storyline].join(' ').toLowerCase();
+    html += '<div class="rb-card" data-my-offer-card="1" data-search="' + escapeHtml(searchText) + '" style="padding:12px 16px;">';
+    html += '<details>';
+    html += '<summary class="rb-offer-summary" style="list-style:none;cursor:pointer;display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:14px;">';
+    html += '<span style="min-width:0;display:flex;align-items:baseline;gap:10px;white-space:nowrap;overflow:hidden;">' +
+      '<span class="rb-mono" style="color:var(--slate);flex:0 0 auto;">#' + escapeHtml(p.rank || '?') + '</span>' +
+      '<strong data-open-prospect="' + escapeHtml(row.prospectId) + '" title="' + escapeHtml(p.name || '') + '" style="overflow:hidden;text-overflow:ellipsis;color:var(--chalk);cursor:pointer;">' + escapeHtml(shortText(p.name || 'Unknown prospect', 24)) + '</strong>' +
+      '<span class="rb-mono" style="color:var(--slate);font-size:13px;flex:0 0 auto;">' + escapeHtml(p.position || '') + (p.rating ? ' &middot; ' + escapeHtml(p.rating) : '') + '</span>' +
+      (p.hometown ? '<span class="rb-mono" style="color:var(--slate);font-size:13px;flex:0 0 auto;">&middot;</span><span class="rb-mono" title="' + escapeHtml(p.hometown) + '" style="color:var(--slate);font-size:13px;overflow:hidden;text-overflow:ellipsis;">' + escapeHtml(shortText(p.hometown, 24)) + '</span>' : '') +
+    '</span>';
+    html += '<span style="display:flex;align-items:center;justify-content:flex-end;gap:8px;white-space:nowrap;">' + (o.rescinded ? '<span class="rb-mono" style="color:var(--alert);font-size:12px;">rescinded</span>' : visitBadges(o.visits, true)) + '</span>';
+    html += '</summary>';
+    html += '<div style="margin-top:8px;">' + renderOfferBlock(o, { expanded: true }) + '</div>';
+    html += '</details></div>';
+  });
+  html += '</div>';
+  return html;
 }
 
 function renderTeamsPage(){
@@ -2147,12 +2208,14 @@ function renderTeamsPage(){
   const visible = teams.filter(function(brand){
     const link = UI.teamLinks[teamKey(brand.region)] || null;
     const haystack = [brand.region, brand.abbrev, brand.nickname, brand.displayName, link && link.displayName, link && link.username, canAdmin && link && link.discordId].join(' ').toLowerCase();
+    if (UI.teamFilterCoached && !link) return false;
     return !q || haystack.indexOf(q) !== -1;
   });
   let html = '<div class="rb-card" style="padding:18px 20px;margin-bottom:14px;">';
   html += '<div class="rb-h" style="font-size:18px;margin-bottom:6px;">Teams</div>';
   html += '<div style="font-size:13px;color:var(--slate);margin-bottom:12px;">' + teams.length + ' teams &middot; ' + Object.keys(UI.teamLinks || {}).length + ' linked Discord account' + (Object.keys(UI.teamLinks || {}).length === 1 ? '' : 's') + '</div>';
   html += '<input class="rb-input" id="rb-team-search" placeholder="Search teams or linked Discord accounts" value="' + escapeHtml(UI.teamSearch || '') + '" />';
+  html += '<label style="display:inline-flex;align-items:center;gap:8px;margin-top:10px;color:var(--slate);font-size:12px;cursor:pointer;"><input type="checkbox" id="rb-team-filter-coached" ' + (UI.teamFilterCoached ? 'checked' : '') + ' style="accent-color:var(--gold);" />Coached teams only</label>';
   if (pendingCount) html += '<div class="rb-mono" style="font-size:12px;color:var(--gold);margin-top:8px;">' + pendingCount + ' unsaved team change' + (pendingCount === 1 ? '' : 's') + '</div>';
   if (UI.adminActionStatus) html += '<div style="font-size:12px;color:var(--gold);margin-top:8px;">' + escapeHtml(UI.adminActionStatus) + '</div>';
   if (UI.adminActionError) html += '<div style="font-size:12px;color:var(--alert);margin-top:8px;">' + escapeHtml(UI.adminActionError) + '</div>';
@@ -2392,7 +2455,7 @@ function renderProspectDetail(){
   const offers = DB.offersByProspect[p.id] || [];
   const sessionOffer = SESSION ? findAnyOfferForTeam(p.id, SESSION.team) : null;
   const returnView = UI.prospectReturnView || 'feed';
-  const returnLabel = returnView === 'myoffers' ? 'Back to My Offers' : (returnView === 'mycommits' ? 'Back to My Commits' : (returnView === 'teamcommits' ? 'Back to Team Commits' : 'Back to board'));
+  const returnLabel = returnView === 'myoffers' ? 'Back to My Offers' : (returnView === 'mycommits' ? 'Back to My Commits' : (returnView === 'teamcommits' ? 'Back to Team Commits' : (returnView === 'teamoffers' ? 'Back to Team Offers' : 'Back to board')));
   let html = '<div style="margin-bottom:16px;"><button class="rb-btn" data-nav="' + escapeHtml(returnView) + '">&larr; ' + escapeHtml(returnLabel) + '</button></div>';
   html += '<div class="rb-card" style="padding:18px 20px;margin-bottom:14px;">';
   html += '<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;">';
@@ -2418,19 +2481,19 @@ function renderProspectDetail(){
 
 function renderOfferBlock(o, opts){
   opts = opts || {};
-  const badges = visitBadges(o.visits);
-  const header = '<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;">' +
+  const badges = visitBadges(o.visits, !!opts.collapsed);
+  const header = '<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:' + (opts.collapsed ? 'nowrap' : 'wrap') + ';min-width:0;">' +
     '<span style="font-weight:600;font-size:13px;">' + escapeHtml(o.team) + '</span>' +
-    '<span style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;">' +
+    '<span style="display:flex;gap:6px;flex-wrap:' + (opts.collapsed ? 'nowrap' : 'wrap') + ';align-items:center;min-width:0;overflow:hidden;">' +
       (badges || '') +
       '<span class="rb-mono" style="font-size:11px;color:var(--slate);">' + escapeHtml(o.coach || '') + '</span>' +
     '</span>' +
   '</div>';
   let html = '';
   if (opts.collapsed){
-    html += '<details data-offer-details="1" style="background:var(--panel-alt);border-radius:8px;padding:10px 14px;">';
+    html += '<details data-offer-details="1" style="background:var(--panel-alt);border-radius:8px;padding:7px 12px;">';
     html += '<summary class="rb-offer-summary" style="list-style:none;cursor:pointer;">' + header + '</summary>';
-    html += '<div style="margin-top:10px;">';
+    html += '<div style="margin-top:8px;">';
   } else {
     html += '<div style="background:var(--panel-alt);border-radius:8px;padding:10px 14px;">';
     if (!opts.hideHeader) html += header;
@@ -2439,9 +2502,9 @@ function renderOfferBlock(o, opts){
     html += '<div style="margin-top:8px;"><span class="rb-tag" style="display:inline-block;margin:0;color:var(--alert);border-color:#6F1D1B;background:rgba(111,29,27,0.18);font-weight:600;">Rescinded</span></div>';
   } else {
     const scrollStyle = opts.fullText ? '' : 'max-height:140px;overflow:auto;';
-    html += '<div style="font-size:13px;color:var(--chalk);margin-top:6px;white-space:pre-wrap;' + scrollStyle + '" class="rb-scrollbar">' + formatOfferText(o.text, o.promises) + '</div>';
+    html += '<div style="font-size:13px;color:var(--chalk);margin-top:6px;white-space:pre-wrap;' + scrollStyle + '" class="rb-scrollbar">' + formatOfferText(o.text, cleanDisplayPromises(o)) + '</div>';
   }
-  const displayPromises = !o.rescinded ? ((o.promises && o.promises.length) ? o.promises : extractPromises(o.text || '')) : [];
+  const displayPromises = !o.rescinded ? cleanDisplayPromises(o) : [];
   if (displayPromises.length){
     html += '<div style="margin-top:8px;">';
     displayPromises.forEach(function(p){
@@ -2571,7 +2634,7 @@ function bindEvents(){
       e.preventDefault();
       e.stopPropagation();
       if (e.target && e.target.closest && e.target.closest('[data-offer-details]')) return;
-      UI.prospectReturnView = UI.view === 'myoffers' || UI.view === 'mycommits' || UI.view === 'teamcommits' || UI.view === 'thread' ? UI.view : 'feed';
+      UI.prospectReturnView = UI.view === 'myoffers' || UI.view === 'mycommits' || UI.view === 'teamcommits' || UI.view === 'teamoffers' || UI.view === 'thread' ? UI.view : 'feed';
       navigateTo('prospect', { prospectId: el.getAttribute('data-open-prospect') });
       scrollPageTop();
     };
@@ -2756,10 +2819,35 @@ function bindEvents(){
       card.style.display = !q || haystack.indexOf(q) !== -1 ? '' : 'none';
     });
   };
+  const teamFilterCoached = document.getElementById('rb-team-filter-coached');
+  if (teamFilterCoached) teamFilterCoached.onchange = function(){
+    UI.teamFilterCoached = !!teamFilterCoached.checked;
+    render();
+  };
   document.querySelectorAll('[data-open-team-commits]').forEach(function(el){
     el.onclick = function(e){
       if (e.target && e.target.closest && e.target.closest('button, select, input, a, label')) return;
       navigateTo('teamcommits', { teamCommitsTeam: el.getAttribute('data-open-team-commits') || '' });
+      scrollPageTop();
+    };
+  });
+  document.querySelectorAll('[data-open-team-offers]').forEach(function(el){
+    el.onclick = function(e){
+      if (e) {
+        e.preventDefault();
+        e.stopPropagation();
+      }
+      navigateTo('teamoffers', { teamOffersTeam: el.getAttribute('data-open-team-offers') || '' });
+      scrollPageTop();
+    };
+  });
+  document.querySelectorAll('[data-open-team-commits-button]').forEach(function(el){
+    el.onclick = function(e){
+      if (e) {
+        e.preventDefault();
+        e.stopPropagation();
+      }
+      navigateTo('teamcommits', { teamCommitsTeam: el.getAttribute('data-open-team-commits-button') || '' });
       scrollPageTop();
     };
   });
