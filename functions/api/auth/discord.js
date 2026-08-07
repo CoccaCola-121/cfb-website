@@ -12,6 +12,7 @@ export async function onRequestGet({ request, env }) {
     discord.searchParams.set('response_type', 'code');
     discord.searchParams.set('scope', 'identify');
     discord.searchParams.set('state', state);
+    discord.searchParams.set('prompt', url.searchParams.get('consent') === '1' ? 'consent' : 'none');
     return new Response(null, {
       status: 302,
       headers: {

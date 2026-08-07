@@ -42,6 +42,13 @@ export async function onRequestGet({ request, env }) {
   const url = new URL(request.url);
   const code = url.searchParams.get('code') || '';
   const state = url.searchParams.get('state') || '';
+  const error = url.searchParams.get('error') || '';
+  if (error === 'consent_required' || error === 'interaction_required') {
+    return new Response(null, {
+      status: 302,
+      headers: { location: '/api/auth/discord?consent=1' },
+    });
+  }
   const cookieState = readOauthState(request);
   if (!code || !state || !cookieState || state !== cookieState) {
     return new Response('Discord login could not be verified.', { status: 400 });
