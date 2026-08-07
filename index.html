@@ -226,10 +226,15 @@ let UI = { view: 'feed', threadId: null, showSubmitModal: false, submitting: fal
            rescindError: null, classFileName: '', myOfferSearch: '', confirmReset: null,
            commitError: null, commitStatus: null, updatingCommits: false, commitEditing: false,
            submitTargetId: null, editOfferTarget: null, editError: null, prospectReturnView: 'feed',
-           pendingVisitEdit: null, adminMode: false, loginStep: 'account', loginMode: 'login',
-           pendingAuthEmail: '', teamLinkQuery: '', brandingStatus: null, brandingError: null, brandingFileName: '' };
+           pendingVisitEdit: null, adminMode: false, loginStep: 'account', pendingDiscordUser: null,
+           teamLinkQuery: '', unavailableTeamKeys: [], brandingStatus: null, brandingError: null,
+           brandingFileName: '', adminActionStatus: null, adminActionError: null };
 let dbReady = false, sessionReady = false;
 let summaryTimer = null;
+let leagueSyncTimer = null;
+let remoteSaveTimer = null;
+let lastRemoteSaveAt = 0;
+let lastLocalChangeAt = 0;
 
 function uid(prefix){ return prefix + '_' + Math.random().toString(36).slice(2, 10); }
 
@@ -309,36 +314,18 @@ function activeTeamBrands(){
   return brands.sort(function(a,b){ return a.region.localeCompare(b.region); });
 }
 
-function userByEmail(email){
-  return (DB.users || {})[normalizeEmail(email)] || null;
-}
-
-function claimedTeamEmail(teamName){
-  const key = teamKey(teamName);
-  let claimedBy = '';
-  Object.keys(DB.users || {}).forEach(function(email){
-    const user = DB.users[email];
-    if (!claimedBy && user && user.team && teamKey(user.team) === key) claimedBy = email;
-  });
-  Object.keys(DB.teams || {}).forEach(function(team){
-    const row = DB.teams[team];
-    if (!claimedBy && row && row.linkedEmail && teamKey(team) === key) claimedBy = normalizeEmail(row.linkedEmail);
-  });
-  return claimedBy;
-}
-
-function isTeamAvailable(teamName, email){
+function isTeamAvailable(teamName){
   const brand = getTeamBranding(teamName);
   if (!brand) return false;
-  const claimedBy = claimedTeamEmail(brand.region || teamName);
-  return !claimedBy || claimedBy === normalizeEmail(email);
+  if ((UI.unavailableTeamKeys || []).indexOf(teamKey(brand.region || teamName)) !== -1) return false;
+  return true;
 }
 
-function teamMatchesForQuery(query, email){
+function teamMatchesForQuery(query){
   const q = String(query || '').toLowerCase().trim();
   if (!q) return [];
   return activeTeamBrands().filter(function(brand){
-    if (!isTeamAvailable(brand.region, email)) return false;
+    if (!isTeamAvailable(brand.region)) return false;
     return [brand.region, brand.abbrev, brand.displayName, brand.nickname].join(' ').toLowerCase().indexOf(q) !== -1;
   }).slice(0, 8);
 }
@@ -428,25 +415,155 @@ async function loadAll(){
     const res = await getStored(DB_KEY, true);
     if (res && res.value) DB = Object.assign(DB, JSON.parse(res.value));
   } catch (e) { /* first run */ }
+  await syncLeagueState(false);
   await ensureDefaultSeasonData();
   dbReady = true;
-  try {
-    const res = await getStored(SESSION_KEY, false);
-    if (res && res.value) {
-      const s = JSON.parse(res.value);
-      if (s && s.team && (s.email || (DB.teams[s.team] && DB.teams[s.team].pin === s.pin))) SESSION = s;
-    }
-  } catch (e) { /* not logged in */ }
+  await loadServerAuth();
   sessionReady = true;
   try {
     const adminRes = await getStored(ADMIN_MODE_KEY, false);
     UI.adminMode = !!(adminRes && adminRes.value === '1');
   } catch (e) { /* default coach lens */ }
+  if (SESSION && !SESSION.isAdmin) UI.adminMode = false;
+  startLeagueSync();
   render();
 }
 
+function apiAvailable(){
+  return /^https?:$/.test(window.location.protocol);
+}
+
+async function loadServerAuth(){
+  if (!apiAvailable()) return;
+  try {
+    const res = await fetch('/api/auth/me', { credentials: 'include' });
+    if (!res.ok) return;
+    const data = await res.json();
+    if (data.authenticated && data.user){
+      UI.pendingDiscordUser = data.user;
+      if (data.user.team){
+        SESSION = {
+          discordId: data.user.discordId,
+          username: data.user.displayName || data.user.username,
+          team: data.user.team,
+          isAdmin: !!data.user.isAdmin
+        };
+      } else {
+        SESSION = null;
+        UI.loginStep = 'team';
+      }
+      await loadTeamAvailability();
+    }
+  } catch (e) { /* local preview or functions not configured */ }
+}
+
+async function loadTeamAvailability(){
+  if (!apiAvailable()) return;
+  try {
+    const res = await fetch('/api/teams', { credentials: 'include' });
+    if (!res.ok) return;
+    const data = await res.json();
+    UI.unavailableTeamKeys = data.claimedTeams || [];
+    if (Array.isArray(data.teams)){
+      const branding = Object.assign({}, DB.teamBranding || {});
+      data.teams.forEach(function(brand){
+        if (!brand || !brand.region) return;
+        teamBrandKeys(brand).forEach(function(key){ branding[key] = brand; });
+      });
+      DB.teamBranding = branding;
+    }
+  } catch (e) { /* non-blocking */ }
+}
+
 function saveDB(){
+  lastLocalChangeAt = Date.now();
   setStored(DB_KEY, JSON.stringify(DB), true);
+  queueRemoteSave();
+}
+
+function leagueStatePayload(){
+  return {
+    fullRoster: DB.fullRoster,
+    released: DB.released,
+    wave1Released: DB.wave1Released,
+    wave2Released: DB.wave2Released,
+    prospects: DB.prospects,
+    threads: DB.threads,
+    offersByProspect: DB.offersByProspect,
+    unmatched: DB.unmatched,
+    teams: DB.teams,
+    teamBranding: DB.teamBranding,
+    commitSheetUrl: DB.commitSheetUrl,
+    commitUpdatedAt: DB.commitUpdatedAt,
+    defaultClassLoaded: DB.defaultClassLoaded
+  };
+}
+
+function mergeLeagueState(state){
+  if (!state || typeof state !== 'object') return false;
+  const before = JSON.stringify({
+    offersByProspect: DB.offersByProspect,
+    prospects: DB.prospects,
+    threads: DB.threads,
+    commitUpdatedAt: DB.commitUpdatedAt
+  });
+  ['fullRoster','released','wave1Released','wave2Released','prospects','threads','offersByProspect','unmatched','teams','teamBranding','commitSheetUrl','commitUpdatedAt','defaultClassLoaded'].forEach(function(field){
+    if (Object.prototype.hasOwnProperty.call(state, field)) DB[field] = state[field];
+  });
+  const after = JSON.stringify({
+    offersByProspect: DB.offersByProspect,
+    prospects: DB.prospects,
+    threads: DB.threads,
+    commitUpdatedAt: DB.commitUpdatedAt
+  });
+  setStored(DB_KEY, JSON.stringify(DB), true);
+  return before !== after;
+}
+
+async function syncLeagueState(renderAfter){
+  if (!apiAvailable()) return false;
+  if (Date.now() - lastLocalChangeAt < 2500) return false;
+  try {
+    const res = await fetch('/api/league/state', { credentials: 'include' });
+    if (!res.ok) return false;
+    const data = await res.json();
+    const changed = mergeLeagueState(data.state);
+    if (changed && renderAfter) render();
+    return changed;
+  } catch (e) {
+    return false;
+  }
+}
+
+function startLeagueSync(){
+  if (leagueSyncTimer || !apiAvailable()) return;
+  leagueSyncTimer = setInterval(function(){ syncLeagueState(true); }, 20000);
+}
+
+function queueRemoteSave(){
+  if (!apiAvailable()) return;
+  if (remoteSaveTimer) clearTimeout(remoteSaveTimer);
+  remoteSaveTimer = setTimeout(saveDBRemote, 350);
+}
+
+async function saveDBRemote(){
+  if (!apiAvailable()) return;
+  const payload = leagueStatePayload();
+  const localStamp = Date.now();
+  lastRemoteSaveAt = localStamp;
+  try {
+    await fetch('/api/league/state', {
+      method: 'PUT',
+      credentials: 'include',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ state: payload })
+    });
+  } catch (e) { /* next local save or poll can retry */ }
+}
+
+async function saveDBNow(){
+  saveDB();
+  await saveDBRemote();
 }
 
 function applyDefaultClassData(text){
@@ -482,6 +599,11 @@ async function ensureDefaultSeasonData(){
 }
 
 function setAdminMode(on){
+  if (!SESSION || !SESSION.isAdmin) {
+    UI.adminMode = false;
+    setStored(ADMIN_MODE_KEY, '0', false);
+    render(); return;
+  }
   UI.adminMode = !!on;
   setStored(ADMIN_MODE_KEY, UI.adminMode ? '1' : '0', false);
   render();
@@ -615,6 +737,7 @@ async function loadTeamBrandingFile(file){
     const data = JSON.parse(text);
     if (!data || !Array.isArray(data.teams)) throw new Error('No teams array found in that export.');
     const branding = Object.assign({}, DB.teamBranding || {});
+    const activeBrands = [];
     let count = 0;
     data.teams.forEach(function(team){
       if (!team || !team.region || team.disabled) return;
@@ -629,9 +752,20 @@ async function loadTeamBrandingFile(file){
         logoUrl: team.imgURL || ''
       };
       teamBrandKeys(brand).forEach(function(key){ branding[key] = brand; });
+      activeBrands.push(brand);
       count++;
     });
     DB.teamBranding = branding;
+    if (apiAvailable()){
+      const res = await fetch('/api/admin/team-branding', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ teams: activeBrands }),
+      });
+      const apiResult = await res.json().catch(function(){ return {}; });
+      if (!res.ok || !apiResult.ok) throw new Error(apiResult.error || 'Could not save branding update on the server.');
+    }
     UI.brandingStatus = 'Branding updated for ' + count + ' active team' + (count === 1 ? '' : 's') + '.';
     UI.brandingError = null;
     saveDB(); render();
@@ -900,7 +1034,7 @@ async function updateCommitsFromSheet(){
     DB.commitSheetUrl = rawUrl;
     UI.commitEditing = false;
     UI.commitStatus = 'Updated ' + count + ' commit' + (count === 1 ? '' : 's') + (storylineCount ? ' and imported ' + storylineCount + ' storyline' + (storylineCount === 1 ? '' : 's') : '') + '.';
-    saveDB();
+    await saveDBNow();
   } catch (e) {
     UI.commitError = 'Could not read that sheet from the browser. Share-with-link may not be enough; use File > Share > Publish to web for this tab, or paste the published CSV link.';
   }
@@ -910,92 +1044,16 @@ async function updateCommitsFromSheet(){
 
 // ---------- Login ----------
 
-function isValidEmail(email){
-  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(email || '').trim());
+function beginDiscordLogin(){
+  if (!apiAvailable()){
+    UI.loginError = 'Discord login works on the hosted site, not the local file preview.';
+    render(); return;
+  }
+  window.location.href = '/api/auth/discord';
 }
 
-function normalizeEmail(email){
-  return String(email || '').trim().toLowerCase();
-}
-
-function localPasswordHash(password){
-  try {
-    return btoa(unescape(encodeURIComponent(String(password || ''))));
-  } catch (e) {
-    return String(password || '');
-  }
-}
-
-function beginAccountLogin(email, password){
-  email = normalizeEmail(email);
-  password = String(password || '').trim();
-  if (!isValidEmail(email)){
-    UI.loginError = 'Enter a valid email.';
-    render(); return;
-  }
-  const user = (DB.users || {})[email];
-  if (!user){
-    UI.loginError = 'No account exists for that email. Sign up first.';
-    render(); return;
-  }
-  if (user.passwordHash !== localPasswordHash(password)){
-    UI.loginError = 'Wrong password.';
-    render(); return;
-  }
-  if (user.team){
-    SESSION = { email: email, team: user.team };
-    setStored(SESSION_KEY, JSON.stringify(SESSION), false);
-    UI.loginError = null;
-    UI.loginStep = 'account';
-    UI.pendingAuthEmail = '';
-    UI.view = 'feed';
-    render(); return;
-  }
-  UI.pendingAuthEmail = email;
-  UI.loginStep = 'team';
-  UI.loginError = null;
-  render();
-}
-
-function createAccount(email, password, confirmPassword){
-  email = normalizeEmail(email);
-  password = String(password || '').trim();
-  confirmPassword = String(confirmPassword || '').trim();
-  if (!isValidEmail(email)){
-    UI.loginError = 'Enter a valid email.';
-    render(); return;
-  }
-  if (password.length < 6){
-    UI.loginError = 'Password must be at least 6 characters.';
-    render(); return;
-  }
-  if (password !== confirmPassword){
-    UI.loginError = 'Passwords do not match.';
-    render(); return;
-  }
-  if (!DB.users) DB.users = {};
-  if (DB.users[email]){
-    UI.loginError = 'That account already exists. Log in instead.';
-    render(); return;
-  }
-  DB.users[email] = { email: email, passwordHash: localPasswordHash(password), createdAt: Date.now() };
-  saveDB();
-  UI.pendingAuthEmail = email;
-  UI.loginStep = 'team';
-  UI.loginError = null;
-  render();
-}
-
-function setLoginMode(mode, email){
-  UI.loginMode = mode === 'signup' ? 'signup' : 'login';
-  if (email != null) UI.pendingAuthEmail = normalizeEmail(email);
-  UI.loginError = null;
-  render();
-}
-
-function linkLoginTeam(team){
+async function linkLoginTeam(team){
   team = String(team || '').trim();
-  const email = normalizeEmail(UI.pendingAuthEmail);
   if (!team){
     UI.loginError = 'Enter your team.';
     render(); return;
@@ -1006,49 +1064,84 @@ function linkLoginTeam(team){
     render(); return;
   }
   const canonicalTeam = brand.region || team;
-  const user = userByEmail(email);
-  if (user && user.team && teamKey(user.team) !== teamKey(canonicalTeam)){
-    UI.loginError = 'That account is already linked to ' + user.team + '.';
+  if (!isTeamAvailable(canonicalTeam)){
+    UI.loginError = canonicalTeam + ' is already linked to another Discord account.';
     render(); return;
   }
-  if (!isTeamAvailable(canonicalTeam, email)){
-    UI.loginError = canonicalTeam + ' is already linked to another account.';
+  if (!apiAvailable() || !UI.pendingDiscordUser){
+    UI.loginError = 'Sign in with Discord before linking a team.';
     render(); return;
   }
-  const existing = DB.teams[canonicalTeam] || {};
-  DB.teams[canonicalTeam] = Object.assign({}, existing, {
-    linkedEmail: email || existing.linkedEmail || '',
-    lastLoginAt: Date.now()
-  });
-  if (!DB.users) DB.users = {};
-  if (DB.users[email]) DB.users[email].team = canonicalTeam;
-  saveDB();
-  SESSION = { email: email || '', team: canonicalTeam };
-  setStored(SESSION_KEY, JSON.stringify(SESSION), false);
-  UI.loginError = null;
-  UI.loginStep = 'account';
-  UI.pendingAuthEmail = '';
-  UI.teamLinkQuery = '';
-  UI.view = 'feed';
-  render();
+  try {
+    const res = await fetch('/api/team/link', {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ team: canonicalTeam }),
+    });
+    const data = await res.json();
+    if (!res.ok || !data.ok) throw new Error(data.error || 'Could not link team.');
+    UI.pendingDiscordUser = Object.assign({}, UI.pendingDiscordUser, { team: canonicalTeam });
+    SESSION = {
+      discordId: UI.pendingDiscordUser.discordId,
+      username: UI.pendingDiscordUser.displayName || UI.pendingDiscordUser.username,
+      team: canonicalTeam,
+      isAdmin: !!UI.pendingDiscordUser.isAdmin
+    };
+    UI.loginError = null;
+    UI.loginStep = 'account';
+    UI.teamLinkQuery = '';
+    UI.view = 'feed';
+    await loadTeamAvailability();
+    render();
+  } catch (e) {
+    UI.loginError = e.message || 'Could not link that team.';
+    render();
+  }
 }
 
 function resetLoginFlow(){
   UI.loginError = null;
   UI.loginStep = 'account';
-  UI.loginMode = 'login';
-  UI.pendingAuthEmail = '';
   UI.teamLinkQuery = '';
   render();
 }
 
-function logout(){
+async function logout(){
+  if (apiAvailable()) {
+    try { await fetch('/api/auth/logout', { method: 'POST', credentials: 'include' }); } catch (e) {}
+  }
   SESSION = null;
+  UI.pendingDiscordUser = null;
   UI.loginStep = 'account';
-  UI.loginMode = 'login';
-  UI.pendingAuthEmail = '';
   UI.teamLinkQuery = '';
   deleteStored(SESSION_KEY, false);
+  render();
+}
+
+async function runAdminAccountAction(kind){
+  const discordIdInput = document.getElementById(kind === 'switch' ? 'rb-admin-switch-discord' : 'rb-admin-unlink-discord');
+  const teamInput = document.getElementById(kind === 'switch' ? 'rb-admin-switch-team' : 'rb-admin-unlink-team');
+  const endpoint = kind === 'switch' ? '/api/admin/switch-team' : '/api/admin/unlink';
+  UI.adminActionError = null;
+  UI.adminActionStatus = null;
+  try {
+    const res = await fetch(endpoint, {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        discordId: discordIdInput ? discordIdInput.value : '',
+        team: teamInput ? teamInput.value : ''
+      }),
+    });
+    const data = await res.json();
+    if (!res.ok || !data.ok) throw new Error(data.error || 'Admin action failed.');
+    UI.adminActionStatus = kind === 'switch' ? 'Account team updated.' : 'Account unlinked.';
+    await loadTeamAvailability();
+  } catch (e) {
+    UI.adminActionError = e.message || 'Admin action failed.';
+  }
   render();
 }
 
@@ -1450,7 +1543,7 @@ async function submitOfferSheet(rawText){
   UI.submitting = false;
   UI.showSubmitModal = false;
   UI.submitTargetId = null;
-  saveDB(); render();
+  await saveDBNow(); render();
 }
 
 function assignUnmatched(id, rankValue){
@@ -1482,7 +1575,7 @@ function cancelReset(){
   render();
 }
 
-function confirmReset(){
+async function confirmReset(){
   if (UI.confirmReset === 'offers'){
     DB.offersByProspect = {};
     DB.unmatched = [];
@@ -1512,7 +1605,7 @@ function confirmReset(){
     UI.assignError = {};
   }
   UI.confirmReset = null;
-  saveDB(); render();
+  await saveDBNow(); render();
 }
 
 // ---------- Rendering ----------
@@ -1546,8 +1639,8 @@ function render(){
   scheduleSummaryCountdown();
 }
 
-function renderTeamAutocomplete(query, email){
-  const matches = teamMatchesForQuery(query, email);
+function renderTeamAutocomplete(query){
+  const matches = teamMatchesForQuery(query);
   if (!String(query || '').trim()) return '';
   if (!matches.length){
     return '<div class="rb-team-results rb-scrollbar"><div style="padding:11px 12px;color:var(--slate);font-size:13px;">No available teams match that.</div></div>';
@@ -1569,35 +1662,26 @@ function renderHomePage(){
   html += '<section class="rb-card rb-home-login">' +
     '<div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;">' +
       '<span class="rb-auth-step">' + (UI.loginStep === 'team' ? '2' : '1') + '</span>' +
-      '<div><div class="rb-h" style="font-size:22px;">' + (UI.loginStep === 'team' ? 'Link Your Team' : (UI.loginMode === 'signup' ? 'Create Account' : 'Coach Login')) + '</div>' +
-      '<div class="rb-mono" style="font-size:12px;color:var(--slate);margin-top:2px;">' + (UI.loginStep === 'team' ? escapeHtml(UI.pendingAuthEmail || 'account ready') : (UI.loginMode === 'signup' ? 'new coaches start here' : 'welcome back')) + '</div></div>' +
+      '<div><div class="rb-h" style="font-size:22px;">' + (UI.loginStep === 'team' ? 'Link Your Team' : 'Discord Login') + '</div>' +
+      '<div class="rb-mono" style="font-size:12px;color:var(--slate);margin-top:2px;">' + (UI.loginStep === 'team' ? escapeHtml((UI.pendingDiscordUser && (UI.pendingDiscordUser.displayName || UI.pendingDiscordUser.username)) || 'Discord connected') : 'one Discord, one coach account') + '</div></div>' +
     '</div>';
   if (UI.loginStep === 'team'){
     html += '<div style="display:flex;flex-direction:column;gap:12px;margin-top:12px;">' +
       '<label style="font-size:12px;color:var(--slate);">Team</label>' +
       '<div class="rb-team-picker">' +
         '<input class="rb-input" id="rb-login-team-link" placeholder="Michigan State" autocomplete="off" style="font-size:15px;padding:12px 13px;" value="' + escapeHtml(UI.teamLinkQuery || '') + '">' +
-        '<div id="rb-team-results-slot">' + renderTeamAutocomplete(UI.teamLinkQuery || '', UI.pendingAuthEmail) + '</div>' +
+        '<div id="rb-team-results-slot">' + renderTeamAutocomplete(UI.teamLinkQuery || '') + '</div>' +
       '</div>' +
       '<button class="rb-btn rb-btn-gold" id="rb-link-team-btn" style="padding:12px 16px;font-size:14px;">Enter RecruitHQ</button>' +
-      '<button class="rb-btn" id="rb-login-back-btn" style="padding:12px 16px;font-size:14px;">Use a different email</button>' +
+      '<button class="rb-btn" id="rb-logout-pending-btn" style="padding:12px 16px;font-size:14px;">Use a different Discord</button>' +
     '</div>';
   } else {
-    html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:14px 0 4px;">' +
-      '<button class="rb-btn' + (UI.loginMode === 'login' ? ' rb-btn-gold' : '') + '" id="rb-login-mode-login" style="padding:10px 12px;">Log in</button>' +
-      '<button class="rb-btn' + (UI.loginMode === 'signup' ? ' rb-btn-gold' : '') + '" id="rb-login-mode-signup" style="padding:10px 12px;">Sign up</button>' +
-    '</div>';
-    html += '<div style="display:flex;flex-direction:column;gap:12px;margin-top:12px;">' +
-      '<label style="font-size:12px;color:var(--slate);">Email</label>' +
-      '<input class="rb-input" id="rb-login-email" type="email" placeholder="coach@nzcfl.com" autocomplete="email" style="font-size:15px;padding:12px 13px;" value="' + escapeHtml(UI.pendingAuthEmail || '') + '">' +
-      '<label style="font-size:12px;color:var(--slate);">Password</label>' +
-      '<input class="rb-input" id="rb-login-password" type="password" placeholder="Password" autocomplete="' + (UI.loginMode === 'signup' ? 'new-password' : 'current-password') + '" style="font-size:15px;padding:12px 13px;">' +
-      (UI.loginMode === 'signup' ? '<label style="font-size:12px;color:var(--slate);">Confirm password</label><input class="rb-input" id="rb-login-confirm-password" type="password" placeholder="Confirm password" autocomplete="new-password" style="font-size:15px;padding:12px 13px;">' : '') +
-      '<button class="rb-btn rb-btn-gold" id="rb-account-login-btn" style="padding:12px 16px;font-size:14px;">' + (UI.loginMode === 'signup' ? 'Create account' : 'Continue') + '</button>' +
+    html += '<div style="display:flex;flex-direction:column;gap:12px;margin-top:18px;">' +
+      '<button class="rb-btn rb-btn-gold" id="rb-discord-login-btn" style="padding:13px 16px;font-size:14px;">Continue with Discord</button>' +
     '</div>';
   }
   if (UI.loginError) html += '<div style="font-size:12px;color:var(--alert);margin-top:12px;">' + escapeHtml(UI.loginError) + '</div>';
-  html += '<div style="border-top:1px solid var(--hairline);margin-top:22px;padding-top:16px;color:var(--slate);font-size:12px;line-height:1.55;">For now, accounts are device-local while league permissions are being built. Discord login is the right long-term version for one account per coach.</div>';
+  html += '<div style="border-top:1px solid var(--hairline);margin-top:22px;padding-top:16px;color:var(--slate);font-size:12px;line-height:1.55;">Discord is the account. Team changes and unlinks go through admin tools.</div>';
   html += '</section></div>';
   return html;
 }
@@ -1963,6 +2047,21 @@ function renderClassSetup(){
   if (UI.brandingStatus) html += '<div style="font-size:12px;color:var(--gold);margin-top:8px;">' + escapeHtml(UI.brandingStatus) + '</div>';
   if (UI.brandingError) html += '<div style="font-size:12px;color:var(--alert);margin-top:8px;">' + escapeHtml(UI.brandingError) + '</div>';
   html += '</div>';
+  html += '<div class="rb-card" style="padding:20px 24px;max-width:640px;margin-top:14px;">';
+  html += '<div class="rb-h" style="font-size:16px;margin-bottom:12px;">Discord Account Admin</div>';
+  html += '<div style="display:grid;grid-template-columns:1fr 1fr auto;gap:8px;align-items:end;margin-bottom:12px;">';
+  html += '<div><label style="font-size:12px;color:var(--slate);">Discord ID</label><input class="rb-input" id="rb-admin-unlink-discord" placeholder="optional if team is entered" /></div>';
+  html += '<div><label style="font-size:12px;color:var(--slate);">Team</label><input class="rb-input" id="rb-admin-unlink-team" placeholder="Michigan State" /></div>';
+  html += '<button class="rb-btn" id="rb-admin-unlink-btn">Unlink</button>';
+  html += '</div>';
+  html += '<div style="display:grid;grid-template-columns:1fr 1fr auto;gap:8px;align-items:end;">';
+  html += '<div><label style="font-size:12px;color:var(--slate);">Discord ID</label><input class="rb-input" id="rb-admin-switch-discord" placeholder="required" /></div>';
+  html += '<div><label style="font-size:12px;color:var(--slate);">New team</label><input class="rb-input" id="rb-admin-switch-team" placeholder="Michigan State" /></div>';
+  html += '<button class="rb-btn rb-btn-gold" id="rb-admin-switch-btn">Switch</button>';
+  html += '</div>';
+  if (UI.adminActionStatus) html += '<div style="font-size:12px;color:var(--gold);margin-top:8px;">' + escapeHtml(UI.adminActionStatus) + '</div>';
+  if (UI.adminActionError) html += '<div style="font-size:12px;color:var(--alert);margin-top:8px;">' + escapeHtml(UI.adminActionError) + '</div>';
+  html += '</div>';
   if (UI.adminMode){
     html += '<div class="rb-card" style="padding:20px 24px;max-width:640px;margin-top:14px;border-color:#6F1D1B;">';
     html += '<div class="rb-h" style="font-size:14px;margin-bottom:12px;color:#FFF2F1;">Danger Zone</div>';
@@ -1976,14 +2075,16 @@ function renderClassSetup(){
 }
 
 function renderAdminModeCard(){
+  const canAdmin = !!(SESSION && SESSION.isAdmin);
   return '<div class="rb-card" style="padding:18px 20px;max-width:640px;margin-bottom:14px;">' +
     '<div style="display:flex;justify-content:space-between;align-items:center;gap:14px;flex-wrap:wrap;">' +
       '<div>' +
         '<div class="rb-h" style="font-size:16px;">Admin Mode</div>' +
+        (!canAdmin ? '<div class="rb-mono" style="font-size:11px;color:var(--slate);margin-top:4px;">Discord admin access required</div>' : '') +
       '</div>' +
-      '<label style="display:inline-flex;align-items:center;gap:10px;cursor:pointer;user-select:none;">' +
+      '<label style="display:inline-flex;align-items:center;gap:10px;cursor:' + (canAdmin ? 'pointer' : 'default') + ';user-select:none;">' +
         '<span class="rb-mono" style="font-size:12px;color:' + (UI.adminMode ? 'var(--gold)' : 'var(--slate)') + ';">' + (UI.adminMode ? 'ON' : 'OFF') + '</span>' +
-        '<input type="checkbox" id="rb-admin-mode-toggle" ' + (UI.adminMode ? 'checked' : '') + ' style="width:20px;height:20px;accent-color:var(--gold);cursor:pointer;" />' +
+        '<input type="checkbox" id="rb-admin-mode-toggle" ' + (UI.adminMode ? 'checked' : '') + (!canAdmin ? ' disabled' : '') + ' style="width:20px;height:20px;accent-color:var(--gold);cursor:' + (canAdmin ? 'pointer' : 'default') + ';" />' +
       '</label>' +
     '</div>' +
   '</div>';
@@ -2325,22 +2426,8 @@ function bindEvents(){
     });
   };
 
-  const accountLoginBtn = document.getElementById('rb-account-login-btn');
-  const loginEmail = document.getElementById('rb-login-email');
-  const loginPassword = document.getElementById('rb-login-password');
-  const loginConfirmPassword = document.getElementById('rb-login-confirm-password');
-  const submitAccountLogin = function(){
-    if (UI.loginMode === 'signup') createAccount(loginEmail ? loginEmail.value : '', loginPassword ? loginPassword.value : '', loginConfirmPassword ? loginConfirmPassword.value : '');
-    else beginAccountLogin(loginEmail ? loginEmail.value : '', loginPassword ? loginPassword.value : '');
-  };
-  if (accountLoginBtn) accountLoginBtn.onclick = submitAccountLogin;
-  if (loginEmail) loginEmail.onkeydown = function(e){ if (e.key === 'Enter') submitAccountLogin(); };
-  if (loginPassword) loginPassword.onkeydown = function(e){ if (e.key === 'Enter') submitAccountLogin(); };
-  if (loginConfirmPassword) loginConfirmPassword.onkeydown = function(e){ if (e.key === 'Enter') submitAccountLogin(); };
-  const loginModeLogin = document.getElementById('rb-login-mode-login');
-  if (loginModeLogin) loginModeLogin.onclick = function(){ setLoginMode('login', loginEmail ? loginEmail.value : ''); };
-  const loginModeSignup = document.getElementById('rb-login-mode-signup');
-  if (loginModeSignup) loginModeSignup.onclick = function(){ setLoginMode('signup', loginEmail ? loginEmail.value : ''); };
+  const discordLoginBtn = document.getElementById('rb-discord-login-btn');
+  if (discordLoginBtn) discordLoginBtn.onclick = beginDiscordLogin;
 
   const linkTeamBtn = document.getElementById('rb-link-team-btn');
   const linkTeamInput = document.getElementById('rb-login-team-link');
@@ -2364,15 +2451,15 @@ function bindEvents(){
       UI.teamLinkQuery = linkTeamInput.value;
       const slot = document.getElementById('rb-team-results-slot');
       if (slot) {
-        slot.innerHTML = renderTeamAutocomplete(UI.teamLinkQuery, UI.pendingAuthEmail);
+        slot.innerHTML = renderTeamAutocomplete(UI.teamLinkQuery);
         bindTeamOptionClicks();
       }
     };
     linkTeamInput.onkeydown = function(e){ if (e.key === 'Enter') submitTeamLink(); };
   }
   bindTeamOptionClicks();
-  const loginBackBtn = document.getElementById('rb-login-back-btn');
-  if (loginBackBtn) loginBackBtn.onclick = resetLoginFlow;
+  const logoutPendingBtn = document.getElementById('rb-logout-pending-btn');
+  if (logoutPendingBtn) logoutPendingBtn.onclick = logout;
 
   const logoutLink = document.getElementById('rb-logout');
   if (logoutLink) logoutLink.onclick = function(e){ e.preventDefault(); logout(); };
@@ -2382,6 +2469,10 @@ function bindEvents(){
 
   const adminToggle = document.getElementById('rb-admin-mode-toggle');
   if (adminToggle) adminToggle.onchange = function(){ setAdminMode(adminToggle.checked); };
+  const adminUnlinkBtn = document.getElementById('rb-admin-unlink-btn');
+  if (adminUnlinkBtn) adminUnlinkBtn.onclick = function(){ runAdminAccountAction('unlink'); };
+  const adminSwitchBtn = document.getElementById('rb-admin-switch-btn');
+  if (adminSwitchBtn) adminSwitchBtn.onclick = function(){ runAdminAccountAction('switch'); };
 
   document.querySelectorAll('[data-assign]').forEach(function(el){
     el.onclick = function(){
