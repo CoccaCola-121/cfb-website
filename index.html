@@ -6,6 +6,10 @@
 <title>NZCFL RecruitHQ</title>
 <meta name="description" content="Every offer, on the record.">
 <meta name="theme-color" content="#0F1420">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="RecruitHQ">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta property="og:title" content="NZCFL RecruitHQ">
 <meta property="og:description" content="Every offer, on the record.">
 <meta property="og:type" content="website">
@@ -16,6 +20,7 @@
 <meta name="twitter:image" content="NZCFL.jpg">
 <link rel="icon" href="NZCFL.jpg" type="image/jpeg">
 <link rel="apple-touch-icon" href="NZCFL.jpg">
+<link rel="manifest" href="manifest.webmanifest">
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Oswald:wght@500;600;700&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap');
 
@@ -3138,6 +3143,9 @@ window.addEventListener('beforeunload', function(e){
   e.preventDefault();
   e.returnValue = '';
 });
+if ('serviceWorker' in navigator && /^https?:$/.test(window.location.protocol)) {
+  navigator.serviceWorker.register('./sw.js').catch(function(e){ console.warn('service worker registration failed', e); });
+}
 loadAll();
 
 })();
