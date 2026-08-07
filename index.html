@@ -1634,7 +1634,7 @@ function extractPromises(text){
   text = String(text || '');
   const addPromise = function(promise, start){
     promise = String(promise || '').replace(/\*\*/g, '').replace(/\s+/g, ' ').trim();
-    if (!promise || seen[promise.toLowerCase()]) return;
+    if (!isLikelyPromiseText(promise) || seen[promise.toLowerCase()]) return;
     seen[promise.toLowerCase()] = true;
     const title = findPitchTitle(text, start) || promiseCategory(promise).replace(/_/g, ' ');
     promises.push({ text: promise, title: title, category: promiseCategory(promise) });
@@ -1665,11 +1665,13 @@ function extractPromises(text){
   return promises;
 }
 
+function isLikelyPromiseText(text){
+  const out = String(text || '').replace(/\*\*/g, '').replace(/\s+/g, ' ').trim();
+  return out.length >= 18 && /\b(?:i|we)\s+promise\b/i.test(out);
+}
+
 function sanitizePromiseText(text){
-  let out = String(text || '').replace(/\*\*/g, '').replace(/\s+/g, ' ').trim();
-  const header = out.search(/\s[A-Za-z][A-Za-z &/-]{1,34}:\s/);
-  if (header > 0) out = out.slice(0, header).trim();
-  return out;
+  return String(text || '').replace(/\*\*/g, '').replace(/\s+/g, ' ').trim();
 }
 
 function cleanDisplayPromises(offer){
@@ -1679,7 +1681,7 @@ function cleanDisplayPromises(offer){
   (source || []).forEach(function(p){
     const text = sanitizePromiseText(p && p.text);
     const key = text.toLowerCase();
-    if (!text || seen[key]) return;
+    if (!isLikelyPromiseText(text) || seen[key]) return;
     seen[key] = true;
     cleaned.push(Object.assign({}, p, { text: text }));
   });
