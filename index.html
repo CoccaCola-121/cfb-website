@@ -1,0 +1,1949 @@
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Oswald:wght@500;600;700&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap');
+
+.rb-root {
+  --ink: #0F1420;
+  --panel: #161C2B;
+  --panel-alt: #1C2438;
+  --hairline: #2A3348;
+  --gold: #C9A227;
+  --gold-dim: #8A7222;
+  --turf: #4C8058;
+  --alert: #D2564C;
+  --chalk: #EDEEF0;
+  --slate: #8892A6;
+  font-family: 'Inter', sans-serif;
+  background: var(--ink);
+  color: var(--chalk);
+  border-radius: 14px;
+  padding: 28px;
+  min-height: 500px;
+}
+.rb-root * { box-sizing: border-box; }
+.rb-h { font-family: 'Oswald', sans-serif; text-transform: uppercase; letter-spacing: 0.04em; }
+.rb-mono { font-family: 'IBM Plex Mono', monospace; }
+.rb-btn {
+  font-family: 'Inter', sans-serif; font-weight: 600; font-size: 13px;
+  background: var(--panel-alt); color: var(--chalk); border: 1px solid var(--hairline);
+  border-radius: 6px; padding: 9px 16px; cursor: pointer; transition: border-color .15s;
+}
+.rb-btn:hover { border-color: var(--gold-dim); }
+.rb-btn:disabled { opacity: 0.45; cursor: default; }
+.rb-btn-gold { background: var(--gold); color: #1A1508; border: 1px solid var(--gold); }
+.rb-btn-gold:hover { background: #DBB233; border-color: #DBB233; }
+.rb-card { background: var(--panel); border: 1px solid var(--hairline); border-radius: 10px; }
+.rb-input, .rb-textarea {
+  font-family: 'Inter', sans-serif; background: var(--ink); color: var(--chalk);
+  border: 1px solid var(--hairline); border-radius: 6px; padding: 8px 11px; font-size: 13px; width: 100%;
+}
+.rb-input:focus, .rb-textarea:focus { outline: none; border-color: var(--gold-dim); }
+.rb-file-input { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
+.rb-file-label {
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  font-family: 'Inter', sans-serif; font-weight: 600; font-size: 13px;
+  background: var(--panel-alt); color: var(--chalk); border: 1px solid var(--hairline);
+  border-radius: 6px; padding: 10px 16px; cursor: pointer; transition: border-color .15s, background .15s;
+}
+.rb-file-label:hover { border-color: var(--gold-dim); background: #202941; }
+.rb-btn-danger { background: #6F1D1B; color: #FFF2F1; border-color: #B33A32; }
+.rb-btn-danger:hover { background: #8D2723; border-color: #D2564C; }
+.rb-offer-summary::-webkit-details-marker { display: none; }
+.rb-star { color: var(--gold); }
+.rb-star-empty { color: #3A4258; }
+.rb-scrollbar::-webkit-scrollbar { width: 8px; }
+.rb-scrollbar::-webkit-scrollbar-thumb { background: var(--hairline); border-radius: 4px; }
+.rb-tag { font-size: 11px; background: var(--panel-alt); border: 1px solid var(--hairline); border-radius: 6px; padding: 6px 10px; margin-top: 4px; display: block; }
+</style>
+
+<div id="rb-app" class="rb-root"></div>
+
+<script>
+(function(){
+
+const DB_KEY = 'recruiting-board-db-v2';
+const SESSION_KEY = 'rb-session-v1';
+const ADMIN_MODE_KEY = 'rb-admin-mode-v1';
+
+let DB = { fullRoster: [], released: {}, wave1Released: false, wave2Released: false,
+           prospects: {}, threads: [], offersByProspect: {}, unmatched: [], teams: {},
+           teamBranding: {}, commitSheetUrl: '', commitUpdatedAt: null };
+let SESSION = null;
+let UI = { view: 'feed', threadId: null, showSubmitModal: false, submitting: false,
+           lastSummary: null, loginError: null, classError: null, classDraft: '', assignError: {},
+           rescindError: null, classFileName: '', myOfferSearch: '', confirmReset: null,
+           commitError: null, commitStatus: null, updatingCommits: false, commitEditing: false,
+           brandingFileName: '', brandingError: null, brandingStatus: null,
+           submitTargetId: null, editOfferTarget: null, editError: null, prospectReturnView: 'feed',
+           pendingVisitEdit: null, adminMode: false };
+let dbReady = false, sessionReady = false;
+let summaryTimer = null;
+
+function uid(prefix){ return prefix + '_' + Math.random().toString(36).slice(2, 10); }
+
+function escapeHtml(s){
+  return String(s == null ? '' : s).replace(/[&<>"']/g, function(c){
+    return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];
+  });
+}
+
+function shortText(value, max){
+  const text = String(value == null ? '' : value).trim();
+  return text.length > max ? text.slice(0, Math.max(0, max - 3)).trimEnd() + '...' : text;
+}
+
+function formatStoryline(text){
+  return String(text == null ? '' : text).trim()
+    .replace('Playing Time: Would prefer to be redshirted to further develop and start on a better Team', 'Playing Time: Would prefer to be redshirted to further develop and start on a better team');
+}
+
+function renderStorylineLine(storyline, extraStyle){
+  const text = formatStoryline(storyline);
+  if (!text) return '';
+  return '<div class="rb-mono" title="' + escapeHtml(text) + '" style="font-size:10px;color:var(--slate);margin-top:5px;line-height:1.2;white-space:normal;overflow-wrap:anywhere;max-width:100%;min-width:0;' + (extraStyle || '') + '">' + escapeHtml(text) + '</div>';
+}
+
+function formatOfferText(text){
+  return escapeHtml(text).replace(/\*\*(.+?)\*\*/g, '<strong style="color:var(--gold);">$1</strong>');
+}
+
+function starsOrLabel(stars){
+  let out = '';
+  for (let i = 0; i < 5; i++) out += i < stars ? '<span class="rb-star">&#9733;</span>' : '<span class="rb-star-empty">&#9733;</span>';
+  return out;
+}
+
+function teamKey(value){
+  return String(value || '').toLowerCase().replace(/&/g, 'and').replace(/[^a-z0-9]+/g, ' ').trim().replace(/\s+/g, ' ');
+}
+
+function teamBrandKeys(team){
+  const keys = [];
+  const region = team.region || '';
+  const name = team.name || '';
+  const abbrev = team.abbrev || '';
+  [region, name, abbrev, (region + ' ' + name).trim()].forEach(function(value){
+    const key = teamKey(value);
+    if (key && keys.indexOf(key) === -1) keys.push(key);
+  });
+  return keys;
+}
+
+function getTeamBranding(teamName){
+  return (DB.teamBranding || {})[teamKey(teamName)] || null;
+}
+
+function renderTeamLogo(brand){
+  if (!brand || !brand.logoUrl) return '';
+  return '<span style="width:22px;height:22px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;background:rgba(226,230,239,0.18);border:1px solid rgba(226,230,239,0.24);flex:0 0 auto;"><img src="' + escapeHtml(brand.logoUrl) + '" alt="" style="width:17px;height:17px;object-fit:contain;display:block;" /></span>';
+}
+
+function renderCommittedTag(teamName){
+  const brand = getTeamBranding(teamName);
+  if (!brand){
+    return '<span class="rb-tag" style="display:inline-flex;align-items:center;gap:6px;margin:0;white-space:nowrap;">Committed: ' + escapeHtml(teamName) + '</span>';
+  }
+  const primary = brand.primary || 'var(--hairline)';
+  const secondary = brand.secondary || 'var(--chalk)';
+  return '<span class="rb-tag" style="display:inline-flex;align-items:center;gap:7px;margin:0;white-space:nowrap;border-color:' + escapeHtml(primary) + ';background:linear-gradient(90deg,' + escapeHtml(primary) + '44,' + escapeHtml(secondary) + '1f);">' + renderTeamLogo(brand) + '<span>Committed: ' + escapeHtml(brand.region || teamName) + '</span></span>';
+}
+
+function renderTeamCoachBadge(teamName){
+  const brand = getTeamBranding(teamName);
+  if (!brand) return '<strong style="color:var(--chalk);">' + escapeHtml(teamName) + '</strong>';
+  return '<span style="display:inline-flex;align-items:center;gap:6px;vertical-align:middle;line-height:1;">' + renderTeamLogo(brand) + '<strong style="color:' + escapeHtml(brand.primary || 'var(--chalk)') + ';line-height:1;">' + escapeHtml(teamName) + '</strong></span>';
+}
+
+function committedCardStyle(teamName){
+  const brand = getTeamBranding(teamName);
+  if (!brand || !brand.primary) return 'opacity:0.48;filter:grayscale(0.45);';
+  const primary = brand.primary;
+  const secondary = brand.secondary || primary;
+  return 'opacity:0.82;border-color:' + primary + '88;background:linear-gradient(90deg,' + primary + '38,' + secondary + '12 56%,var(--panel) 100%);box-shadow:inset 4px 0 0 ' + primary + ';';
+}
+
+function offerCountForProspect(pid){
+  return (DB.offersByProspect[pid] || []).length;
+}
+
+function offerCountTag(pid){
+  const count = offerCountForProspect(pid);
+  return '<span class="rb-tag" style="display:inline-block;margin:0;white-space:nowrap;">' + count + ' offer' + (count === 1 ? '' : 's') + '</span>';
+}
+
+function rankRangeForThread(t){
+  const ranks = (t.prospectIds || []).map(function(pid){
+    return DB.prospects[pid] ? DB.prospects[pid].rank : null;
+  }).filter(function(rank){ return rank != null; });
+  if (!ranks.length) return '';
+  const min = Math.min.apply(null, ranks);
+  const max = Math.max.apply(null, ranks);
+  return '#' + min + '&ndash;' + max;
+}
+
+function hasAppStorage(){
+  return !!(window.storage && window.storage.get && window.storage.set && window.storage.delete);
+}
+
+async function getStored(key, shared){
+  if (hasAppStorage()) return window.storage.get(key, shared);
+  try {
+    const value = window.localStorage.getItem(key);
+    return value == null ? null : { value: value };
+  } catch (e) {
+    return null;
+  }
+}
+
+function setStored(key, value, shared){
+  if (hasAppStorage()) return window.storage.set(key, value, shared).catch(function(e){ console.error('save failed', e); });
+  try {
+    window.localStorage.setItem(key, value);
+  } catch (e) {
+    console.error('save failed', e);
+  }
+  return Promise.resolve();
+}
+
+function deleteStored(key, shared){
+  if (hasAppStorage()) return window.storage.delete(key, shared).catch(function(){});
+  try {
+    window.localStorage.removeItem(key);
+  } catch (e) {}
+  return Promise.resolve();
+}
+
+async function loadAll(){
+  try {
+    const res = await getStored(DB_KEY, true);
+    if (res && res.value) DB = Object.assign(DB, JSON.parse(res.value));
+  } catch (e) { /* first run */ }
+  dbReady = true;
+  try {
+    const res = await getStored(SESSION_KEY, false);
+    if (res && res.value) {
+      const s = JSON.parse(res.value);
+      if (s && s.team && DB.teams[s.team] && DB.teams[s.team].pin === s.pin) SESSION = s;
+    }
+  } catch (e) { /* not logged in */ }
+  sessionReady = true;
+  try {
+    const adminRes = await getStored(ADMIN_MODE_KEY, false);
+    UI.adminMode = !!(adminRes && adminRes.value === '1');
+  } catch (e) { /* default coach lens */ }
+  render();
+}
+
+function saveDB(){
+  setStored(DB_KEY, JSON.stringify(DB), true);
+}
+
+function setAdminMode(on){
+  UI.adminMode = !!on;
+  setStored(ADMIN_MODE_KEY, UI.adminMode ? '1' : '0', false);
+  render();
+}
+
+// ---------- CSV parsing ----------
+
+function parseCsvRows(text){
+  const rows = []; let row = []; let field = ''; let inQuotes = false;
+  for (let i = 0; i < text.length; i++){
+    const c = text[i];
+    if (inQuotes){
+      if (c === '"'){ if (text[i+1] === '"'){ field += '"'; i++; } else inQuotes = false; }
+      else field += c;
+    } else {
+      if (c === '"') inQuotes = true;
+      else if (c === ',') { row.push(field); field = ''; }
+      else if (c === '\n' || c === '\r'){
+        if (c === '\r' && text[i+1] === '\n') i++;
+        row.push(field); field = ''; rows.push(row); row = [];
+      } else field += c;
+    }
+  }
+  if (field.length || row.length) { row.push(field); rows.push(row); }
+  return rows;
+}
+
+function cleanCsvCell(value){
+  return String(value == null ? '' : value).replace(/^\uFEFF/, '').trim();
+}
+
+function headerIndex(header, names){
+  for (let i = 0; i < header.length; i++){
+    const cell = cleanCsvCell(header[i]).toLowerCase();
+    for (let j = 0; j < names.length; j++){
+      if (cell === names[j].toLowerCase()) return i;
+    }
+  }
+  return -1;
+}
+
+function parseFullClass(text){
+  const rows = parseCsvRows(text);
+  let headerIdx = -1;
+  for (let i = 0; i < rows.length; i++){
+    if (headerIndex(rows[i], ['Name']) !== -1 && headerIndex(rows[i], ['Pos.', 'Pos', 'Position']) !== -1) { headerIdx = i; break; }
+  }
+  if (headerIdx === -1) return null;
+  const header = rows[headerIdx];
+  const rankIdx = headerIndex(header, ['Rank', '#']);
+  const nameIdx = headerIndex(header, ['Name']);
+  const posIdx = headerIndex(header, ['Pos.', 'Pos', 'Position']);
+  const ovrIdx = headerIndex(header, ['Ovr', 'Overall']);
+  const potIdx = headerIndex(header, ['Pot', 'Potential']);
+  const hometownIdx = headerIndex(header, ['Hometown', 'Home Town']);
+  let storylineIdx = headerIndex(header, ['Storyline', 'Storylines']);
+  if (storylineIdx === -1) storylineIdx = 18;
+  const list = [];
+  for (let i = headerIdx + 1; i < rows.length; i++){
+    const r = rows[i];
+    const rank = parseInt(cleanCsvCell(r[rankIdx === -1 ? 0 : rankIdx]), 10);
+    if (!rank) continue;
+    const name = cleanCsvCell(r[nameIdx]);
+    if (!name) continue;
+    list.push({
+      rank: rank, name: name,
+      position: cleanCsvCell(r[posIdx]).toUpperCase(),
+      rating: cleanCsvCell(r[ovrIdx]) + '/' + cleanCsvCell(r[potIdx]),
+      hometown: cleanCsvCell(r[hometownIdx]),
+      storyline: cleanCsvCell(r[storylineIdx])
+    });
+  }
+  list.sort(function(a,b){ return a.rank - b.rank; });
+  return list;
+}
+
+function starsForRank(rank){
+  if (rank <= 25) return 5;
+  if (rank <= 250) return 4;
+  if (rank <= 500) return 3;
+  if (rank <= 900) return 2;
+  if (rank <= 1700) return 1;
+  return 0;
+}
+
+// ---------- Class loading + wave release ----------
+
+function loadClassData(raw){
+  const list = parseFullClass(raw);
+  if (!list || !list.length){
+    UI.classError = 'Could not find a class in that CSV. Make sure it includes Name and Pos. columns.';
+    render(); return;
+  }
+  DB.fullRoster = list;
+  UI.classError = null;
+  saveDB(); render();
+}
+
+function loadClassFile(file){
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = function(){
+    UI.classFileName = file.name || '';
+    loadClassData(String(reader.result || ''));
+  };
+  reader.onerror = function(){
+    UI.classError = 'Could not read that CSV file. Try pasting the export instead.';
+    render();
+  };
+  reader.readAsText(file);
+}
+
+async function fileToText(file){
+  const buffer = await file.arrayBuffer();
+  if (/\.gz$/i.test(file.name || '')){
+    if (typeof DecompressionStream === 'undefined') throw new Error('This browser cannot read .gz files directly. Try an unzipped JSON export.');
+    const stream = new Blob([buffer]).stream().pipeThrough(new DecompressionStream('gzip'));
+    return await new Response(stream).text();
+  }
+  return new TextDecoder().decode(buffer);
+}
+
+async function loadTeamBrandingFile(file){
+  if (!file) return;
+  UI.brandingFileName = file.name || '';
+  UI.brandingError = null;
+  UI.brandingStatus = null;
+  render();
+  try {
+    const text = await fileToText(file);
+    const data = JSON.parse(text);
+    if (!data || !Array.isArray(data.teams)) throw new Error('No teams array found in that export.');
+    const branding = {};
+    let count = 0;
+    data.teams.forEach(function(team){
+      if (!team || !team.region) return;
+      const colors = Array.isArray(team.colors) ? team.colors : [];
+      const brand = {
+        region: team.region || '',
+        nickname: team.name || '',
+        abbrev: team.abbrev || '',
+        displayName: (team.region || '') + (team.name ? ' ' + team.name : ''),
+        primary: colors[0] || '',
+        secondary: colors[1] || colors[2] || '',
+        logoUrl: team.imgURL || ''
+      };
+      teamBrandKeys(team).forEach(function(key){ branding[key] = brand; });
+      count++;
+    });
+    DB.teamBranding = branding;
+    UI.brandingStatus = 'Imported branding for ' + count + ' teams.';
+    UI.brandingError = null;
+    saveDB(); render();
+  } catch (e) {
+    UI.brandingError = e.message || 'Could not import team branding.';
+    render();
+  }
+}
+
+function makeThread(title, prospectIds, stars){
+  return { id: uid('t'), title: title, prospectIds: prospectIds, stars: stars, createdAt: Date.now() };
+}
+
+function releaseWave1(){
+  if (!DB.fullRoster.length || DB.wave1Released) return;
+  const g5 = [], g4 = [], g3 = [];
+  DB.fullRoster.forEach(function(p){
+    if (p.rank > 500 || DB.released[p.rank]) return;
+    const stars = starsForRank(p.rank);
+    const id = 'r' + p.rank;
+    DB.prospects[id] = { id: id, rank: p.rank, name: p.name, position: p.position, rating: p.rating, hometown: p.hometown, storyline: p.storyline || '', stars: stars };
+    DB.released[p.rank] = true;
+    if (stars === 5) g5.push(id); else if (stars === 4) g4.push(id); else g3.push(id);
+  });
+  if (g5.length) DB.threads.push(makeThread('5 Star Recruiting Board', g5, 5));
+  if (g4.length) DB.threads.push(makeThread('4 Star Recruiting Board', g4, 4));
+  if (g3.length) DB.threads.push(makeThread('3 Star Recruiting Board', g3, 3));
+  DB.wave1Released = true;
+  saveDB(); render();
+}
+
+function releaseWave2(){
+  if (!DB.fullRoster.length || DB.wave2Released) return;
+  const g2 = [], g1 = [], g0 = [];
+  DB.fullRoster.forEach(function(p){
+    if (p.rank <= 500 || DB.released[p.rank]) return;
+    const stars = starsForRank(p.rank);
+    const id = 'r' + p.rank;
+    DB.prospects[id] = { id: id, rank: p.rank, name: p.name, position: p.position, rating: p.rating, hometown: p.hometown, storyline: p.storyline || '', stars: stars };
+    DB.released[p.rank] = true;
+    if (stars === 2) g2.push(id); else if (stars === 1) g1.push(id); else g0.push(id);
+  });
+  if (g2.length) DB.threads.push(makeThread('2 Star Recruiting Board', g2, 2));
+  if (g1.length) DB.threads.push(makeThread('1 Star Recruiting Board', g1, 1));
+  if (g0.length) DB.threads.push(makeThread('Unranked Recruiting Board', g0, 0));
+  DB.wave2Released = true;
+  saveDB(); render();
+}
+
+// ---------- Commit sheet ----------
+
+function normalizeCommitSheetUrl(url){
+  const raw = (url || '').trim();
+  if (!raw) return '';
+  const idMatch = raw.match(/\/spreadsheets\/d\/([^/]+)/);
+  if (!idMatch) return raw;
+  const gidMatch = raw.match(/[?&#]gid=(\d+)/);
+  return 'https://docs.google.com/spreadsheets/d/' + idMatch[1] + '/export?format=csv' + (gidMatch ? '&gid=' + gidMatch[1] : '');
+}
+
+function commitSheetUrlCandidates(url){
+  const raw = (url || '').trim();
+  if (!raw) return [];
+  const idMatch = raw.match(/\/spreadsheets\/d\/([^/]+)/);
+  if (!idMatch) return [raw];
+  const sheetId = idMatch[1];
+  const gidMatch = raw.match(/[?&#]gid=(\d+)/);
+  const gid = gidMatch ? gidMatch[1] : '0';
+  return [
+    'https://docs.google.com/spreadsheets/d/' + sheetId + '/export?format=csv&gid=' + gid,
+    'https://docs.google.com/spreadsheets/d/' + sheetId + '/gviz/tq?tqx=out:csv&gid=' + gid,
+    raw
+  ];
+}
+
+function commitSheetParts(url){
+  const raw = (url || '').trim();
+  const idMatch = raw.match(/\/spreadsheets\/d\/([^/]+)/);
+  if (!idMatch) return null;
+  const gidMatch = raw.match(/[?&#]gid=(\d+)/);
+  return { sheetId: idMatch[1], gid: gidMatch ? gidMatch[1] : '0' };
+}
+
+function gvizTableToRows(table){
+  const cols = table && table.cols ? table.cols : [];
+  const rows = [];
+  rows.push(cols.map(function(col){ return col.label || col.id || ''; }));
+  (table && table.rows ? table.rows : []).forEach(function(row){
+    rows.push((row.c || []).map(function(cell){
+      if (!cell) return '';
+      return cell.f != null ? cell.f : (cell.v != null ? cell.v : '');
+    }));
+  });
+  return rows;
+}
+
+function fetchCommitRowsJsonp(url){
+  const parts = commitSheetParts(url);
+  if (!parts) return Promise.reject(new Error('Not a Google Sheets URL'));
+  return new Promise(function(resolve, reject){
+    const cb = 'rbCommitJsonp_' + Math.random().toString(36).slice(2);
+    const script = document.createElement('script');
+    const cleanup = function(){
+      delete window[cb];
+      if (script.parentNode) script.parentNode.removeChild(script);
+    };
+    const timer = setTimeout(function(){
+      cleanup();
+      reject(new Error('Google Sheets JSONP timed out'));
+    }, 12000);
+    window[cb] = function(resp){
+      clearTimeout(timer);
+      cleanup();
+      if (!resp || resp.status === 'error'){
+        reject(new Error((resp && resp.errors && resp.errors[0] && resp.errors[0].detailed_message) || 'Google Sheets JSONP failed'));
+        return;
+      }
+      resolve(gvizTableToRows(resp.table));
+    };
+    script.onerror = function(){
+      clearTimeout(timer);
+      cleanup();
+      reject(new Error('Google Sheets JSONP script failed'));
+    };
+    script.src = 'https://docs.google.com/spreadsheets/d/' + encodeURIComponent(parts.sheetId) + '/gviz/tq?gid=' + encodeURIComponent(parts.gid) + '&tqx=responseHandler:' + cb;
+    document.head.appendChild(script);
+  });
+}
+
+async function fetchCommitCsv(url){
+  const candidates = commitSheetUrlCandidates(url);
+  let lastError = null;
+  for (let i = 0; i < candidates.length; i++){
+    try {
+      const res = await fetch(candidates[i]);
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      const text = await res.text();
+      if (/^\s*</.test(text)) throw new Error('Google returned HTML instead of CSV');
+      return text;
+    } catch (e) {
+      lastError = e;
+    }
+  }
+  throw lastError || new Error('No sheet URL worked');
+}
+
+async function fetchCommitRows(url){
+  try {
+    const csv = await fetchCommitCsv(url);
+    return parseCsvRows(csv);
+  } catch (fetchError) {
+    return fetchCommitRowsJsonp(url);
+  }
+}
+
+function saveCommitSheetUrl(){
+  const input = document.getElementById('rb-commit-sheet-url');
+  const rawUrl = input ? input.value.trim() : '';
+  if (!rawUrl){
+    UI.commitError = 'Paste the Google Sheets URL first.';
+    render(); return;
+  }
+  DB.commitSheetUrl = rawUrl;
+  UI.commitEditing = false;
+  UI.commitError = null;
+  UI.commitStatus = 'Commit sheet saved.';
+  saveDB(); render();
+}
+
+function changeCommitSheetUrl(){
+  UI.commitEditing = true;
+  UI.commitError = null;
+  UI.commitStatus = null;
+  render();
+}
+
+function commitCellValue(value){
+  const text = cleanCsvCell(value);
+  if (!text || /^commit(?:ted)?$/i.test(text) || /^school$/i.test(text)) return '';
+  return text;
+}
+
+function findProspectFromSheetRow(row, rankIdx, nameIdx){
+  const rank = parseInt(cleanCsvCell(row[rankIdx === -1 ? 0 : rankIdx]), 10);
+  let prospect = rank ? DB.prospects['r' + rank] : null;
+  if (!prospect && nameIdx !== -1){
+    const name = cleanCsvCell(row[nameIdx]).toLowerCase();
+    const matches = Object.keys(DB.prospects).map(function(id){ return DB.prospects[id]; }).filter(function(p){
+      return p.name && p.name.toLowerCase() === name;
+    });
+    if (matches.length === 1) prospect = matches[0];
+  }
+  return prospect;
+}
+
+function applyStorylineRows(rows){
+  let headerIdx = -1;
+  for (let i = 0; i < rows.length; i++){
+    if (headerIndex(rows[i], ['Name']) !== -1 || headerIndex(rows[i], ['Rank', '#']) !== -1) { headerIdx = i; break; }
+  }
+  const header = headerIdx === -1 ? [] : rows[headerIdx];
+  const start = headerIdx === -1 ? 0 : headerIdx + 1;
+  const rankIdx = headerIndex(header, ['Rank', '#']);
+  const nameIdx = headerIndex(header, ['Name']);
+  let storylineIdx = headerIndex(header, ['Storyline', 'Storylines']);
+  if (storylineIdx === -1) storylineIdx = 18;
+  let count = 0;
+  for (let i = start; i < rows.length; i++){
+    const storyline = cleanCsvCell(rows[i][storylineIdx]);
+    if (!storyline) continue;
+    const prospect = findProspectFromSheetRow(rows[i], rankIdx, nameIdx);
+    if (prospect && !prospect.storyline){
+      prospect.storyline = storyline;
+      count++;
+    }
+  }
+  return count;
+}
+
+function applyCommitRows(rows){
+  let headerIdx = -1;
+  for (let i = 0; i < rows.length; i++){
+    if (headerIndex(rows[i], ['Name']) !== -1 || headerIndex(rows[i], ['Rank', '#']) !== -1) { headerIdx = i; break; }
+  }
+  const header = headerIdx === -1 ? [] : rows[headerIdx];
+  const start = headerIdx === -1 ? 0 : headerIdx + 1;
+  const rankIdx = headerIndex(header, ['Rank', '#']);
+  const nameIdx = headerIndex(header, ['Name']);
+  let commitIdx = headerIndex(header, ['Commit', 'Committed', 'School', 'Team']);
+  if (commitIdx === -1) commitIdx = 17;
+  let count = 0;
+
+  Object.keys(DB.prospects || {}).forEach(function(pid){
+    if (DB.prospects[pid]) DB.prospects[pid].commitTeam = '';
+  });
+
+  for (let i = start; i < rows.length; i++){
+    const r = rows[i];
+    const commitTeam = commitCellValue(r[commitIdx]);
+    if (!commitTeam) continue;
+    const prospect = findProspectFromSheetRow(r, rankIdx, nameIdx);
+    if (prospect){
+      prospect.commitTeam = commitTeam;
+      count++;
+    }
+  }
+  DB.commitUpdatedAt = Date.now();
+  return count;
+}
+
+async function updateCommitsFromSheet(){
+  const input = document.getElementById('rb-commit-sheet-url');
+  const rawUrl = (input ? input.value : DB.commitSheetUrl || '').trim();
+  if (!rawUrl){
+    UI.commitError = 'Save the season commit sheet URL first.';
+    render(); return;
+  }
+  UI.updatingCommits = true;
+  UI.commitError = null;
+  UI.commitStatus = null;
+  render();
+  try {
+    const rows = await fetchCommitRows(rawUrl);
+    const count = applyCommitRows(rows);
+    const storylineCount = applyStorylineRows(rows);
+    DB.commitSheetUrl = rawUrl;
+    UI.commitEditing = false;
+    UI.commitStatus = 'Updated ' + count + ' commit' + (count === 1 ? '' : 's') + (storylineCount ? ' and imported ' + storylineCount + ' storyline' + (storylineCount === 1 ? '' : 's') : '') + '.';
+    saveDB();
+  } catch (e) {
+    UI.commitError = 'Could not read that sheet from the browser. Share-with-link may not be enough; use File > Share > Publish to web for this tab, or paste the published CSV link.';
+  }
+  UI.updatingCommits = false;
+  render();
+}
+
+// ---------- Login ----------
+
+function attemptLogin(team, pin){
+  team = team.trim(); pin = pin.trim();
+  if (!team || !pin){ UI.loginError = 'Enter both a team name and a PIN.'; render(); return; }
+  const existing = DB.teams[team];
+  if (existing){
+    if (existing.pin !== pin){ UI.loginError = 'Wrong PIN for ' + team + '.'; render(); return; }
+  } else {
+    DB.teams[team] = { pin: pin };
+    saveDB();
+  }
+  SESSION = { team: team, pin: pin };
+  setStored(SESSION_KEY, JSON.stringify(SESSION), false);
+  UI.loginError = null;
+  render();
+}
+
+function logout(){
+  SESSION = null;
+  deleteStored(SESSION_KEY, false);
+  render();
+}
+
+// ---------- Visits ----------
+
+function blankVisitState(){
+  return { coach: false, campus: false, campusLabel: '' };
+}
+
+function normalizeVisits(visits){
+  const out = blankVisitState();
+  if (!visits) return out;
+  out.coach = !!visits.coach;
+  out.campus = !!(visits.campus || visits.school);
+  out.campusLabel = (visits.campusLabel || visits.schoolLabel || '').trim();
+  return out;
+}
+
+function detectVisits(text, aiVisits){
+  const visits = normalizeVisits(aiVisits);
+  const raw = text || '';
+  if (/coach\s+visit/i.test(raw)) visits.coach = true;
+  const campusMatch = raw.match(/(?:campus|school)\s+visit\s*([^\n\r]*)/i);
+  if (campusMatch){
+    visits.campus = true;
+    visits.campusLabel = (campusMatch[1] || visits.campusLabel || '').replace(/\(\s*\d+\s*\/\s*17\s*\)/i, '').trim();
+  }
+  return visits;
+}
+
+function campusVisitPhrase(visits){
+  visits = normalizeVisits(visits);
+  return visits.campus ? 'Campus Visit' + (visits.campusLabel ? ' ' + visits.campusLabel : '') : '';
+}
+
+function titleCaseTeamName(name){
+  return String(name || '').trim().split(/\s+/).map(function(part){
+    if (/^[A-Z0-9&.-]{2,}$/.test(part)) return part;
+    return part.split('-').map(function(piece){
+      return piece ? piece.charAt(0).toUpperCase() + piece.slice(1).toLowerCase() : piece;
+    }).join('-');
+  }).join(' ');
+}
+
+function normalizeCampusVisitLabel(label){
+  let raw = String(label || '').trim().replace(/\s+/g, ' ');
+  raw = raw.replace(/^week\b/i, 'Week');
+  raw = raw.replace(/\bvs\.?/i, 'vs.');
+  raw = raw.replace(/\s+vs\.\s+/i, ' vs. ');
+  const match = raw.match(/^Week\s+(\d{1,2})\s+vs\.\s+(.+)$/i);
+  if (!match || !match[2].trim()) return { ok: false, value: raw };
+  const opponent = match[2].trim();
+  if (/^[A-Z]{3,4}$/.test(opponent)) return { ok: false, value: raw, reason: 'abbr' };
+  return { ok: true, value: 'Week ' + parseInt(match[1], 10) + ' vs. ' + titleCaseTeamName(opponent) };
+}
+
+function syncCampusVisitText(text, visits){
+  let out = String(text || '');
+  const phrase = campusVisitPhrase(visits);
+  const campusRe = /(?:Campus|School)\s+Visit[\s\S]*?(?=\s+(?:Campus|Prestige|Education|Playing Time|Tradition|Coach|Pro Potential):|\n|$)/i;
+  if (campusRe.test(out)){
+    out = phrase ? out.replace(campusRe, phrase) : out.replace(campusRe, '').replace(/[ \t]{2,}/g, ' ');
+  } else if (phrase) {
+    const heading = out.search(/\b(?:Campus|Prestige|Education|Playing Time|Tradition|Coach|Pro Potential):/);
+    out = heading >= 0 ? out.slice(0, heading).trimEnd() + '\n' + phrase + '\n' + out.slice(heading) : out.trimEnd() + '\n' + phrase;
+  }
+  return out.trim();
+}
+
+function syncCoachVisitText(text, visits){
+  let out = String(text || '');
+  visits = normalizeVisits(visits);
+  const coachRe = /Coach\s+Visit(?:\s*\(\s*\d+\s*\/\s*10\s*\))?/i;
+  if (coachRe.test(out)){
+    out = visits.coach ? out.replace(coachRe, 'Coach Visit') : out.replace(coachRe, '').replace(/[ \t]{2,}/g, ' ');
+  } else if (visits.coach) {
+    const heading = out.search(/\b(?:Campus|Prestige|Education|Playing Time|Tradition|Coach|Pro Potential):/);
+    out = heading >= 0 ? out.slice(0, heading).trimEnd() + '\nCoach Visit\n' + out.slice(heading) : out.trimEnd() + '\nCoach Visit';
+  }
+  return out.trim();
+}
+
+function stripWrappingQuotes(text){
+  let out = (text || '').trim();
+  const pairs = [['"', '"'], ["'", "'"], ['“', '”'], ['‘', '’']];
+  let changed = true;
+  while (changed && out.length >= 2){
+    changed = false;
+    for (let i = 0; i < pairs.length; i++){
+      const pair = pairs[i];
+      if (out[0] === pair[0] && out[out.length - 1] === pair[1]){
+        out = out.slice(1, -1).trim();
+        changed = true;
+      }
+    }
+  }
+  return out;
+}
+
+function getTeamVisitUsage(){
+  const usage = {};
+  Object.keys(DB.teams || {}).forEach(function(team){
+    usage[team] = { coach: 0, campus: 0 };
+  });
+  Object.keys(DB.offersByProspect || {}).forEach(function(pid){
+    (DB.offersByProspect[pid] || []).forEach(function(o){
+      if (!o || !o.team) return;
+      if (!usage[o.team]) usage[o.team] = { coach: 0, campus: 0 };
+      const visits = normalizeVisits(o.visits);
+      if (visits.coach) usage[o.team].coach++;
+      if (visits.campus) usage[o.team].campus++;
+    });
+  });
+  return usage;
+}
+
+function visitLimitErrors(team, visits, existingOffer){
+  const usage = getTeamVisitUsage();
+  const current = usage[team] || { coach: 0, campus: 0 };
+  const existingVisits = existingOffer ? normalizeVisits(existingOffer.visits) : blankVisitState();
+  const errors = [];
+  if (visits.coach && !existingVisits.coach && current.coach >= 10) errors.push('Offer denied: coach visit limit already reached (10/10).');
+  if (visits.campus && !existingVisits.campus && current.campus >= 17) errors.push('Offer denied: campus visit limit already reached (17/17).');
+  return errors;
+}
+
+function visitEditLocks(team, offer){
+  const usage = getTeamVisitUsage()[team] || { coach: 0, campus: 0 };
+  const visits = normalizeVisits(offer && offer.visits);
+  return {
+    coach: visits.coach || (!visits.coach && usage.coach >= 10),
+    campus: visits.campus || (!visits.campus && usage.campus >= 17)
+  };
+}
+
+function visitBadges(visits, compact){
+  visits = normalizeVisits(visits);
+  const margin = compact ? '0' : '0 6px 6px 0';
+  let html = '';
+  if (visits.coach) html += '<span class="rb-tag" style="display:inline-block;margin:' + margin + ';">Coach Visit</span>';
+  if (visits.campus) html += '<span class="rb-tag" style="display:inline-block;margin:' + margin + ';">Campus Visit' + (visits.campusLabel ? ': ' + escapeHtml(visits.campusLabel) : '') + '</span>';
+  return html;
+}
+
+function findOfferForTeam(prospectId, team){
+  return (DB.offersByProspect[prospectId] || []).find(function(o){ return o.team === team && !o.rescinded; });
+}
+
+function findAnyOfferForTeam(prospectId, team){
+  return (DB.offersByProspect[prospectId] || []).find(function(o){ return o.team === team; });
+}
+
+function rescindOffer(prospectId, team){
+  const offer = findOfferForTeam(prospectId, team);
+  if (!offer) return;
+  offer.rescinded = true;
+  offer.text = 'rescinded';
+  offer.promises = [];
+  offer.rescindedAt = Date.now();
+  saveDB(); render();
+}
+
+function rescindOfferById(prospectId, offerId){
+  if (!SESSION) return;
+  const prospect = DB.prospects[prospectId];
+  if (prospect && prospect.commitTeam){
+    UI.rescindError = 'Cannot rescind: #' + prospect.rank + ' ' + prospect.name + ' has already committed to ' + prospect.commitTeam + '.';
+    render(); return;
+  }
+  const offers = DB.offersByProspect[prospectId] || [];
+  const offer = offers.find(function(o){ return o.id === offerId && o.team === SESSION.team && !o.rescinded; });
+  if (!offer){
+    UI.rescindError = 'That offer is no longer active.';
+    render(); return;
+  }
+  offer.rescinded = true;
+  offer.text = 'rescinded';
+  offer.promises = [];
+  offer.rescindedAt = Date.now();
+  UI.rescindError = null;
+  saveDB(); render();
+}
+
+// ---------- Offers ----------
+
+function addOfferDirect(prospectId, team, coach, text, promises, visits){
+  const prospect = DB.prospects[prospectId];
+  if (prospect && prospect.commitTeam) return { ok: false, error: 'Offer denied: #' + prospect.rank + ' ' + prospect.name + ' has committed to ' + prospect.commitTeam + '.' };
+  const priorOffer = findAnyOfferForTeam(prospectId, team);
+  if (priorOffer){
+    const status = priorOffer.rescinded ? 'already offered and rescinded' : 'already offered';
+    return { ok: false, error: 'Offer denied: ' + team + ' has ' + status + ' #' + (prospect ? prospect.rank : prospectId.replace(/^r/, '')) + (prospect ? ' ' + prospect.name : '') + '.' };
+  }
+  visits = detectVisits(text, visits);
+  if (visits.campus){
+    const normalizedCampus = normalizeCampusVisitLabel(visits.campusLabel);
+    if (!normalizedCampus.ok) return { ok: false, error: 'Offer denied: campus visit must use Week X vs. Team Name, no 3-4 letter all-caps abbreviations.' };
+    visits.campusLabel = normalizedCampus.value;
+  }
+  const existingOffer = findOfferForTeam(prospectId, team);
+  const errors = visitLimitErrors(team, visits, existingOffer);
+  if (errors.length) return { ok: false, error: errors.join(' ') };
+  if (!DB.offersByProspect[prospectId]) DB.offersByProspect[prospectId] = [];
+  DB.offersByProspect[prospectId].push({
+    id: uid('o'), team: team, coach: coach || '', text: text || '',
+    promises: (promises || []).map(function(p){
+      return { id: uid('pr'), text: p.text || '', title: p.title || p.category || 'other', category: p.category || p.title || 'other' };
+    }),
+    visits: visits,
+    createdAt: Date.now()
+  });
+  return { ok: true };
+}
+
+function promiseCategory(text){
+  const t = (text || '').toLowerCase();
+  if (/play|snap|start|starter|role|touch|carry|target|minutes/.test(t)) return 'playing_time';
+  if (/win|home game|bowl|playoff|championship|postseason|ranked/.test(t)) return 'wins_bowls';
+  if (/develop|draft|nfl|award|all-american|heisman|improve/.test(t)) return 'development';
+  if (/campus|facility|facilities|culture|tradition|environment|education|university|academic/.test(t)) return 'culture_facilities';
+  return 'other';
+}
+
+function findPitchTitle(text, promiseStart){
+  const before = (text || '').slice(0, promiseStart);
+  const matches = before.match(/(?:^|\n)\s*([A-Za-z][A-Za-z &/-]{1,34}):/g);
+  if (!matches || !matches.length) return null;
+  return matches[matches.length - 1].replace(/^\s*/, '').replace(/:$/, '').trim();
+}
+
+function extractPromises(text){
+  const promises = [];
+  const seen = {};
+  const re = /\*\*([\s\S]*?)\*\*/g;
+  let match;
+  while ((match = re.exec(text || ''))){
+    const promise = match[1].replace(/\s+/g, ' ').trim();
+    if (!promise || seen[promise]) continue;
+    seen[promise] = true;
+    const title = findPitchTitle(text, match.index) || promiseCategory(promise).replace(/_/g, ' ');
+    promises.push({ text: promise, title: title, category: promiseCategory(promise) });
+  }
+  return promises;
+}
+
+function titleForPromise(offer, promise){
+  if (promise.title && promise.title !== promise.category) return promise.title;
+  const text = offer ? offer.text || '' : '';
+  const promiseText = promise.text || '';
+  const boldNeedle = '**' + promiseText + '**';
+  let idx = text.indexOf(boldNeedle);
+  if (idx === -1) idx = text.indexOf(promiseText);
+  if (idx !== -1){
+    const title = findPitchTitle(text, idx);
+    if (title) return title;
+  }
+  if (promise.title) return promise.title;
+  if (promise.category) return String(promise.category).replace(/_/g, ' ');
+  return 'Promise';
+}
+
+function visitSummary(visits){
+  visits = normalizeVisits(visits);
+  const parts = [];
+  if (visits.coach) parts.push('coach');
+  if (visits.campus) parts.push('campus' + (visits.campusLabel ? ': ' + visits.campusLabel : ''));
+  return parts.length ? parts.join(' + ') : 'none';
+}
+
+function findOfferById(prospectId, offerId){
+  const offer = (DB.offersByProspect[prospectId] || []).find(function(o){ return o.id === offerId; });
+  return offer || null;
+}
+
+function openEditOffer(prospectId, offerId){
+  UI.editOfferTarget = { prospectId: prospectId, offerId: offerId };
+  UI.editError = null;
+  render();
+}
+
+function closeEditOffer(){
+  UI.editOfferTarget = null;
+  UI.editError = null;
+  UI.pendingVisitEdit = null;
+  render();
+}
+
+function saveOfferEdit(form, confirmedVisits){
+  confirmedVisits = confirmedVisits || {};
+  if (!SESSION || !UI.editOfferTarget) return;
+  const prospectId = UI.editOfferTarget.prospectId;
+  const offerId = UI.editOfferTarget.offerId;
+  const prospect = DB.prospects[prospectId];
+  const offer = findOfferById(prospectId, offerId);
+  if (!offer || offer.team !== SESSION.team || offer.rescinded || (prospect && prospect.commitTeam)){
+    UI.editError = 'That offer is no longer editable.';
+    render(); return;
+  }
+  const oldVisits = normalizeVisits(offer.visits);
+  const newVisits = normalizeVisits(offer.visits);
+  newVisits.coach = oldVisits.coach || !!(form && form.coach);
+  newVisits.campus = oldVisits.campus || !!(form && form.campus);
+  if (newVisits.campus){
+    const normalizedCampus = normalizeCampusVisitLabel((form && form.campusLabel) || oldVisits.campusLabel);
+    if (!normalizedCampus.ok){
+      UI.editError = normalizedCampus.reason === 'abbr' ? 'Use the full team name, not a 3-4 letter all-caps abbreviation.' : 'Campus visit must use: Week X vs. Team Name';
+      render(); return;
+    }
+    newVisits.campusLabel = normalizedCampus.value;
+  } else {
+    newVisits.campusLabel = '';
+  }
+  const errors = visitLimitErrors(offer.team, newVisits, offer);
+  if (errors.length){
+    UI.editError = errors.join(' ');
+    render(); return;
+  }
+  const addingCoach = !oldVisits.coach && newVisits.coach;
+  const addingCampus = !oldVisits.campus && newVisits.campus;
+  if ((addingCoach && !confirmedVisits.coach) || (addingCampus && !confirmedVisits.campus)){
+    UI.pendingVisitEdit = { form: Object.assign({}, form, { campusLabel: newVisits.campusLabel }), coach: addingCoach, campus: addingCampus };
+    UI.editError = null;
+    render(); return;
+  }
+  let nextText = offer.text || '';
+  nextText = syncCampusVisitText(nextText, newVisits);
+  nextText = syncCoachVisitText(nextText, newVisits);
+  const changes = [];
+  if (oldVisits.coach !== newVisits.coach) changes.push('Coach visit: ' + (oldVisits.coach ? 'yes' : 'no') + ' -> ' + (newVisits.coach ? 'yes' : 'no'));
+  if (oldVisits.campus !== newVisits.campus || oldVisits.campusLabel !== newVisits.campusLabel){
+    changes.push('Campus visit: ' + visitSummary({ campus: oldVisits.campus, campusLabel: oldVisits.campusLabel }) + ' -> ' + visitSummary({ campus: newVisits.campus, campusLabel: newVisits.campusLabel }));
+  }
+  if (!changes.length){
+    closeEditOffer();
+    return;
+  }
+  offer.editHistory = offer.editHistory || [];
+  offer.editHistory.push({ id: uid('eh'), editedAt: Date.now(), editor: SESSION.team, changes: changes.slice(0, 8) });
+  if (offer.editHistory.length > 20) offer.editHistory = offer.editHistory.slice(-20);
+  offer.text = nextText;
+  offer.visits = newVisits;
+  UI.editOfferTarget = null;
+  UI.editError = null;
+  saveDB(); render();
+}
+
+function findProspectFromOffer(text){
+  const raw = text || '';
+  const offerRank = raw.match(/\boffer\s+#\s*(\d+)\b/i);
+  const rank = offerRank ? parseInt(offerRank[1], 10) : null;
+  if (rank && DB.prospects['r' + rank]) return DB.prospects['r' + rank];
+
+  const exactMatches = Object.keys(DB.prospects).map(function(id){ return DB.prospects[id]; }).filter(function(p){
+    return p.name && raw.toLowerCase().indexOf(p.name.toLowerCase()) !== -1;
+  });
+  if (exactMatches.length === 1) return exactMatches[0];
+
+  const genericRank = raw.match(/#\s*(\d+)\b/);
+  const fallbackRank = genericRank ? parseInt(genericRank[1], 10) : null;
+  if (fallbackRank && DB.prospects['r' + fallbackRank]) return DB.prospects['r' + fallbackRank];
+  return null;
+}
+
+function parseOfferSheet(rawText){
+  const text = stripWrappingQuotes(rawText);
+  if (!text) return null;
+  const prospect = findProspectFromOffer(text);
+  return {
+    rank: prospect ? prospect.rank : null,
+    offerText: text,
+    visits: detectVisits(text, null),
+    promises: extractPromises(text)
+  };
+}
+
+async function submitOfferSheet(rawText){
+  if (!SESSION || !rawText.trim()) return;
+  UI.submitting = true; render();
+  try {
+    const parsed = parseOfferSheet(rawText);
+    let matched = 0, unmatched = 0, limitError = null;
+    if (parsed){
+      const item = parsed;
+      const visits = detectVisits(item.offerText || rawText, item.visits);
+      const pid = UI.submitTargetId || (item.rank ? 'r' + item.rank : null);
+      if (pid && DB.prospects[pid]){
+        const result = addOfferDirect(pid, SESSION.team, (DB.teams[SESSION.team] || {}).coach, item.offerText, item.promises, visits);
+        if (result.ok) matched++; else limitError = result.error;
+      } else {
+        DB.unmatched.push({ id: uid('u'), team: SESSION.team, coach: (DB.teams[SESSION.team] || {}).coach,
+          offerText: item.offerText || rawText, promises: item.promises || [], visits: visits, createdAt: Date.now() });
+        unmatched++;
+      }
+    }
+    UI.lastSummary = limitError ? { errorText: limitError } : { matched: matched, unmatched: unmatched, total: parsed ? 1 : 0, dismissAt: Date.now() + 6000 };
+  } catch (e) {
+    UI.lastSummary = { error: true };
+  }
+  UI.submitting = false;
+  UI.showSubmitModal = false;
+  UI.submitTargetId = null;
+  saveDB(); render();
+}
+
+function assignUnmatched(id, rankValue){
+  const rank = parseInt(rankValue, 10);
+  const item = DB.unmatched.find(function(u){ return u.id === id; });
+  if (!item) return;
+  const pid = 'r' + rank;
+  if (!rank || !DB.prospects[pid]){
+    UI.assignError[id] = 'No open prospect with rank #' + rankValue + '.';
+    render(); return;
+  }
+  const result = addOfferDirect(pid, item.team, item.coach, item.offerText, item.promises, item.visits);
+  if (!result.ok){
+    UI.assignError[id] = result.error;
+    render(); return;
+  }
+  DB.unmatched = DB.unmatched.filter(function(u){ return u.id !== id; });
+  delete UI.assignError[id];
+  saveDB(); render();
+}
+
+function requestReset(kind){
+  UI.confirmReset = kind;
+  render();
+}
+
+function cancelReset(){
+  UI.confirmReset = null;
+  render();
+}
+
+function confirmReset(){
+  if (UI.confirmReset === 'offers'){
+    DB.offersByProspect = {};
+    DB.unmatched = [];
+    DB.commitSheetUrl = '';
+    DB.commitUpdatedAt = null;
+    UI.lastSummary = null;
+    UI.rescindError = null;
+    UI.assignError = {};
+  } else if (UI.confirmReset === 'class'){
+    DB.fullRoster = [];
+    DB.released = {};
+    DB.wave1Released = false;
+    DB.wave2Released = false;
+    DB.prospects = {};
+    DB.threads = [];
+    DB.offersByProspect = {};
+    DB.unmatched = [];
+    UI.threadId = null;
+    UI.view = 'setup';
+    UI.classFileName = '';
+    UI.classError = null;
+    UI.lastSummary = null;
+    UI.rescindError = null;
+    UI.assignError = {};
+  }
+  UI.confirmReset = null;
+  saveDB(); render();
+}
+
+// ---------- Rendering ----------
+
+function render(){
+  const root = document.getElementById('rb-app');
+  if (!dbReady || !sessionReady){
+    root.innerHTML = '<p class="rb-mono" style="color:var(--slate)">Loading league data...</p>';
+    return;
+  }
+  let html = renderNav();
+  if (UI.lastSummary) html += renderSummaryBanner();
+  if (DB.unmatched.length) html += renderUnmatchedReview();
+  if (UI.view === 'feed') html += renderFeed();
+  else if (UI.view === 'setup') html += renderClassSetup();
+  else if (UI.view === 'thread') html += renderThread();
+  else if (UI.view === 'prospect') html += renderProspectDetail();
+  else if (UI.view === 'myoffers') html += renderMyOffers();
+  else if (UI.view === 'mycommits') html += renderMyCommits();
+  if (UI.showSubmitModal) html += renderSubmitModal();
+  if (UI.editOfferTarget) html += renderEditOfferModal();
+  if (UI.pendingVisitEdit) html += renderVisitConfirmModal();
+  if (UI.confirmReset) html += renderResetConfirmModal();
+  root.innerHTML = html;
+  bindEvents();
+  scheduleSummaryCountdown();
+}
+
+function renderNav(){
+  let html = '<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:20px;flex-wrap:wrap;gap:14px;">';
+  html += '<div>' +
+      '<div class="rb-h" style="font-size:22px;font-weight:700;letter-spacing:0.06em;text-transform:none;">NZCFL RecruitHQ</div>' +
+      '<div class="rb-mono" style="font-size:12px;color:var(--slate);margin-top:2px;">every offer, on the record</div>' +
+    '</div>';
+  html += '<div style="display:flex;flex-direction:column;align-items:flex-end;gap:10px;">';
+  if (SESSION){
+    html += '<div style="font-size:12px;color:var(--slate);display:flex;align-items:center;gap:6px;">Coaching for ' + renderTeamCoachBadge(SESSION.team) + '<span>&middot;</span><a href="#" id="rb-logout" style="color:var(--gold);text-decoration:none;">Log out</a></div>';
+  }
+  html += '<div style="display:flex;gap:8px;">' +
+      '<button class="rb-btn" data-nav="feed">Prospect Board</button>' +
+      (SESSION ? '<button class="rb-btn" data-nav="myoffers">My Offers</button>' : '') +
+      (SESSION ? '<button class="rb-btn" data-nav="mycommits">My Commits</button>' : '') +
+      '<button class="rb-btn" data-nav="setup">Settings</button>' +
+    '</div>';
+  if (!SESSION){
+    html += '<div style="display:flex;gap:6px;align-items:center;">' +
+      '<input class="rb-input" id="rb-login-team" placeholder="Team name" style="width:140px;" />' +
+      '<input class="rb-input" id="rb-login-pin" placeholder="PIN" style="width:80px;" />' +
+      '<button class="rb-btn" id="rb-login-btn">Log in</button>' +
+    '</div>';
+    if (UI.loginError) html += '<div style="font-size:11px;color:var(--alert);">' + escapeHtml(UI.loginError) + '</div>';
+  }
+  html += '</div></div>';
+  return html;
+}
+
+function renderSummaryBanner(){
+  const s = UI.lastSummary;
+  let text;
+  if (s.error) text = 'Something went wrong reading that offer sheet. Try again.';
+  else if (s.errorText) text = s.errorText;
+  else {
+    const seconds = s.dismissAt ? Math.max(0, Math.ceil((s.dismissAt - Date.now()) / 1000)) : 0;
+    text = s.unmatched ? 'Offer submitted; ' + s.unmatched + ' need manual review below.' : 'Offer submitted';
+    if (seconds) text += ' · ' + seconds + 's';
+  }
+  return '<div class="rb-card" style="padding:10px 16px;margin-bottom:14px;display:flex;justify-content:space-between;align-items:center;font-size:13px;">' +
+    '<span>' + escapeHtml(text) + '</span>' +
+    '<a href="#" id="rb-dismiss-summary" style="color:var(--slate);text-decoration:none;">dismiss</a>' +
+  '</div>';
+}
+
+function scheduleSummaryCountdown(){
+  if (summaryTimer) {
+    clearTimeout(summaryTimer);
+    summaryTimer = null;
+  }
+  if (!UI.lastSummary || !UI.lastSummary.dismissAt) return;
+  const ms = UI.lastSummary.dismissAt - Date.now();
+  if (ms <= 0){
+    UI.lastSummary = null;
+    render();
+    return;
+  }
+  summaryTimer = setTimeout(function(){
+    if (!UI.lastSummary || !UI.lastSummary.dismissAt) return;
+    if (Date.now() >= UI.lastSummary.dismissAt) UI.lastSummary = null;
+    render();
+  }, Math.min(1000, ms));
+}
+
+function scrollPageTop(){
+  if (typeof window !== 'undefined' && window.scrollTo) window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
+}
+
+function renderUnmatchedReview(){
+  let html = '<div class="rb-card" style="padding:14px 18px;margin-bottom:16px;">';
+  html += '<div class="rb-h" style="font-size:14px;margin-bottom:8px;">Needs review (' + DB.unmatched.length + ')</div>';
+  DB.unmatched.forEach(function(u){
+    html += '<div style="border-top:1px solid var(--hairline);padding:10px 0;">';
+    html += '<div style="font-size:12px;color:var(--slate);margin-bottom:4px;">' + escapeHtml(u.team) + ' could not be matched to a prospect automatically:</div>';
+    html += '<div style="font-size:13px;white-space:pre-wrap;max-height:80px;overflow:auto;margin-bottom:8px;" class="rb-scrollbar">' + escapeHtml(u.offerText) + '</div>';
+    html += '<div style="display:flex;gap:6px;align-items:center;">' +
+      '<span style="font-size:12px;color:var(--slate);">Attach to rank #</span>' +
+      '<input class="rb-input" style="width:80px;" id="rb-rank-' + u.id + '" placeholder="206" />' +
+      '<button class="rb-btn" data-assign="' + u.id + '">Attach</button>' +
+    '</div>';
+    if (UI.assignError[u.id]) html += '<div style="font-size:11px;color:var(--alert);margin-top:4px;">' + escapeHtml(UI.assignError[u.id]) + '</div>';
+    html += '</div>';
+  });
+  html += '</div>';
+  return html;
+}
+
+function renderVisitLedger(){
+  const usage = getTeamVisitUsage();
+  if (!SESSION) return '';
+  const row = usage[SESSION.team] || { coach: 0, campus: 0 };
+  const visitRows = getVisitOfferRowsForTeam(SESSION.team);
+  let html = '<div class="rb-card" style="padding:14px 18px;margin-bottom:16px;">';
+  html += '<details>';
+  html += '<summary class="rb-offer-summary" style="list-style:none;cursor:pointer;display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;">';
+  html += '<span class="rb-h" style="font-size:14px;">My Visit Tracker</span>';
+  html += '<span class="rb-mono" style="font-size:12px;color:var(--slate);">Coach visits: ' + row.coach + '/10 &middot; Campus visits: ' + row.campus + '/17</span>';
+  html += '</summary>';
+  if (visitRows.length){
+    html += '<div style="margin-top:10px;">';
+    visitRows.forEach(function(visitRow){ html += visitLineForOffer(visitRow); });
+    html += '</div>';
+  } else {
+    html += '<div style="font-size:13px;color:var(--slate);margin-top:10px;">No visits used yet.</div>';
+  }
+  html += '</details></div>';
+  return html;
+}
+
+function getOfferRowsForTeam(team){
+  const rows = [];
+  Object.keys(DB.offersByProspect || {}).forEach(function(pid){
+    const p = DB.prospects[pid];
+    (DB.offersByProspect[pid] || []).forEach(function(o){
+      if (o.team === team) rows.push({ prospect: p, prospectId: pid, offer: o });
+    });
+  });
+  rows.sort(function(a,b){
+    const ar = a.prospect ? a.prospect.rank : 99999;
+    const br = b.prospect ? b.prospect.rank : 99999;
+    return ar - br;
+  });
+  return rows;
+}
+
+function getVisitOfferRowsForTeam(team){
+  return getOfferRowsForTeam(team).filter(function(row){
+    const visits = normalizeVisits(row.offer.visits);
+    return visits.coach || visits.campus;
+  });
+}
+
+function visitLineForOffer(row){
+  const p = row.prospect || {};
+  const visits = normalizeVisits(row.offer.visits);
+  const labels = [];
+  if (visits.coach) labels.push('Coach');
+  if (visits.campus) labels.push('Campus' + (visits.campusLabel ? ': ' + visits.campusLabel : ''));
+  return '<div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;border-top:1px solid var(--hairline);padding:8px 0;font-size:13px;">' +
+    '<span><span class="rb-mono" style="color:var(--slate);">#' + escapeHtml(p.rank || '?') + '</span> <span title="' + escapeHtml(p.name || '') + '">' + escapeHtml(shortText(p.name || 'Unknown prospect', 24)) + '</span> <span class="rb-mono" style="color:var(--slate);">' + escapeHtml(p.position || '') + '</span></span>' +
+    '<span class="rb-mono" style="color:var(--gold);font-size:11px;">' + escapeHtml(labels.join(' + ')) + '</span>' +
+  '</div>';
+}
+
+function renderMyOffers(){
+  if (!SESSION){
+    return '<div class="rb-card" style="padding:32px;text-align:center;color:var(--slate);">Log in to view your offers.</div>';
+  }
+  const rows = getOfferRowsForTeam(SESSION.team);
+  let html = renderVisitLedger();
+  html += '<div class="rb-card" style="padding:18px 20px;margin-bottom:14px;">';
+  html += '<div class="rb-h" style="font-size:18px;margin-bottom:6px;">My Offers</div>';
+  html += '<div style="font-size:13px;color:var(--slate);margin-bottom:12px;">' + rows.length + ' offer' + (rows.length === 1 ? '' : 's') + ' from ' + escapeHtml(SESSION.team) + '.</div>';
+  html += '<div style="margin-bottom:12px;"><button class="rb-btn rb-btn-gold" id="rb-open-submit">Submit offer</button></div>';
+  html += '<input class="rb-input" id="rb-my-offer-search" placeholder="Search your offers by recruit name, rank, position, or hometown" />';
+  if (UI.rescindError) html += '<div style="font-size:12px;color:var(--alert);margin-top:8px;">' + escapeHtml(UI.rescindError) + '</div>';
+  html += '</div>';
+
+  if (!rows.length){
+    html += '<div class="rb-card" style="padding:28px;text-align:center;color:var(--slate);">No offers yet.</div>';
+    return html;
+  }
+  html += '<div style="display:flex;flex-direction:column;gap:10px;">';
+  rows.forEach(function(row){
+    const p = row.prospect || {};
+    const o = row.offer;
+    const searchText = [p.rank, '#' + p.rank, p.name, p.position, p.hometown, p.storyline].join(' ').toLowerCase();
+    html += '<div class="rb-card" data-my-offer-card="1" data-search="' + escapeHtml(searchText) + '" style="padding:14px 18px;">';
+    html += '<details>';
+    html += '<summary class="rb-offer-summary" style="list-style:none;cursor:pointer;display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:16px;">';
+    html += '<span style="min-width:0;display:flex;flex-direction:column;gap:10px;">';
+    html += '<span style="min-width:0;display:flex;align-items:baseline;gap:10px;white-space:nowrap;overflow:hidden;">' +
+      '<span class="rb-mono" style="color:var(--slate);flex:0 0 auto;">#' + escapeHtml(p.rank || '?') + '</span>' +
+      '<strong data-open-prospect="' + escapeHtml(row.prospectId) + '" title="' + escapeHtml(p.name || '') + '" style="overflow:hidden;text-overflow:ellipsis;color:var(--chalk);cursor:pointer;">' + escapeHtml(shortText(p.name || 'Unknown prospect', 24)) + '</strong>' +
+      '<span class="rb-mono" style="color:var(--slate);font-size:13px;flex:0 0 auto;">' + escapeHtml(p.position || '') + (p.rating ? ' &middot; ' + escapeHtml(p.rating) : '') + '</span>' +
+      (p.hometown ? '<span class="rb-mono" style="color:var(--slate);font-size:13px;flex:0 0 auto;">&middot;</span><span class="rb-mono" title="' + escapeHtml(p.hometown) + '" style="color:var(--slate);font-size:13px;overflow:hidden;text-overflow:ellipsis;">' + escapeHtml(shortText(p.hometown, 24)) + '</span>' : '') +
+    '</span>';
+    html += '<span style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">' + visitBadges(o.visits, true) + '</span>';
+    html += '</span>';
+    html += '<span style="display:flex;align-items:center;justify-content:flex-end;gap:8px;white-space:nowrap;">' + (o.rescinded ? '<span class="rb-mono" style="color:var(--alert);font-size:12px;">rescinded</span>' : (p.commitTeam ? '<span class="rb-mono" style="color:var(--slate);font-size:12px;">committed</span>' : '<button class="rb-btn" data-edit-offer="' + escapeHtml(row.prospectId) + ':' + escapeHtml(o.id) + '">Edit</button><button class="rb-btn" data-rescind-offer="' + escapeHtml(row.prospectId) + ':' + escapeHtml(o.id) + '">Rescind</button>')) + '</span>';
+    html += '</summary>';
+    html += '<div style="margin-top:10px;">' + renderOfferBlock(o, p.commitTeam ? { collapsed: true } : { expanded: true }) + '</div>';
+    html += '</details>';
+    html += '</div>';
+  });
+  html += '</div>';
+  return html;
+}
+
+function getCommitRowsForTeam(team){
+  return Object.keys(DB.prospects || {}).map(function(pid){ return DB.prospects[pid]; }).filter(function(p){
+    return p && p.commitTeam && p.commitTeam.toLowerCase() === team.toLowerCase();
+  }).sort(function(a,b){ return a.rank - b.rank; });
+}
+
+function renderPromiseChips(offers){
+  const chips = [];
+  (offers || []).forEach(function(o){
+    (o.promises || []).forEach(function(p){
+      if (chips.length >= 3) return;
+      const title = titleForPromise(o, p);
+      chips.push('<span class="rb-tag" style="display:block;margin:0 0 6px 0;white-space:normal;line-height:1.35;"><span class="rb-mono" style="color:var(--gold);font-size:10px;text-transform:uppercase;letter-spacing:0.05em;">' + escapeHtml(String(title).replace(/_/g, ' ')) + ':</span> ' + escapeHtml(p.text || '') + '</span>');
+    });
+  });
+  if (!chips.length) return '<span class="rb-tag" style="display:inline-block;margin:0;">No promises recorded</span>';
+  return chips.join('');
+}
+
+function renderMyCommits(){
+  if (!SESSION){
+    return '<div class="rb-card" style="padding:32px;text-align:center;color:var(--slate);">Log in to view your commits.</div>';
+  }
+  const commits = getCommitRowsForTeam(SESSION.team);
+  let html = '<div class="rb-card" style="padding:18px 20px;margin-bottom:14px;">';
+  html += '<div class="rb-h" style="font-size:18px;margin-bottom:6px;">My Commits</div>';
+  html += '<div style="font-size:13px;color:var(--slate);margin-bottom:12px;">' + commits.length + ' commit' + (commits.length === 1 ? '' : 's') + ' for ' + escapeHtml(SESSION.team) + '.</div>';
+  html += '<input class="rb-input" id="rb-my-commit-search" placeholder="Search commits by recruit name, rank, position, hometown, or promise" />';
+  html += '</div>';
+  if (!commits.length){
+    html += '<div class="rb-card" style="padding:28px;text-align:center;color:var(--slate);">No commits yet.</div>';
+    return html;
+  }
+  html += '<div style="display:flex;flex-direction:column;gap:10px;">';
+  commits.forEach(function(p){
+    const offers = (DB.offersByProspect[p.id] || []).filter(function(o){ return o.team === SESSION.team; });
+    const promiseSearch = offers.map(function(o){ return (o.promises || []).map(function(pr){ return pr.text || ''; }).join(' '); }).join(' ');
+    const searchText = [p.rank, '#' + p.rank, p.name, p.position, p.hometown, promiseSearch].join(' ').toLowerCase();
+    html += '<div class="rb-card" data-my-commit-card="1" data-search="' + escapeHtml(searchText) + '" style="padding:14px 18px;">';
+    html += '<details>';
+    html += '<summary class="rb-offer-summary" style="list-style:none;cursor:pointer;">';
+    html += '<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;">';
+    html += '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;"><span><span class="rb-mono" style="color:var(--slate);">#' + p.rank + '</span> <strong data-open-prospect="' + escapeHtml(p.id) + '" title="' + escapeHtml(p.name) + '" style="color:var(--chalk);cursor:pointer;">' + escapeHtml(shortText(p.name, 24)) + '</strong> <span class="rb-mono" style="color:var(--slate);font-size:13px;">' + escapeHtml(p.position || '') + (p.rating ? ' &middot; ' + escapeHtml(p.rating) : '') + (p.hometown ? ' &middot; <span title="' + escapeHtml(p.hometown) + '">' + escapeHtml(shortText(p.hometown, 24)) + '</span>' : '') + '</span></span></div>';
+    html += '<span style="display:block;min-width:280px;max-width:100%;flex:1 1 360px;">' + renderPromiseChips(offers) + '</span>';
+    html += '</div>';
+    html += '</summary>';
+    html += '<div style="margin-top:12px;">';
+    if (offers.length){
+      offers.forEach(function(o){ html += renderOfferBlock(o, { expanded: true, fullText: true, hideHeader: true }); });
+    } else {
+      html += '<div style="font-size:13px;color:var(--slate);">No offer from your school is recorded for this commit.</div>';
+    }
+    html += '</div></details>';
+    html += '</div>';
+  });
+  html += '</div>';
+  return html;
+}
+
+function renderFeed(){
+  if (!DB.threads.length){
+    return '<div class="rb-card" style="padding:40px;text-align:center;">' +
+      '<div class="rb-h" style="font-size:18px;margin-bottom:8px;">The board is empty</div>' +
+      '<div style="color:var(--slate);font-size:14px;margin-bottom:16px;">Load the class and open the first wave from Settings.</div>' +
+      '<button class="rb-btn rb-btn-gold" data-nav="setup">Settings</button>' +
+    '</div>';
+  }
+  let html = '<input class="rb-input" id="rb-board-search" placeholder="Search offers by recruit name, rank, position, or hometown" style="margin-bottom:14px;" />';
+  html += '<div id="rb-board-cards" style="display:flex;flex-direction:column;gap:10px;">';
+  DB.threads.forEach(function(t){
+    const offerCount = t.prospectIds.reduce(function(sum, pid){ return sum + ((DB.offersByProspect[pid] || []).length); }, 0);
+    const offerLabel = offerCount + ' offer' + (offerCount === 1 ? '' : 's') + ' on record';
+    const uncommittedCount = t.prospectIds.reduce(function(sum, pid){
+      const p = DB.prospects[pid];
+      return sum + (p && !p.commitTeam ? 1 : 0);
+    }, 0);
+    const uncommittedLabel = uncommittedCount + ' uncommitted';
+    const threadSearch = (t.prospectIds || []).map(function(pid){
+      const p = DB.prospects[pid] || {};
+      return [p.rank, '#' + p.rank, p.name, p.position, p.hometown].join(' ');
+    }).join(' ').toLowerCase();
+    html += '<div class="rb-card" style="padding:16px 20px;cursor:pointer;" data-board-card="1" data-search="' + escapeHtml(threadSearch) + '" data-open-thread="' + t.id + '">' +
+      '<div style="display:flex;justify-content:space-between;align-items:center;">' +
+        '<div>' +
+          '<div class="rb-h" style="font-size:16px;font-weight:600;">' + escapeHtml(t.title) + '</div>' +
+          '<div style="font-size:13px;color:var(--slate);margin-top:4px;">' + rankRangeForThread(t) + ' &middot; ' + uncommittedLabel + ' &middot; ' + offerLabel + '</div>' +
+        '</div>' +
+        '<div>' + starsOrLabel(t.stars) + '</div>' +
+      '</div>' +
+    '</div>';
+	  });
+  html += '</div>';
+  html += '<div id="rb-board-player-results" style="display:none;flex-direction:column;gap:10px;">';
+  DB.threads.forEach(function(t){
+    (t.prospectIds || []).forEach(function(pid){
+      const p = DB.prospects[pid] || {};
+      const searchText = [p.rank, '#' + p.rank, p.name, p.position, p.hometown].join(' ').toLowerCase();
+      html += renderProspectBoardCard(pid, searchText);
+    });
+  });
+  html += '</div>';
+  return html;
+}
+
+function renderProspectBoardCard(pid, searchAttr){
+  const p = DB.prospects[pid];
+  if (!p) return '';
+  const offers = DB.offersByProspect[pid] || [];
+  const searchText = searchAttr || [p.rank, '#' + p.rank, p.name, p.position, p.hometown].join(' ').toLowerCase();
+  let html = '<div class="rb-card" data-prospect-card="1" data-search="' + escapeHtml(searchText) + '" data-open-prospect="' + pid + '" style="padding:14px 18px;cursor:pointer;' + (p.commitTeam ? committedCardStyle(p.commitTeam) : '') + '">';
+  html += '<div style="display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:10px;">';
+  html += '<div style="min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' +
+    '<span class="rb-mono" style="color:var(--slate);">#' + p.rank + '</span> ' +
+    '<span title="' + escapeHtml(p.name) + '" style="font-weight:600;color:var(--chalk);">' + escapeHtml(shortText(p.name, 24)) + '</span> ' +
+    '<span class="rb-mono" style="color:var(--slate);font-size:13px;">' + escapeHtml(p.position) + (p.rating ? ' &middot; ' + escapeHtml(p.rating) : '') + '</span>' +
+    (p.hometown ? '<span style="color:var(--slate);font-size:13px;"> &middot; <span title="' + escapeHtml(p.hometown) + '">' + escapeHtml(shortText(p.hometown, 28)) + '</span></span>' : '') +
+  '</div>';
+  html += '<div style="display:flex;align-items:center;gap:8px;white-space:nowrap;">' + (p.commitTeam ? '' : offerCountTag(pid)) + (p.commitTeam ? renderCommittedTag(p.commitTeam) : '') + '</div>';
+  html += '</div>';
+  if (!p.commitTeam) html += renderStorylineLine(p.storyline, 'margin-top:6px;');
+  if (offers.length && !p.commitTeam){
+    html += '<div style="margin-top:10px;border-top:1px solid var(--hairline);padding-top:10px;display:flex;flex-direction:column;gap:10px;">';
+    offers.forEach(function(o){ html += renderOfferBlock(o, { collapsed: true }); });
+    html += '</div>';
+  }
+  html += '</div>';
+  return html;
+}
+
+function renderClassSetup(){
+  let html = renderAdminModeCard();
+  if (!UI.adminMode) return html;
+
+  html += '<div class="rb-card" style="padding:24px;max-width:640px;">';
+  html += '<div class="rb-h" style="font-size:18px;margin-bottom:14px;">Season class setup</div>';
+  html += '<input class="rb-file-input" type="file" id="rb-class-file" accept=".csv,text/csv" />';
+  html += '<label class="rb-file-label" for="rb-class-file">Choose CSV file</label>';
+  html += '<span class="rb-mono" style="font-size:12px;color:var(--slate);margin-left:10px;">' + escapeHtml(UI.classFileName || 'No file selected') + '</span>';
+  if (UI.classError) html += '<div style="font-size:12px;color:var(--alert);margin-top:8px;">' + escapeHtml(UI.classError) + '</div>';
+  html += '</div>';
+
+  if (DB.fullRoster.length && (!DB.wave1Released || !DB.wave2Released)){
+    const maxRank = DB.fullRoster[DB.fullRoster.length - 1].rank;
+    html += '<div class="rb-card" style="padding:20px 24px;max-width:640px;margin-top:14px;">';
+    html += '<div class="rb-mono" style="font-size:12px;color:var(--slate);margin-bottom:12px;">' + DB.fullRoster.length + ' prospects loaded, ranked #1&ndash;#' + maxRank + '</div>';
+    html += '<div style="display:flex;gap:10px;flex-wrap:wrap;">';
+    if (!DB.wave1Released) html += '<button class="rb-btn rb-btn-gold" id="rb-release-1">Open class (#1&ndash;500)</button>';
+    if (!DB.wave2Released) html += '<button class="rb-btn" id="rb-release-2">Open the rest (#501&ndash;' + maxRank + ')</button>';
+    html += '</div></div>';
+  }
+  html += '<div class="rb-card" style="padding:20px 24px;max-width:640px;margin-top:14px;">';
+  html += '<div class="rb-h" style="font-size:16px;margin-bottom:12px;">Commit Sheet</div>';
+  if (DB.commitSheetUrl && !UI.commitEditing){
+    html += '<div style="border:1px solid var(--hairline);border-radius:8px;background:var(--panel-alt);padding:10px 12px;display:flex;justify-content:space-between;gap:10px;align-items:center;flex-wrap:wrap;">';
+    html += '<span class="rb-mono" style="font-size:12px;color:var(--slate);max-width:420px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + escapeHtml(DB.commitSheetUrl) + '</span>';
+    html += '<button class="rb-btn" id="rb-change-commit-sheet">Change sheet</button>';
+    html += '</div>';
+  } else {
+    html += '<input class="rb-input" id="rb-commit-sheet-url" placeholder="Google Sheets URL or published CSV URL" value="' + escapeHtml(DB.commitSheetUrl || '') + '" />';
+    html += '<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:10px;">';
+    html += '<button class="rb-btn rb-btn-gold" id="rb-save-commit-sheet">Save commit sheet</button>';
+    if (DB.commitSheetUrl) html += '<button class="rb-btn" id="rb-cancel-commit-sheet">Cancel</button>';
+    html += '</div>';
+  }
+  html += '<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:10px;">';
+  html += '<button class="rb-btn rb-btn-gold" id="rb-update-commits" ' + (UI.updatingCommits || !DB.commitSheetUrl ? 'disabled' : '') + '>' + (UI.updatingCommits ? 'Updating...' : 'Update commits') + '</button>';
+  if (DB.commitUpdatedAt) html += '<span class="rb-mono" style="font-size:12px;color:var(--slate);">Last update: ' + escapeHtml(new Date(DB.commitUpdatedAt).toLocaleString()) + '</span>';
+  html += '</div>';
+  if (UI.commitStatus) html += '<div style="font-size:12px;color:var(--gold);margin-top:8px;">' + escapeHtml(UI.commitStatus) + '</div>';
+  if (UI.commitError) html += '<div style="font-size:12px;color:var(--alert);margin-top:8px;">' + escapeHtml(UI.commitError) + '</div>';
+  html += '</div>';
+  html += '<div class="rb-card" style="padding:20px 24px;max-width:640px;margin-top:14px;">';
+  html += '<div class="rb-h" style="font-size:16px;margin-bottom:12px;">Team Branding</div>';
+  html += '<input class="rb-file-input" type="file" id="rb-branding-file" accept=".json,.gz,application/json" />';
+  html += '<label class="rb-file-label" for="rb-branding-file">Import league export</label>';
+  html += '<span class="rb-mono" style="font-size:12px;color:var(--slate);margin-left:10px;">' + escapeHtml(UI.brandingFileName || 'No file selected') + '</span>';
+  if (UI.brandingStatus) html += '<div style="font-size:12px;color:var(--gold);margin-top:8px;">' + escapeHtml(UI.brandingStatus) + '</div>';
+  if (UI.brandingError) html += '<div style="font-size:12px;color:var(--alert);margin-top:8px;">' + escapeHtml(UI.brandingError) + '</div>';
+  html += '</div>';
+  if (UI.adminMode){
+    html += '<div class="rb-card" style="padding:20px 24px;max-width:640px;margin-top:14px;border-color:#6F1D1B;">';
+    html += '<div class="rb-h" style="font-size:14px;margin-bottom:12px;color:#FFF2F1;">Danger Zone</div>';
+    html += '<div style="display:flex;gap:10px;flex-wrap:wrap;">';
+    html += '<button class="rb-btn rb-btn-danger" data-reset-request="offers">Reset all offers</button>';
+    html += '<button class="rb-btn rb-btn-danger" data-reset-request="class">Reset CSV file</button>';
+    html += '</div>';
+    html += '</div>';
+  }
+  return html;
+}
+
+function renderAdminModeCard(){
+  return '<div class="rb-card" style="padding:18px 20px;max-width:640px;margin-bottom:14px;">' +
+    '<div style="display:flex;justify-content:space-between;align-items:center;gap:14px;flex-wrap:wrap;">' +
+      '<div>' +
+        '<div class="rb-h" style="font-size:16px;">Admin Mode</div>' +
+      '</div>' +
+      '<label style="display:inline-flex;align-items:center;gap:10px;cursor:pointer;user-select:none;">' +
+        '<span class="rb-mono" style="font-size:12px;color:' + (UI.adminMode ? 'var(--gold)' : 'var(--slate)') + ';">' + (UI.adminMode ? 'ON' : 'OFF') + '</span>' +
+        '<input type="checkbox" id="rb-admin-mode-toggle" ' + (UI.adminMode ? 'checked' : '') + ' style="width:20px;height:20px;accent-color:var(--gold);cursor:pointer;" />' +
+      '</label>' +
+    '</div>' +
+  '</div>';
+}
+
+function renderThread(){
+  const t = DB.threads.find(function(x){ return x.id === UI.threadId; });
+  if (!t) return '<div style="color:var(--slate);">Thread not found.</div>';
+  let html = '<div style="margin-bottom:16px;"><button class="rb-btn" data-nav="feed">&larr; Back to board</button></div>';
+  html += '<div class="rb-h" style="font-size:20px;margin-bottom:4px;">' + escapeHtml(t.title) + '</div>';
+  html += '<div style="font-size:13px;color:var(--slate);margin-bottom:18px;">' + rankRangeForThread(t) + ' on the board. Offers from every team stay visible here.</div>';
+  html += '<input class="rb-input" data-thread-search="' + t.id + '" placeholder="Search offers by recruit name, rank, position, or hometown" style="margin-bottom:14px;" />';
+
+  html += '<div style="display:flex;flex-direction:column;gap:10px;">';
+  t.prospectIds.forEach(function(pid){
+    const p = DB.prospects[pid];
+    if (!p) return;
+    const searchText = [p.rank, '#' + p.rank, p.name, p.position, p.hometown].join(' ').toLowerCase();
+    html += renderProspectBoardCard(pid, searchText);
+  });
+  html += '</div>';
+  return html;
+}
+
+function renderProspectDetail(){
+  const p = DB.prospects[UI.prospectId];
+  if (!p) return '<div style="color:var(--slate);">Prospect not found.</div>';
+  const offers = DB.offersByProspect[p.id] || [];
+  const sessionOffer = SESSION ? findAnyOfferForTeam(p.id, SESSION.team) : null;
+  const returnView = UI.prospectReturnView || 'feed';
+  const returnLabel = returnView === 'myoffers' ? 'Back to My Offers' : (returnView === 'mycommits' ? 'Back to My Commits' : 'Back to board');
+  let html = '<div style="margin-bottom:16px;"><button class="rb-btn" data-nav="' + escapeHtml(returnView) + '">&larr; ' + escapeHtml(returnLabel) + '</button></div>';
+  html += '<div class="rb-card" style="padding:18px 20px;margin-bottom:14px;">';
+  html += '<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;">';
+  html += '<div style="min-width:0;flex:1 1 420px;"><div class="rb-h" style="font-size:22px;">#' + p.rank + ' ' + escapeHtml(p.name) + '</div>';
+  html += '<div class="rb-mono" style="font-size:13px;color:var(--slate);margin-top:4px;">' + escapeHtml(p.position) + (p.rating ? ' &middot; ' + escapeHtml(p.rating) : '') + (p.hometown ? ' &middot; ' + escapeHtml(p.hometown) : '') + '</div>';
+  html += '</div>';
+  html += '<div style="display:flex;align-items:center;justify-content:flex-end;gap:10px;flex-wrap:wrap;">' +
+    (SESSION && !p.commitTeam ? (sessionOffer ? '<button class="rb-btn" disabled title="Your team already has an offer on this recruit">Offer submitted</button>' : '<button class="rb-btn rb-btn-gold" data-open-submit="' + escapeHtml(p.id) + '">Submit offer</button>') : '') +
+    (p.commitTeam ? renderCommittedTag(p.commitTeam) : '') +
+    '<span>' + starsOrLabel(p.stars) + '</span></div>';
+  html += '</div>';
+  html += renderStorylineLine(p.storyline, 'margin-top:8px;');
+  html += '</div>';
+  if (!offers.length){
+    html += '<div class="rb-card" style="padding:28px;text-align:center;color:var(--slate);">No offers yet.</div>';
+    return html;
+  }
+  html += '<div style="display:flex;flex-direction:column;gap:12px;">';
+  offers.forEach(function(o){ html += renderOfferBlock(o, { expanded: true, fullText: true }); });
+  html += '</div>';
+  return html;
+}
+
+function renderOfferBlock(o, opts){
+  opts = opts || {};
+  const badges = visitBadges(o.visits);
+  const header = '<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;">' +
+    '<span style="font-weight:600;font-size:13px;">' + escapeHtml(o.team) + '</span>' +
+    '<span style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;">' +
+      (badges || '') +
+      '<span class="rb-mono" style="font-size:11px;color:var(--slate);">' + escapeHtml(o.coach || '') + '</span>' +
+    '</span>' +
+  '</div>';
+  let html = '';
+  if (opts.collapsed){
+    html += '<details data-offer-details="1" style="background:var(--panel-alt);border-radius:8px;padding:10px 14px;">';
+    html += '<summary class="rb-offer-summary" style="list-style:none;cursor:pointer;">' + header + '</summary>';
+    html += '<div style="margin-top:10px;">';
+  } else {
+    html += '<div style="background:var(--panel-alt);border-radius:8px;padding:10px 14px;">';
+    if (!opts.hideHeader) html += header;
+  }
+  if (o.rescinded){
+    html += '<div style="margin-top:8px;"><span class="rb-tag" style="display:inline-block;margin:0;color:var(--alert);border-color:#6F1D1B;background:rgba(111,29,27,0.18);font-weight:600;">Rescinded</span></div>';
+  } else {
+    const scrollStyle = opts.fullText ? '' : 'max-height:140px;overflow:auto;';
+    html += '<div style="font-size:13px;color:var(--chalk);margin-top:6px;white-space:pre-wrap;' + scrollStyle + '" class="rb-scrollbar">' + formatOfferText(o.text) + '</div>';
+  }
+  if (!o.rescinded && o.promises && o.promises.length){
+    html += '<div style="margin-top:8px;">';
+    o.promises.forEach(function(p){
+      const title = titleForPromise(o, p);
+      html += '<div class="rb-tag">' +
+        '<span class="rb-mono" style="color:var(--gold);font-size:10px;text-transform:uppercase;letter-spacing:0.05em;">' + escapeHtml(String(title).replace(/_/g, ' ')) + ':</span> ' +
+        escapeHtml(p.text) +
+      '</div>';
+    });
+    html += '</div>';
+  }
+  if (o.editHistory && o.editHistory.length){
+    html += '<details style="margin-top:8px;">';
+    html += '<summary class="rb-offer-summary rb-mono" style="list-style:none;cursor:pointer;font-size:11px;color:var(--slate);">Edit history (' + o.editHistory.length + ')</summary>';
+    html += '<div style="margin-top:6px;display:flex;flex-direction:column;gap:6px;">';
+    o.editHistory.slice().reverse().forEach(function(entry){
+      html += '<div style="border-top:1px solid var(--hairline);padding-top:6px;font-size:11px;color:var(--slate);line-height:1.45;">';
+      html += '<div class="rb-mono" style="color:var(--gold);">' + escapeHtml(new Date(entry.editedAt).toLocaleString()) + '</div>';
+      (entry.changes || []).forEach(function(change){ html += '<div>' + escapeHtml(change) + '</div>'; });
+      html += '</div>';
+    });
+    html += '</div></details>';
+  }
+  html += opts.collapsed ? '</div></details>' : '</div>';
+  return html;
+}
+
+function renderSubmitModal(){
+  const target = UI.submitTargetId && DB.prospects[UI.submitTargetId] ? DB.prospects[UI.submitTargetId] : null;
+  return '<div style="position:fixed;inset:0;background:rgba(0,0,0,0.6);display:flex;align-items:center;justify-content:center;z-index:50;" data-close-modal="1">' +
+    '<div class="rb-card" style="padding:24px;width:520px;max-width:90vw;" onclick="event.stopPropagation()">' +
+      '<div class="rb-h" style="font-size:16px;margin-bottom:4px;">Submit offer</div>' +
+      '<div style="font-size:12px;color:var(--slate);margin-bottom:12px;">' +
+        (target ? 'Paste one offer sheet as-is. This will post directly to #' + escapeHtml(target.rank) + ' ' + escapeHtml(target.name) + ', detect visits, and file your team name automatically.' : 'Paste one offer sheet as-is. We\'ll match it to the right prospect, detect visits, and file your team name automatically.') +
+      '</div>' +
+      '<textarea class="rb-textarea rb-scrollbar" id="rb-sheet-text" rows="10" placeholder="Paste your auto-offer sheet output here"></textarea>' +
+      '<div style="display:flex;justify-content:flex-end;gap:8px;margin-top:14px;">' +
+        '<button class="rb-btn" data-close-modal="1">Cancel</button>' +
+        '<button class="rb-btn rb-btn-gold" id="rb-submit-sheet-btn" ' + (UI.submitting ? 'disabled' : '') + '>' + (UI.submitting ? 'Posting...' : 'Post offer') + '</button>' +
+      '</div>' +
+    '</div>' +
+  '</div>';
+}
+
+function renderEditOfferModal(){
+  const target = UI.editOfferTarget || {};
+  const prospect = DB.prospects[target.prospectId] || {};
+  const offer = findOfferById(target.prospectId, target.offerId);
+  if (!offer) return '';
+  const visits = normalizeVisits(offer.visits);
+  const locks = visitEditLocks(offer.team, offer);
+  return '<div style="position:fixed;inset:0;background:rgba(0,0,0,0.6);display:flex;align-items:center;justify-content:center;z-index:50;" data-close-edit-modal="1">' +
+    '<div class="rb-card" style="padding:24px;width:560px;max-width:90vw;" onclick="event.stopPropagation()">' +
+      '<div class="rb-h" style="font-size:16px;margin-bottom:4px;">Edit visits</div>' +
+      '<div class="rb-mono" style="font-size:12px;color:var(--slate);margin-bottom:12px;">#' + escapeHtml(prospect.rank || '?') + ' ' + escapeHtml(prospect.name || 'Unknown prospect') + '</div>' +
+      '<div style="font-size:12px;color:var(--slate);margin-bottom:10px;">Campus format: <span class="rb-mono">Week X vs. Team Name</span>; no 3-4 letter all-caps abbreviations.</div>' +
+      '<div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-top:12px;">' +
+        '<label style="display:inline-flex;align-items:center;gap:8px;color:' + (locks.coach ? 'var(--slate)' : 'var(--chalk)') + ';font-size:13px;">' +
+          '<input type="checkbox" id="rb-edit-coach-visit" ' + (visits.coach ? 'checked' : '') + (locks.coach ? ' disabled' : '') + ' style="accent-color:var(--gold);" /> Coach Visit' +
+        '</label>' +
+        '<label style="display:inline-flex;align-items:center;gap:8px;color:' + (locks.campus ? 'var(--slate)' : 'var(--chalk)') + ';font-size:13px;">' +
+          '<input type="checkbox" id="rb-edit-campus-visit" ' + (visits.campus ? 'checked' : '') + (locks.campus ? ' disabled' : '') + ' style="accent-color:var(--gold);" /> Campus Visit' +
+        '</label>' +
+      '</div>' +
+      '<input class="rb-input" id="rb-edit-campus-label" placeholder="Week 1 vs. Boston College" value="' + escapeHtml(visits.campusLabel || '') + '"' + (!visits.campus && locks.campus ? ' disabled' : '') + ' style="margin-top:10px;" />' +
+      (UI.editError ? '<div style="font-size:12px;color:var(--alert);margin-top:8px;">' + escapeHtml(UI.editError) + '</div>' : '') +
+      '<div style="display:flex;justify-content:flex-end;gap:8px;margin-top:14px;">' +
+        '<button class="rb-btn" data-close-edit-modal="1">Cancel</button>' +
+        '<button class="rb-btn rb-btn-gold" id="rb-save-offer-edit">Save edit</button>' +
+      '</div>' +
+    '</div>' +
+  '</div>';
+}
+
+function renderVisitConfirmModal(){
+  const target = UI.editOfferTarget || {};
+  const prospect = DB.prospects[target.prospectId] || {};
+  const pending = UI.pendingVisitEdit || {};
+  const types = [];
+  if (pending.coach) types.push('coach visit');
+  if (pending.campus) types.push('campus visit');
+  const visitText = types.join(' and ');
+  return '<div style="position:fixed;inset:0;background:rgba(0,0,0,0.68);display:flex;align-items:center;justify-content:center;z-index:60;">' +
+    '<div class="rb-card" style="padding:24px;width:500px;max-width:90vw;border-color:var(--gold);">' +
+      '<div class="rb-h" style="font-size:18px;margin-bottom:8px;">Add ' + escapeHtml(visitText) + '?</div>' +
+      '<div style="font-size:13px;color:var(--slate);line-height:1.5;margin-bottom:18px;">This will use the selected visit for #' + escapeHtml(prospect.rank || '?') + ' ' + escapeHtml(prospect.name || 'this prospect') + ' and cannot be removed later.</div>' +
+      '<div style="display:flex;justify-content:flex-end;gap:8px;flex-wrap:wrap;">' +
+        '<button class="rb-btn" id="rb-cancel-visit-confirm">Cancel</button>' +
+        '<button class="rb-btn rb-btn-gold" id="rb-confirm-visit">Yes, add visit</button>' +
+      '</div>' +
+    '</div>' +
+  '</div>';
+}
+
+function renderResetConfirmModal(){
+  const isClass = UI.confirmReset === 'class';
+  const title = isClass ? 'Reset CSV file?' : 'Reset all offers?';
+  const body = isClass ?
+    'This will remove the loaded class, all prospect boards, all offers, rescinded offers, visits, and unmatched review items.' :
+    'This will remove every posted offer, rescinded offer, visit usage record, and unmatched review item while keeping the loaded class and boards.';
+  const btn = isClass ? 'Yes, reset CSV file' : 'Yes, reset all offers';
+  return '<div style="position:fixed;inset:0;background:rgba(0,0,0,0.68);display:flex;align-items:center;justify-content:center;z-index:60;">' +
+    '<div class="rb-card" style="padding:24px;width:520px;max-width:90vw;border-color:#B33A32;">' +
+      '<div class="rb-h" style="font-size:18px;margin-bottom:8px;color:#FFF2F1;">' + escapeHtml(title) + '</div>' +
+      '<div style="font-size:13px;color:var(--slate);line-height:1.5;margin-bottom:18px;">' + escapeHtml(body) + '</div>' +
+      '<div style="display:flex;justify-content:flex-end;gap:8px;flex-wrap:wrap;">' +
+        '<button class="rb-btn" id="rb-cancel-reset">Cancel</button>' +
+        '<button class="rb-btn rb-btn-danger" id="rb-confirm-reset">' + escapeHtml(btn) + '</button>' +
+      '</div>' +
+    '</div>' +
+  '</div>';
+}
+
+// ---------- Events ----------
+
+function bindEvents(){
+  document.querySelectorAll('[data-nav]').forEach(function(el){
+    el.onclick = function(){ UI.view = el.getAttribute('data-nav'); render(); };
+  });
+  document.querySelectorAll('[data-open-thread]').forEach(function(el){
+    el.onclick = function(){ UI.view = 'thread'; UI.threadId = el.getAttribute('data-open-thread'); render(); };
+  });
+  document.querySelectorAll('[data-open-prospect]').forEach(function(el){
+    el.onclick = function(e){
+      e.preventDefault();
+      e.stopPropagation();
+      if (e.target && e.target.closest && e.target.closest('[data-offer-details]')) return;
+      UI.prospectReturnView = UI.view === 'myoffers' || UI.view === 'mycommits' || UI.view === 'thread' ? UI.view : 'feed';
+      UI.view = 'prospect';
+      UI.prospectId = el.getAttribute('data-open-prospect');
+      render();
+      scrollPageTop();
+    };
+  });
+  document.querySelectorAll('[data-close-modal]').forEach(function(el){
+    el.onclick = function(){ UI.showSubmitModal = false; UI.submitTargetId = null; render(); };
+  });
+  document.querySelectorAll('[data-close-edit-modal]').forEach(function(el){
+    el.onclick = closeEditOffer;
+  });
+
+  document.querySelectorAll('[data-reset-request]').forEach(function(el){
+    el.onclick = function(){ requestReset(el.getAttribute('data-reset-request')); };
+  });
+
+  const cancelResetBtn = document.getElementById('rb-cancel-reset');
+  if (cancelResetBtn) cancelResetBtn.onclick = cancelReset;
+  const confirmResetBtn = document.getElementById('rb-confirm-reset');
+  if (confirmResetBtn) confirmResetBtn.onclick = confirmReset;
+
+  const openSubmit = document.getElementById('rb-open-submit');
+  if (openSubmit) openSubmit.onclick = function(){ if (SESSION){ UI.submitTargetId = null; UI.showSubmitModal = true; render(); } };
+
+  document.querySelectorAll('[data-open-submit]').forEach(function(el){
+    el.onclick = function(e){
+      if (e) {
+        e.preventDefault();
+        e.stopPropagation();
+      }
+      if (!SESSION) return;
+      UI.submitTargetId = el.getAttribute('data-open-submit') || null;
+      UI.showSubmitModal = true;
+      render();
+    };
+  });
+
+  const submitSheetBtn = document.getElementById('rb-submit-sheet-btn');
+  if (submitSheetBtn) submitSheetBtn.onclick = function(){
+    const text = document.getElementById('rb-sheet-text').value;
+    submitOfferSheet(text);
+  };
+
+  document.querySelectorAll('[data-rescind-offer]').forEach(function(el){
+    el.onclick = function(e){
+      if (e) {
+        e.preventDefault();
+        e.stopPropagation();
+      }
+      const parts = el.getAttribute('data-rescind-offer').split(':');
+      rescindOfferById(parts[0], parts[1]);
+    };
+  });
+
+  document.querySelectorAll('[data-edit-offer]').forEach(function(el){
+    el.onclick = function(e){
+      if (e) {
+        e.preventDefault();
+        e.stopPropagation();
+      }
+      const parts = el.getAttribute('data-edit-offer').split(':');
+      openEditOffer(parts[0], parts[1]);
+    };
+  });
+
+  const saveOfferEditBtn = document.getElementById('rb-save-offer-edit');
+  if (saveOfferEditBtn) saveOfferEditBtn.onclick = function(){
+    const coachInput = document.getElementById('rb-edit-coach-visit');
+    const campusInput = document.getElementById('rb-edit-campus-visit');
+    const campusLabelInput = document.getElementById('rb-edit-campus-label');
+    saveOfferEdit({
+      coach: coachInput ? coachInput.checked : false,
+      campus: campusInput ? campusInput.checked : false,
+      campusLabel: campusLabelInput ? campusLabelInput.value : ''
+    });
+  };
+  const cancelVisitConfirm = document.getElementById('rb-cancel-visit-confirm');
+  if (cancelVisitConfirm) cancelVisitConfirm.onclick = function(){
+    UI.pendingVisitEdit = null;
+    render();
+  };
+  const confirmVisit = document.getElementById('rb-confirm-visit');
+  if (confirmVisit) confirmVisit.onclick = function(){
+    const pending = UI.pendingVisitEdit || {};
+    UI.pendingVisitEdit = null;
+    saveOfferEdit(pending.form, { coach: !!pending.coach, campus: !!pending.campus });
+  };
+
+  document.querySelectorAll('[data-thread-search]').forEach(function(el){
+    el.oninput = function(){
+      const q = el.value.toLowerCase().trim();
+      document.querySelectorAll('[data-prospect-card]').forEach(function(card){
+        const haystack = card.getAttribute('data-search') || '';
+        card.style.display = !q || haystack.indexOf(q) !== -1 ? '' : 'none';
+      });
+    };
+  });
+
+  const boardSearch = document.getElementById('rb-board-search');
+  if (boardSearch) boardSearch.oninput = function(){
+    const q = boardSearch.value.toLowerCase().trim();
+    const boardCards = document.getElementById('rb-board-cards');
+    const playerResults = document.getElementById('rb-board-player-results');
+    if (boardCards) boardCards.style.display = q ? 'none' : 'flex';
+    if (playerResults) playerResults.style.display = q ? 'flex' : 'none';
+    document.querySelectorAll('[data-board-card]').forEach(function(card){
+      const haystack = card.getAttribute('data-search') || '';
+      card.style.display = !q || haystack.indexOf(q) !== -1 ? '' : 'none';
+    });
+    document.querySelectorAll('#rb-board-player-results [data-prospect-card]').forEach(function(card){
+      const haystack = card.getAttribute('data-search') || '';
+      card.style.display = !q || haystack.indexOf(q) !== -1 ? '' : 'none';
+    });
+  };
+
+  const myOfferSearch = document.getElementById('rb-my-offer-search');
+  if (myOfferSearch) myOfferSearch.oninput = function(){
+    const q = myOfferSearch.value.toLowerCase().trim();
+    document.querySelectorAll('[data-my-offer-card]').forEach(function(card){
+      const haystack = card.getAttribute('data-search') || '';
+      card.style.display = !q || haystack.indexOf(q) !== -1 ? '' : 'none';
+    });
+  };
+
+  const myCommitSearch = document.getElementById('rb-my-commit-search');
+  if (myCommitSearch) myCommitSearch.oninput = function(){
+    const q = myCommitSearch.value.toLowerCase().trim();
+    document.querySelectorAll('[data-my-commit-card]').forEach(function(card){
+      const haystack = card.getAttribute('data-search') || '';
+      card.style.display = !q || haystack.indexOf(q) !== -1 ? '' : 'none';
+    });
+  };
+
+  const loginBtn = document.getElementById('rb-login-btn');
+  if (loginBtn) loginBtn.onclick = function(){
+    attemptLogin(document.getElementById('rb-login-team').value, document.getElementById('rb-login-pin').value);
+  };
+  const logoutLink = document.getElementById('rb-logout');
+  if (logoutLink) logoutLink.onclick = function(e){ e.preventDefault(); logout(); };
+
+  const dismissSummary = document.getElementById('rb-dismiss-summary');
+  if (dismissSummary) dismissSummary.onclick = function(e){ e.preventDefault(); UI.lastSummary = null; render(); };
+
+  const adminToggle = document.getElementById('rb-admin-mode-toggle');
+  if (adminToggle) adminToggle.onchange = function(){ setAdminMode(adminToggle.checked); };
+
+  document.querySelectorAll('[data-assign]').forEach(function(el){
+    el.onclick = function(){
+      const id = el.getAttribute('data-assign');
+      const input = document.getElementById('rb-rank-' + id);
+      assignUnmatched(id, input.value);
+    };
+  });
+
+  const classFile = document.getElementById('rb-class-file');
+  if (classFile) classFile.onchange = function(){ loadClassFile(classFile.files && classFile.files[0]); };
+  const brandingFile = document.getElementById('rb-branding-file');
+  if (brandingFile) brandingFile.onchange = function(){ loadTeamBrandingFile(brandingFile.files && brandingFile.files[0]); };
+  const updateCommitsBtn = document.getElementById('rb-update-commits');
+  if (updateCommitsBtn) updateCommitsBtn.onclick = updateCommitsFromSheet;
+  const saveCommitSheetBtn = document.getElementById('rb-save-commit-sheet');
+  if (saveCommitSheetBtn) saveCommitSheetBtn.onclick = saveCommitSheetUrl;
+  const changeCommitSheetBtn = document.getElementById('rb-change-commit-sheet');
+  if (changeCommitSheetBtn) changeCommitSheetBtn.onclick = changeCommitSheetUrl;
+  const cancelCommitSheetBtn = document.getElementById('rb-cancel-commit-sheet');
+  if (cancelCommitSheetBtn) cancelCommitSheetBtn.onclick = function(){ UI.commitEditing = false; UI.commitError = null; render(); };
+  const release1 = document.getElementById('rb-release-1');
+  if (release1) release1.onclick = releaseWave1;
+  const release2 = document.getElementById('rb-release-2');
+  if (release2) release2.onclick = releaseWave2;
+}
+
+render();
+loadAll();
+
+})();
+</script>
