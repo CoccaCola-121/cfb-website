@@ -257,6 +257,7 @@ body { margin: 0; background: #0F1420; }
   .rb-my-offer-actions .rb-btn { flex: 1 1 0; text-align: center; }
   .rb-my-offer-visits { width: 100%; display: grid !important; grid-template-columns: 1fr; align-items: stretch !important; }
   .rb-my-offer-visits .rb-tag { width: 100%; text-align: center; }
+  .rb-mobile-team-meta { display: none !important; }
   .rb-mobile-stack { grid-template-columns: 1fr !important; }
   .rb-mobile-tight { padding: 11px 12px !important; }
   .rb-h { letter-spacing: 0.02em; }
@@ -1676,7 +1677,10 @@ function isLikelyPromiseText(text){
 }
 
 function sanitizePromiseText(text){
-  return String(text || '').replace(/\*\*/g, '').replace(/\s+/g, ' ').trim();
+  let out = String(text || '').replace(/\*\*/g, '').replace(/\s+/g, ' ').trim();
+  const nextSection = out.search(/\s[A-Z][A-Za-z &/-]{1,34}:\s/);
+  if (nextSection > 0) out = out.slice(0, nextSection).trim();
+  return out;
 }
 
 function cleanDisplayPromises(offer){
@@ -2406,7 +2410,7 @@ function renderTeamsPage(){
     html += '<div style="display:grid;grid-template-columns:minmax(0,1fr) auto;gap:14px;align-items:center;">';
     html += '<div style="min-width:0;display:flex;align-items:center;gap:12px;">' + renderTeamLogo(brand) +
       '<div style="min-width:0;"><div style="font-weight:700;color:var(--chalk);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;"><span class="rb-desktop-only">' + escapeHtml(brand.region) + '</span><span class="rb-mobile-only">' + escapeHtml(brand.abbrev || brand.region) + '</span></div>' +
-      '<div class="rb-mono" style="font-size:11px;color:var(--slate);margin-top:2px;">' + escapeHtml(brand.abbrev || '') + (brand.nickname ? ' &middot; ' + escapeHtml(brand.nickname) : '') + '</div></div></div>';
+      '<div class="rb-mono rb-mobile-team-meta" style="font-size:11px;color:var(--slate);margin-top:2px;">' + escapeHtml(brand.abbrev || '') + (brand.nickname ? ' &middot; ' + escapeHtml(brand.nickname) : '') + '</div></div></div>';
     html += '<div style="display:flex;align-items:center;gap:10px;justify-content:flex-end;flex-wrap:wrap;">';
     if (link){
       const level = String((pendingRole && pendingRole.accessLevel) || link.accessLevel || 'coach').toLowerCase();
