@@ -1553,6 +1553,7 @@ function findPitchTitle(text, promiseStart){
 function extractPromises(text){
   const promises = [];
   const seen = {};
+  text = String(text || '');
   const addPromise = function(promise, start){
     promise = String(promise || '').replace(/\*\*/g, '').replace(/\s+/g, ' ').trim();
     if (!promise || seen[promise.toLowerCase()]) return;
@@ -1565,9 +1566,21 @@ function extractPromises(text){
   while ((match = re.exec(text || ''))){
     addPromise(match[1], match.index);
   }
-  const plainRe = /\b(?:I|we)\s+promise\b[\s\S]*?(?:[.!?](?=\s+(?:[A-Z0-9#"]|$))|[.!?]?$)/gi;
-  while ((match = plainRe.exec(text || ''))){
-    addPromise(match[0], match.index);
+  const plainStartRe = /\b(?:I|we)\s+promise\b/gi;
+  while ((match = plainStartRe.exec(text))){
+    const start = match.index;
+    const rest = text.slice(start);
+    const nextHeaderMatch = rest.slice(1).match(/\n\s*[A-Za-z][A-Za-z &/-]{1,34}:\s*/);
+    const nextHeader = nextHeaderMatch ? nextHeaderMatch.index + 1 : rest.length;
+    let end = nextHeader;
+    const sentenceRe = /[.!?](?=\s|$)/g;
+    let sentenceMatch;
+    while ((sentenceMatch = sentenceRe.exec(rest))){
+      if (sentenceMatch.index >= nextHeader) break;
+      end = sentenceMatch.index + 1;
+      break;
+    }
+    addPromise(rest.slice(0, end), start);
   }
   return promises;
 }
