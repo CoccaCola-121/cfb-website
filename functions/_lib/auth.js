@@ -146,3 +146,20 @@ export function isAdmin(env, discordId) {
     .filter(Boolean)
     .includes(String(discordId || ''));
 }
+
+export function accessLevel(env, user) {
+  if (!user || !user.discordId) return 'coach';
+  if (isAdmin(env, user.discordId)) return 'commissioner';
+  const level = String(user.accessLevel || user.role || '').toLowerCase().trim();
+  if (level === 'commissioner' || level === 'moderator') return level;
+  return 'coach';
+}
+
+export function canModerate(env, user) {
+  const level = accessLevel(env, user);
+  return level === 'commissioner' || level === 'moderator';
+}
+
+export function canCommission(env, user) {
+  return accessLevel(env, user) === 'commissioner';
+}

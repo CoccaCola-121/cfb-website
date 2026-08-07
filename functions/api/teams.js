@@ -1,4 +1,4 @@
-import { getCurrentUser, json } from '../_lib/auth.js';
+import { accessLevel, canCommission, canModerate, getCurrentUser, json } from '../_lib/auth.js';
 import { getAllTeams, teamKey } from '../_lib/teams-util.js';
 
 export async function onRequestGet({ request, env }) {
@@ -16,6 +16,9 @@ export async function onRequestGet({ request, env }) {
       displayName: linkedUser ? (linkedUser.displayName || linkedUser.username || '') : '',
       username: linkedUser ? (linkedUser.username || '') : '',
       avatar: linkedUser ? (linkedUser.avatar || '') : '',
+      accessLevel: accessLevel(env, linkedUser),
+      isModerator: canModerate(env, linkedUser),
+      isCommissioner: canCommission(env, linkedUser),
     };
     if (!user || row.discordId !== user.discordId) claimed.push(teamKey(row.team));
   }

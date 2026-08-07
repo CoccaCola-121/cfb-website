@@ -1,4 +1,4 @@
-import { getCurrentUser, isAdmin, json, readSession } from '../../_lib/auth.js';
+import { accessLevel, canCommission, canModerate, getCurrentUser, json, readSession } from '../../_lib/auth.js';
 
 export async function onRequestGet({ request, env }) {
   const session = await readSession(request, env);
@@ -13,7 +13,10 @@ export async function onRequestGet({ request, env }) {
       displayName: user.displayName || user.username,
       avatar: user.avatar || '',
       team: user.team || '',
-      isAdmin: isAdmin(env, user.discordId),
+      accessLevel: accessLevel(env, user),
+      isAdmin: canModerate(env, user),
+      isModerator: canModerate(env, user),
+      isCommissioner: canCommission(env, user),
     },
   });
 }

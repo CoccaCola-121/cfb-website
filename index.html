@@ -239,6 +239,10 @@ let lastRemoteSaveAt = 0;
 let lastLocalChangeAt = 0;
 
 function uid(prefix){ return prefix + '_' + Math.random().toString(36).slice(2, 10); }
+function userAccessLevel(user){ return String((user && user.accessLevel) || 'coach').toLowerCase(); }
+function canUseAdminMode(){ return !!(SESSION && (SESSION.accessLevel === 'commissioner' || SESSION.accessLevel === 'moderator' || SESSION.isAdmin)); }
+function canUseDangerZone(){ return !!(SESSION && SESSION.accessLevel === 'commissioner'); }
+function canManageAccess(){ return canUseDangerZone(); }
 
 function escapeHtml(s){
   return String(s == null ? '' : s).replace(/[&<>"']/g, function(c){
@@ -426,7 +430,7 @@ async function loadAll(){
     const adminRes = await getStored(ADMIN_MODE_KEY, false);
     UI.adminMode = !!(adminRes && adminRes.value === '1');
   } catch (e) { /* default coach lens */ }
-  if (SESSION && !SESSION.isAdmin) UI.adminMode = false;
+  if (SESSION && !canUseAdminMode()) UI.adminMode = false;
   startLeagueSync();
   render();
 }
@@ -448,7 +452,10 @@ async function loadServerAuth(){
           discordId: data.user.discordId,
           username: data.user.displayName || data.user.username,
           team: data.user.team,
-          isAdmin: !!data.user.isAdmin
+          accessLevel: userAccessLevel(data.user),
+          isAdmin: !!data.user.isAdmin,
+          isModerator: !!data.user.isModerator,
+          isCommissioner: !!data.user.isCommissioner
         };
       } else {
         SESSION = null;
@@ -602,7 +609,7 @@ async function ensureDefaultSeasonData(){
 }
 
 function setAdminMode(on){
-  if (!SESSION || !SESSION.isAdmin) {
+  if (!canUseAdminMode()) {
     UI.adminMode = false;
     setStored(ADMIN_MODE_KEY, '0', false);
     render(); return;
@@ -1089,7 +1096,10 @@ async function linkLoginTeam(team){
       discordId: UI.pendingDiscordUser.discordId,
       username: UI.pendingDiscordUser.displayName || UI.pendingDiscordUser.username,
       team: canonicalTeam,
-      isAdmin: !!UI.pendingDiscordUser.isAdmin
+      accessLevel: userAccessLevel(UI.pendingDiscordUser),
+      isAdmin: !!UI.pendingDiscordUser.isAdmin,
+      isModerator: !!UI.pendingDiscordUser.isModerator,
+      isCommissioner: !!UI.pendingDiscordUser.isCommissioner
     };
     UI.loginError = null;
     UI.loginStep = 'account';
@@ -1146,6 +1156,26 @@ async function runAdminAccountAction(kind, overrides){
     await loadTeamAvailability();
   } catch (e) {
     UI.adminActionError = e.message || 'Admin action failed.';
+  }
+  render();
+}
+
+async function runAdminAccessLevelChange(discordId, accessLevel){
+  UI.adminActionError = null;
+  UI.adminActionStatus = null;
+  try {
+    const res = await fetch('/api/admin/access-level', {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ discordId: discordId, accessLevel: accessLevel }),
+    });
+    const data = await res.json();
+    if (!res.ok || !data.ok) throw new Error(data.error || 'Could not update access level.');
+    UI.adminActionStatus = 'Access level updated.';
+    await loadTeamAvailability();
+  } catch (e) {
+    UI.adminActionError = e.message || 'Could not update access level.';
   }
   render();
 }
@@ -1687,7 +1717,6 @@ function renderHomePage(){
     '</div>';
   }
   if (UI.loginError) html += '<div style="font-size:12px;color:var(--alert);margin-top:12px;">' + escapeHtml(UI.loginError) + '</div>';
-  html += '<div style="border-top:1px solid var(--hairline);margin-top:22px;padding-top:16px;color:var(--slate);font-size:12px;line-height:1.55;">Discord is the account. Team changes and unlinks go through admin tools.</div>';
   html += '</section></div>';
   return html;
 }
@@ -1935,7 +1964,8 @@ function renderMyCommits(){
 function renderTeamsPage(){
   const teams = activeTeamBrands();
   const q = (UI.teamSearch || '').toLowerCase().trim();
-  const canAdmin = !!(SESSION && SESSION.isAdmin && UI.adminMode);
+  const canAdmin = !!(canUseAdminMode() && UI.adminMode);
+  const canCommission = !!(canManageAccess() && UI.adminMode);
   const visible = teams.filter(function(brand){
     const link = UI.teamLinks[teamKey(brand.region)] || null;
     const haystack = [brand.region, brand.abbrev, brand.nickname, brand.displayName, link && link.displayName, link && link.username, link && link.discordId].join(' ').toLowerCase();
@@ -1959,10 +1989,19 @@ function renderTeamsPage(){
       '<div class="rb-mono" style="font-size:11px;color:var(--slate);margin-top:2px;">' + escapeHtml(brand.abbrev || '') + (brand.nickname ? ' &middot; ' + escapeHtml(brand.nickname) : '') + '</div></div></div>';
     html += '<div style="display:flex;align-items:center;gap:10px;justify-content:flex-end;flex-wrap:wrap;">';
     if (link){
+      const level = String(link.accessLevel || 'coach').toLowerCase();
       html += '<span class="rb-tag" style="display:inline-flex;margin:0;align-items:center;gap:7px;">' + escapeHtml(link.displayName || link.username || 'Discord linked') + '<span class="rb-mono" style="font-size:10px;color:var(--slate);">(' + escapeHtml(link.discordId) + ')</span></span>';
+      html += '<span class="rb-mono" style="font-size:11px;color:' + (level === 'commissioner' ? 'var(--gold)' : 'var(--slate)') + ';">' + escapeHtml(level) + '</span>';
       if (canAdmin){
         html += '<button class="rb-btn" data-admin-unlink-team="' + escapeHtml(brand.region) + '">Remove</button>';
         html += '<button class="rb-btn rb-btn-gold" data-admin-change-team="' + escapeHtml(link.discordId) + '">Change team</button>';
+      }
+      if (canCommission){
+        html += '<select class="rb-input" data-admin-access-level="' + escapeHtml(link.discordId) + '" style="width:auto;min-width:132px;padding:9px 10px;font-size:12px;">';
+        ['coach','moderator','commissioner'].forEach(function(option){
+          html += '<option value="' + option + '"' + (level === option ? ' selected' : '') + '>' + option.charAt(0).toUpperCase() + option.slice(1) + '</option>';
+        });
+        html += '</select>';
       }
     } else {
       html += '<span class="rb-mono" style="font-size:12px;color:var(--slate);">No Discord linked</span>';
@@ -2107,7 +2146,7 @@ function renderClassSetup(){
   if (UI.brandingStatus) html += '<div style="font-size:12px;color:var(--gold);margin-top:8px;">' + escapeHtml(UI.brandingStatus) + '</div>';
   if (UI.brandingError) html += '<div style="font-size:12px;color:var(--alert);margin-top:8px;">' + escapeHtml(UI.brandingError) + '</div>';
   html += '</div>';
-  if (UI.adminMode){
+  if (UI.adminMode && canUseDangerZone()){
     html += '<div class="rb-card" style="padding:20px 24px;max-width:640px;margin-top:14px;border-color:#6F1D1B;">';
     html += '<div class="rb-h" style="font-size:14px;margin-bottom:12px;color:#FFF2F1;">Danger Zone</div>';
     html += '<div style="display:flex;gap:10px;flex-wrap:wrap;">';
@@ -2120,12 +2159,13 @@ function renderClassSetup(){
 }
 
 function renderAdminModeCard(){
-  const canAdmin = !!(SESSION && SESSION.isAdmin);
+  const canAdmin = canUseAdminMode();
+  const level = SESSION ? (SESSION.accessLevel || 'coach') : 'coach';
   return '<div class="rb-card" style="padding:18px 20px;max-width:640px;margin-bottom:14px;">' +
     '<div style="display:flex;justify-content:space-between;align-items:center;gap:14px;flex-wrap:wrap;">' +
       '<div>' +
         '<div class="rb-h" style="font-size:16px;">Admin Mode</div>' +
-        (!canAdmin ? '<div class="rb-mono" style="font-size:11px;color:var(--slate);margin-top:4px;">Discord admin access required</div>' : '') +
+        '<div class="rb-mono" style="font-size:11px;color:var(--slate);margin-top:4px;">' + (canAdmin ? 'Access: ' + escapeHtml(level) : 'Commissioner or moderator access required') + '</div>' +
       '</div>' +
       '<label style="display:inline-flex;align-items:center;gap:10px;cursor:' + (canAdmin ? 'pointer' : 'default') + ';user-select:none;">' +
         '<span class="rb-mono" style="font-size:12px;color:' + (UI.adminMode ? 'var(--gold)' : 'var(--slate)') + ';">' + (UI.adminMode ? 'ON' : 'OFF') + '</span>' +
@@ -2541,6 +2581,11 @@ function bindEvents(){
       UI.adminActionError = null;
       UI.adminActionStatus = null;
       render();
+    };
+  });
+  document.querySelectorAll('[data-admin-access-level]').forEach(function(el){
+    el.onchange = function(){
+      runAdminAccessLevelChange(el.getAttribute('data-admin-access-level') || '', el.value);
     };
   });
   const teamChangeInput = document.getElementById('rb-team-change-input');

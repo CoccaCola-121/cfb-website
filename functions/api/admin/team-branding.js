@@ -1,4 +1,4 @@
-import { getCurrentUser, isAdmin, json } from '../../_lib/auth.js';
+import { canModerate, getCurrentUser, json } from '../../_lib/auth.js';
 
 function cleanTeam(team) {
   if (!team || !team.region) return null;
@@ -15,8 +15,8 @@ function cleanTeam(team) {
 
 export async function onRequestPost({ request, env }) {
   const admin = await getCurrentUser(request, env);
-  if (!admin || !isAdmin(env, admin.discordId)) {
-    return json({ ok: false, error: 'Admin access required.' }, { status: 403 });
+  if (!admin || !canModerate(env, admin)) {
+    return json({ ok: false, error: 'Moderator access required.' }, { status: 403 });
   }
   const body = await request.json().catch(() => ({}));
   const teams = (Array.isArray(body.teams) ? body.teams : [])
