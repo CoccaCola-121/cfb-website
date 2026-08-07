@@ -138,29 +138,6 @@ body { margin: 0; background: #0F1420; }
   color: #C6CCD9;
   max-width: 560px;
 }
-.rb-home-stats {
-  position: relative;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 9px;
-  max-width: 600px;
-  margin-top: 34px;
-  padding: 0;
-  border: 0;
-  background: transparent;
-}
-.rb-home-stat {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  background: rgba(22,28,43,0.52);
-  border: 1px solid rgba(237,238,240,0.10);
-  border-radius: 999px;
-  padding: 8px 11px;
-  color: var(--slate);
-  font-size: 12px;
-  line-height: 1;
-}
 .rb-home-login {
   display: flex;
   flex-direction: column;
@@ -185,14 +162,12 @@ body { margin: 0; background: #0F1420; }
   .rb-home-hero { padding: 30px; }
   .rb-home-title { font-size: 46px; max-width: 500px; }
   .rb-home-copy { font-size: 14px; max-width: 470px; }
-  .rb-home-stat { padding: 8px 10px; }
 }
 @media (max-width: 720px) {
   .rb-root { padding: 16px; border-radius: 0; }
   .rb-home { grid-template-columns: 1fr; }
   .rb-home-hero { min-height: auto; padding: 24px; }
   .rb-home-title { font-size: 38px; }
-  .rb-home-stats { gap: 8px; }
   .rb-home-login { min-height: auto; padding: 22px; }
 }
 </style>
@@ -1373,27 +1348,12 @@ function teamLoginOptions(){
 }
 
 function renderHomePage(){
-  const prospectCount = Object.keys(DB.prospects || {}).length || DB.fullRoster.length || 0;
-  const offerCount = Object.keys(DB.offersByProspect || {}).reduce(function(sum, pid){
-    return sum + (DB.offersByProspect[pid] || []).length;
-  }, 0);
-  const commitCount = Object.keys(DB.prospects || {}).reduce(function(sum, pid){
-    return sum + (DB.prospects[pid] && DB.prospects[pid].commitTeam ? 1 : 0);
-  }, 0);
-  const statProspects = prospectCount ? prospectCount + ' prospects loaded' : 'Season class pending';
-  const statOffers = offerCount ? offerCount + ' offer' + (offerCount === 1 ? '' : 's') + ' tracked' : 'Offers tracked publicly';
-  const statCommits = commitCount ? commitCount + ' commit' + (commitCount === 1 ? '' : 's') + ' recorded' : 'Commit updates ready';
   let html = '<div class="rb-home">';
   html += '<section class="rb-home-hero">' +
     '<div style="position:relative;z-index:1;">' +
       '<img class="rb-home-logo" src="NZCFL.jpg" alt="NZCFL logo">' +
       '<div class="rb-home-title">NZCFL RecruitHQ</div>' +
       '<div class="rb-home-copy">The recruiting room for the league: prospects, public offers, visits, commits, and promises all tracked in one clean place.</div>' +
-    '</div>' +
-    '<div class="rb-home-stats" style="position:relative;z-index:1;">' +
-      '<div class="rb-home-stat"><span style="color:var(--gold);">Class</span><span>' + escapeHtml(statProspects) + '</span></div>' +
-      '<div class="rb-home-stat"><span style="color:var(--gold);">Offers</span><span>' + escapeHtml(statOffers) + '</span></div>' +
-      '<div class="rb-home-stat"><span style="color:var(--gold);">Commits</span><span>' + escapeHtml(statCommits) + '</span></div>' +
     '</div>' +
   '</section>';
   html += '<section class="rb-card rb-home-login">' +
