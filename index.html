@@ -319,6 +319,11 @@ body { margin: 0; background: #0F1420; }
   .rb-nav-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); width: 100%; }
   .rb-nav-actions .rb-btn { width: 100%; }
   .rb-nav-actions .rb-btn:last-child:nth-child(odd) { grid-column: 1 / -1; }
+  .rb-values-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+  .rb-value-chip { padding: 6px 6px; }
+  .rb-value-chip > span { flex-direction: column; align-items: flex-start !important; gap: 2px !important; }
+  .rb-value-chip .rb-mono { font-size: 8px !important; letter-spacing: 0.02em !important; }
+  .rb-value-chip strong.rb-mono { font-size: 10px !important; }
   .rb-my-offer-summary-grid { grid-template-columns: 1fr; gap: 12px; }
   .rb-my-offer-meta { gap: 8px; }
   .rb-my-offer-actions { justify-content: space-between !important; width: 100%; }
