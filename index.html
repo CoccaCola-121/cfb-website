@@ -105,6 +105,21 @@ body { margin: 0; background: #0F1420; }
 .rb-toggle input:checked + .rb-switch-track { background: #58BF72; border-color: #43995B; }
 .rb-toggle input:checked + .rb-switch-track .rb-switch-thumb { transform: translateX(20px); }
 .rb-mobile-only { display: none; }
+.rb-my-offer-summary-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 16px;
+}
+.rb-my-offer-meta {
+  min-width: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  white-space: nowrap;
+  overflow: hidden;
+}
+.rb-mobile-admin-control { display: inline-flex; }
 .rb-home {
   min-height: calc(100vh - 56px);
   display: grid;
@@ -230,6 +245,13 @@ body { margin: 0; background: #0F1420; }
   .rb-card { border-radius: 8px; }
   .rb-desktop-only { display: none !important; }
   .rb-mobile-only { display: inline !important; }
+  .rb-mobile-admin-control { display: none !important; }
+  .rb-my-offer-summary-grid { grid-template-columns: 1fr; gap: 12px; }
+  .rb-my-offer-meta { gap: 8px; }
+  .rb-my-offer-actions { justify-content: space-between !important; width: 100%; }
+  .rb-my-offer-actions .rb-btn { flex: 1 1 0; text-align: center; }
+  .rb-my-offer-visits { width: 100%; display: grid !important; grid-template-columns: 1fr; align-items: stretch !important; }
+  .rb-my-offer-visits .rb-tag { width: 100%; text-align: center; }
   .rb-mobile-stack { grid-template-columns: 1fr !important; }
   .rb-mobile-tight { padding: 11px 12px !important; }
   .rb-h { letter-spacing: 0.02em; }
@@ -258,7 +280,7 @@ const DEFAULT_COMMIT_SHEET_URL = 'https://docs.google.com/spreadsheets/d/1lJId_a
 let DB = { fullRoster: [], released: {}, wave1Released: false, wave2Released: false,
            prospects: {}, threads: [], offersByProspect: {}, unmatched: [], teams: {},
            teamBranding: {}, users: {}, commitSheetUrl: DEFAULT_COMMIT_SHEET_URL, commitUpdatedAt: null,
-           defaultClassLoaded: false, offersLocked: false };
+           defaultClassLoaded: false, offersLocked: false, dangerApprovals: {} };
 let SESSION = null;
 let UI = { view: 'feed', threadId: null, showSubmitModal: false, submitting: false,
            lastSummary: null, loginError: null, classError: null, classDraft: '', assignError: {},
@@ -633,7 +655,8 @@ function leagueStatePayload(){
     commitSheetUrl: DB.commitSheetUrl,
     commitUpdatedAt: DB.commitUpdatedAt,
     defaultClassLoaded: DB.defaultClassLoaded,
-    offersLocked: !!DB.offersLocked
+    offersLocked: !!DB.offersLocked,
+    dangerApprovals: DB.dangerApprovals || {}
   };
 }
 
@@ -645,7 +668,7 @@ function mergeLeagueState(state){
     threads: DB.threads,
     commitUpdatedAt: DB.commitUpdatedAt
   });
-  ['fullRoster','released','wave1Released','wave2Released','prospects','threads','offersByProspect','unmatched','teams','teamBranding','commitSheetUrl','commitUpdatedAt','defaultClassLoaded','offersLocked'].forEach(function(field){
+  ['fullRoster','released','wave1Released','wave2Released','prospects','threads','offersByProspect','unmatched','teams','teamBranding','commitSheetUrl','commitUpdatedAt','defaultClassLoaded','offersLocked','dangerApprovals'].forEach(function(field){
     if (Object.prototype.hasOwnProperty.call(state, field)) DB[field] = state[field];
   });
   const after = JSON.stringify({
@@ -1896,6 +1919,18 @@ function assignUnmatched(id, rankValue){
   saveDB(); render();
 }
 
+function activeDangerApproval(kind){
+  const entry = (DB.dangerApprovals || {})[kind] || null;
+  if (!entry || !entry.requestedAt) return null;
+  if (Date.now() - entry.requestedAt > 24 * 60 * 60 * 1000) return null;
+  return entry;
+}
+
+function dangerApprovalList(kind){
+  const entry = activeDangerApproval(kind);
+  return entry && entry.approvals ? Object.keys(entry.approvals).map(function(id){ return Object.assign({ discordId: id }, entry.approvals[id]); }) : [];
+}
+
 function requestReset(kind){
   UI.confirmReset = kind;
   render();
@@ -1904,6 +1939,27 @@ function requestReset(kind){
 function cancelReset(){
   UI.confirmReset = null;
   render();
+}
+
+async function approveDangerReset(){
+  if (!canUseDangerZone() || !SESSION || !UI.confirmReset) return;
+  const kind = UI.confirmReset;
+  DB.dangerApprovals = DB.dangerApprovals || {};
+  const current = activeDangerApproval(kind) || { kind: kind, requestedAt: Date.now(), approvals: {} };
+  current.approvals = current.approvals || {};
+  current.approvals[SESSION.discordId || SESSION.team || uid('commissioner')] = {
+    name: SESSION.username || SESSION.team || 'Commissioner',
+    team: SESSION.team || '',
+    approvedAt: Date.now()
+  };
+  DB.dangerApprovals[kind] = current;
+  const approvals = Object.keys(current.approvals);
+  if (approvals.length < 2){
+    await saveDBNow();
+    render();
+    return;
+  }
+  await confirmReset();
 }
 
 async function confirmReset(){
@@ -1935,6 +1991,7 @@ async function confirmReset(){
     UI.rescindError = null;
     UI.assignError = {};
   }
+  if (DB.dangerApprovals) delete DB.dangerApprovals[UI.confirmReset];
   UI.confirmReset = null;
   await saveDBNow(); render();
 }
@@ -2182,19 +2239,19 @@ function renderMyOffers(){
     const p = row.prospect || {};
     const o = row.offer;
     const searchText = [p.rank, '#' + p.rank, p.name, p.position, p.hometown, p.storyline].join(' ').toLowerCase();
-    html += '<div class="rb-card" data-my-offer-card="1" data-search="' + escapeHtml(searchText) + '" style="padding:14px 18px;">';
+    html += '<div class="rb-card rb-mobile-tight" data-my-offer-card="1" data-search="' + escapeHtml(searchText) + '" style="padding:14px 18px;">';
     html += '<details>';
-    html += '<summary class="rb-offer-summary" style="list-style:none;cursor:pointer;display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:16px;">';
+    html += '<summary class="rb-offer-summary rb-my-offer-summary-grid" style="list-style:none;cursor:pointer;">';
     html += '<span style="min-width:0;display:flex;flex-direction:column;gap:10px;">';
-    html += '<span style="min-width:0;display:flex;align-items:baseline;gap:10px;white-space:nowrap;overflow:hidden;">' +
+    html += '<span class="rb-my-offer-meta">' +
       '<span class="rb-mono" style="color:var(--slate);flex:0 0 auto;">#' + escapeHtml(p.rank || '?') + '</span>' +
       '<strong data-open-prospect="' + escapeHtml(row.prospectId) + '" title="' + escapeHtml(p.name || '') + '" style="overflow:hidden;text-overflow:ellipsis;color:var(--chalk);cursor:pointer;">' + escapeHtml(shortText(p.name || 'Unknown prospect', 24)) + '</strong>' +
       '<span class="rb-mono" style="color:var(--slate);font-size:13px;flex:0 0 auto;">' + escapeHtml(p.position || '') + (p.rating ? ' &middot; ' + escapeHtml(p.rating) : '') + '</span>' +
       (p.hometown ? '<span class="rb-mono" style="color:var(--slate);font-size:13px;flex:0 0 auto;">&middot;</span><span class="rb-mono" title="' + escapeHtml(p.hometown) + '" style="color:var(--slate);font-size:13px;overflow:hidden;text-overflow:ellipsis;">' + escapeHtml(shortText(p.hometown, 24)) + '</span>' : '') +
     '</span>';
-    html += '<span style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">' + visitBadges(o.visits, true) + '</span>';
+    html += '<span class="rb-my-offer-visits" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">' + visitBadges(o.visits, true) + '</span>';
     html += '</span>';
-    html += '<span style="display:flex;align-items:center;justify-content:flex-end;gap:8px;white-space:nowrap;">' + (o.rescinded ? '<span class="rb-mono" style="color:var(--alert);font-size:12px;">rescinded</span>' : (p.commitTeam ? '<span class="rb-mono" style="color:var(--slate);font-size:12px;">committed</span>' : '<button class="rb-btn" data-edit-offer="' + escapeHtml(row.prospectId) + ':' + escapeHtml(o.id) + '">Edit</button><button class="rb-btn" data-rescind-offer="' + escapeHtml(row.prospectId) + ':' + escapeHtml(o.id) + '">Rescind</button>')) + '</span>';
+    html += '<span class="rb-my-offer-actions" style="display:flex;align-items:center;justify-content:flex-end;gap:8px;white-space:nowrap;">' + (o.rescinded ? '<span class="rb-mono" style="color:var(--alert);font-size:12px;">rescinded</span>' : (p.commitTeam ? '<span class="rb-mono" style="color:var(--slate);font-size:12px;">committed</span>' : '<button class="rb-btn" data-edit-offer="' + escapeHtml(row.prospectId) + ':' + escapeHtml(o.id) + '">Edit</button><button class="rb-btn" data-rescind-offer="' + escapeHtml(row.prospectId) + ':' + escapeHtml(o.id) + '">Rescind</button>')) + '</span>';
     html += '</summary>';
     html += '<div style="margin-top:10px;">' + renderOfferBlock(o, p.commitTeam ? { collapsed: true } : { expanded: true }) + '</div>';
     html += '</details>';
@@ -2346,17 +2403,17 @@ function renderTeamsPage(){
     html += '<div style="display:flex;align-items:center;gap:10px;justify-content:flex-end;flex-wrap:wrap;">';
     if (link){
       const level = String((pendingRole && pendingRole.accessLevel) || link.accessLevel || 'coach').toLowerCase();
-      html += '<span class="rb-tag" style="display:inline-flex;margin:0;align-items:center;gap:7px;">' + escapeHtml(link.displayName || link.username || 'Discord linked') + (canAdmin ? '<span class="rb-mono" style="font-size:10px;color:var(--slate);">(' + escapeHtml(link.discordId) + ')</span>' : '') + '</span>';
-      if (level !== 'coach') html += '<span class="rb-mono" style="font-size:11px;color:' + (level === 'commissioner' ? 'var(--gold)' : 'var(--slate)') + ';">' + escapeHtml(level) + '</span>';
-      if (pendingUnlink) html += '<span class="rb-mono" style="font-size:11px;color:var(--alert);">pending remove</span>';
-      if (pendingSwitch) html += '<span class="rb-mono" style="font-size:11px;color:var(--gold);">pending move to ' + escapeHtml(pendingSwitch.team) + '</span>';
-      if (pendingRole) html += '<span class="rb-mono" style="font-size:11px;color:var(--gold);">pending access</span>';
+      html += '<span class="rb-tag" style="display:inline-flex;margin:0;align-items:center;gap:7px;">' + escapeHtml(link.displayName || link.username || 'Discord linked') + (canAdmin ? '<span class="rb-mono rb-mobile-admin-control" style="font-size:10px;color:var(--slate);">(' + escapeHtml(link.discordId) + ')</span>' : '') + '</span>';
+      if (level !== 'coach') html += '<span class="rb-mono rb-mobile-admin-control" style="font-size:11px;color:' + (level === 'commissioner' ? 'var(--gold)' : 'var(--slate)') + ';">' + escapeHtml(level) + '</span>';
+      if (pendingUnlink) html += '<span class="rb-mono rb-mobile-admin-control" style="font-size:11px;color:var(--alert);">pending remove</span>';
+      if (pendingSwitch) html += '<span class="rb-mono rb-mobile-admin-control" style="font-size:11px;color:var(--gold);">pending move to ' + escapeHtml(pendingSwitch.team) + '</span>';
+      if (pendingRole) html += '<span class="rb-mono rb-mobile-admin-control" style="font-size:11px;color:var(--gold);">pending access</span>';
       if (canAdmin){
-        html += '<button class="rb-btn" data-admin-unlink-team="' + escapeHtml(brand.region) + '">Remove</button>';
-        html += '<button class="rb-btn rb-btn-gold" data-admin-change-team="' + escapeHtml(link.discordId) + '">Change team</button>';
+        html += '<button class="rb-btn rb-mobile-admin-control" data-admin-unlink-team="' + escapeHtml(brand.region) + '">Remove</button>';
+        html += '<button class="rb-btn rb-btn-gold rb-mobile-admin-control" data-admin-change-team="' + escapeHtml(link.discordId) + '">Change team</button>';
       }
       if (canCommission){
-        html += '<select class="rb-input" data-admin-access-level="' + escapeHtml(link.discordId) + '" style="width:auto;min-width:132px;padding:9px 10px;font-size:12px;">';
+        html += '<select class="rb-input rb-mobile-admin-control" data-admin-access-level="' + escapeHtml(link.discordId) + '" style="width:auto;min-width:132px;padding:9px 10px;font-size:12px;">';
         ['coach','moderator','commissioner'].forEach(function(option){
           html += '<option value="' + option + '"' + (level === option ? ' selected' : '') + '>' + option.charAt(0).toUpperCase() + option.slice(1) + '</option>';
         });
@@ -2720,14 +2777,20 @@ function renderResetConfirmModal(){
   const body = isClass ?
     'This will remove the loaded class, all prospect boards, all offers, rescinded offers, visits, and unmatched review items.' :
     'This will remove every posted offer, rescinded offer, visit usage record, and unmatched review item while keeping the loaded class and boards.';
-  const btn = isClass ? 'Yes, reset CSV file' : 'Yes, reset all offers';
+  const approvals = dangerApprovalList(UI.confirmReset);
+  const hasApproved = !!(SESSION && approvals.some(function(row){ return row.discordId === SESSION.discordId; }));
+  const btn = approvals.length >= 1 && !hasApproved ? 'Approve and execute' : (hasApproved ? 'Approved' : 'Approve reset');
   return '<div style="position:fixed;inset:0;background:rgba(0,0,0,0.68);display:flex;align-items:center;justify-content:center;z-index:60;">' +
     '<div class="rb-card" style="padding:24px;width:520px;max-width:90vw;border-color:#B33A32;">' +
       '<div class="rb-h" style="font-size:18px;margin-bottom:8px;color:#FFF2F1;">' + escapeHtml(title) + '</div>' +
       '<div style="font-size:13px;color:var(--slate);line-height:1.5;margin-bottom:18px;">' + escapeHtml(body) + '</div>' +
+      '<div class="rb-card" style="padding:10px 12px;margin-bottom:14px;background:var(--ink);">' +
+        '<div class="rb-mono" style="font-size:12px;color:var(--gold);margin-bottom:6px;">Commissioner approvals: ' + approvals.length + '/2</div>' +
+        (approvals.length ? approvals.map(function(row){ return '<div style="font-size:12px;color:var(--slate);">' + escapeHtml(row.name || row.team || 'Commissioner') + '</div>'; }).join('') : '<div style="font-size:12px;color:var(--slate);">No commissioner has approved this yet.</div>') +
+      '</div>' +
       '<div style="display:flex;justify-content:flex-end;gap:8px;flex-wrap:wrap;">' +
         '<button class="rb-btn" id="rb-cancel-reset">Cancel</button>' +
-        '<button class="rb-btn rb-btn-danger" id="rb-confirm-reset">' + escapeHtml(btn) + '</button>' +
+        '<button class="rb-btn rb-btn-danger" id="rb-confirm-reset" ' + (hasApproved ? 'disabled' : '') + '>' + escapeHtml(btn) + '</button>' +
       '</div>' +
     '</div>' +
   '</div>';
@@ -2768,7 +2831,7 @@ function bindEvents(){
   const cancelResetBtn = document.getElementById('rb-cancel-reset');
   if (cancelResetBtn) cancelResetBtn.onclick = cancelReset;
   const confirmResetBtn = document.getElementById('rb-confirm-reset');
-  if (confirmResetBtn) confirmResetBtn.onclick = confirmReset;
+  if (confirmResetBtn) confirmResetBtn.onclick = approveDangerReset;
 
   const openSubmit = document.getElementById('rb-open-submit');
   if (openSubmit) openSubmit.onclick = function(){

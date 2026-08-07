@@ -16,6 +16,7 @@ const STATE_FIELDS = [
   'commitUpdatedAt',
   'defaultClassLoaded',
   'offersLocked',
+  'dangerApprovals',
 ];
 
 function sanitizeState(input) {
