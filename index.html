@@ -227,7 +227,9 @@ let UI = { view: 'feed', threadId: null, showSubmitModal: false, submitting: fal
            commitError: null, commitStatus: null, updatingCommits: false, commitEditing: false,
            submitTargetId: null, editOfferTarget: null, editError: null, prospectReturnView: 'feed',
            pendingVisitEdit: null, adminMode: false, loginStep: 'account', pendingDiscordUser: null,
-           teamLinkQuery: '', unavailableTeamKeys: [], brandingStatus: null, brandingError: null,
+           teamLinkQuery: '', unavailableTeamKeys: [], teamLinks: {}, teamSearch: '',
+           teamChangeDiscordId: '', teamChangeTeam: '',
+           brandingStatus: null, brandingError: null,
            brandingFileName: '', adminActionStatus: null, adminActionError: null };
 let dbReady = false, sessionReady = false;
 let summaryTimer = null;
@@ -464,6 +466,7 @@ async function loadTeamAvailability(){
     if (!res.ok) return;
     const data = await res.json();
     UI.unavailableTeamKeys = data.claimedTeams || [];
+    UI.teamLinks = data.links || {};
     if (Array.isArray(data.teams)){
       const branding = Object.assign({}, DB.teamBranding || {});
       data.teams.forEach(function(brand){
@@ -1119,25 +1122,27 @@ async function logout(){
   render();
 }
 
-async function runAdminAccountAction(kind){
+async function runAdminAccountAction(kind, overrides){
+  overrides = overrides || {};
   const discordIdInput = document.getElementById(kind === 'switch' ? 'rb-admin-switch-discord' : 'rb-admin-unlink-discord');
   const teamInput = document.getElementById(kind === 'switch' ? 'rb-admin-switch-team' : 'rb-admin-unlink-team');
   const endpoint = kind === 'switch' ? '/api/admin/switch-team' : '/api/admin/unlink';
   UI.adminActionError = null;
   UI.adminActionStatus = null;
   try {
+    const discordId = overrides.discordId != null ? overrides.discordId : (discordIdInput ? discordIdInput.value : '');
+    const team = overrides.team != null ? overrides.team : (teamInput ? teamInput.value : '');
     const res = await fetch(endpoint, {
       method: 'POST',
       credentials: 'include',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({
-        discordId: discordIdInput ? discordIdInput.value : '',
-        team: teamInput ? teamInput.value : ''
-      }),
+      body: JSON.stringify({ discordId: discordId, team: team }),
     });
     const data = await res.json();
     if (!res.ok || !data.ok) throw new Error(data.error || 'Admin action failed.');
     UI.adminActionStatus = kind === 'switch' ? 'Account team updated.' : 'Account unlinked.';
+    UI.teamChangeDiscordId = '';
+    UI.teamChangeTeam = '';
     await loadTeamAvailability();
   } catch (e) {
     UI.adminActionError = e.message || 'Admin action failed.';
@@ -1630,6 +1635,7 @@ function render(){
   else if (UI.view === 'prospect') html += renderProspectDetail();
   else if (UI.view === 'myoffers') html += renderMyOffers();
   else if (UI.view === 'mycommits') html += renderMyCommits();
+  else if (UI.view === 'teams') html += renderTeamsPage();
   if (UI.showSubmitModal) html += renderSubmitModal();
   if (UI.editOfferTarget) html += renderEditOfferModal();
   if (UI.pendingVisitEdit) html += renderVisitConfirmModal();
@@ -1700,6 +1706,7 @@ function renderNav(){
       '<button class="rb-btn" data-nav="feed">Prospect Board</button>' +
       (SESSION ? '<button class="rb-btn" data-nav="myoffers">My Offers</button>' : '') +
       (SESSION ? '<button class="rb-btn" data-nav="mycommits">My Commits</button>' : '') +
+      (SESSION ? '<button class="rb-btn" data-nav="teams">Teams</button>' : '') +
       '<button class="rb-btn" data-nav="setup">Settings</button>' +
     '</div>';
   html += '</div></div>';
@@ -1925,6 +1932,59 @@ function renderMyCommits(){
   return html;
 }
 
+function renderTeamsPage(){
+  const teams = activeTeamBrands();
+  const q = (UI.teamSearch || '').toLowerCase().trim();
+  const canAdmin = !!(SESSION && SESSION.isAdmin && UI.adminMode);
+  const visible = teams.filter(function(brand){
+    const link = UI.teamLinks[teamKey(brand.region)] || null;
+    const haystack = [brand.region, brand.abbrev, brand.nickname, brand.displayName, link && link.displayName, link && link.username, link && link.discordId].join(' ').toLowerCase();
+    return !q || haystack.indexOf(q) !== -1;
+  });
+  let html = '<div class="rb-card" style="padding:18px 20px;margin-bottom:14px;">';
+  html += '<div class="rb-h" style="font-size:18px;margin-bottom:6px;">Teams</div>';
+  html += '<div style="font-size:13px;color:var(--slate);margin-bottom:12px;">' + teams.length + ' teams &middot; ' + Object.keys(UI.teamLinks || {}).length + ' linked Discord account' + (Object.keys(UI.teamLinks || {}).length === 1 ? '' : 's') + '</div>';
+  html += '<input class="rb-input" id="rb-team-search" placeholder="Search teams or linked Discord accounts" value="' + escapeHtml(UI.teamSearch || '') + '" />';
+  if (UI.adminActionStatus) html += '<div style="font-size:12px;color:var(--gold);margin-top:8px;">' + escapeHtml(UI.adminActionStatus) + '</div>';
+  if (UI.adminActionError) html += '<div style="font-size:12px;color:var(--alert);margin-top:8px;">' + escapeHtml(UI.adminActionError) + '</div>';
+  html += '</div>';
+  html += '<div style="display:flex;flex-direction:column;gap:10px;">';
+  visible.forEach(function(brand){
+    const link = UI.teamLinks[teamKey(brand.region)] || null;
+    const rowSearch = [brand.region, brand.abbrev, brand.nickname, brand.displayName, link && link.displayName, link && link.username, link && link.discordId].join(' ').toLowerCase();
+    html += '<div class="rb-card" data-team-card="1" data-search="' + escapeHtml(rowSearch) + '" style="padding:14px 18px;border-color:' + escapeHtml(brand.primary || 'var(--hairline)') + '66;">';
+    html += '<div style="display:grid;grid-template-columns:minmax(0,1fr) auto;gap:14px;align-items:center;">';
+    html += '<div style="min-width:0;display:flex;align-items:center;gap:12px;">' + renderTeamLogo(brand) +
+      '<div style="min-width:0;"><div style="font-weight:700;color:var(--chalk);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + escapeHtml(brand.region) + '</div>' +
+      '<div class="rb-mono" style="font-size:11px;color:var(--slate);margin-top:2px;">' + escapeHtml(brand.abbrev || '') + (brand.nickname ? ' &middot; ' + escapeHtml(brand.nickname) : '') + '</div></div></div>';
+    html += '<div style="display:flex;align-items:center;gap:10px;justify-content:flex-end;flex-wrap:wrap;">';
+    if (link){
+      html += '<span class="rb-tag" style="display:inline-flex;margin:0;align-items:center;gap:7px;">' + escapeHtml(link.displayName || link.username || 'Discord linked') + '<span class="rb-mono" style="font-size:10px;color:var(--slate);">(' + escapeHtml(link.discordId) + ')</span></span>';
+      if (canAdmin){
+        html += '<button class="rb-btn" data-admin-unlink-team="' + escapeHtml(brand.region) + '">Remove</button>';
+        html += '<button class="rb-btn rb-btn-gold" data-admin-change-team="' + escapeHtml(link.discordId) + '">Change team</button>';
+      }
+    } else {
+      html += '<span class="rb-mono" style="font-size:12px;color:var(--slate);">No Discord linked</span>';
+    }
+    html += '</div></div>';
+    if (link && canAdmin && UI.teamChangeDiscordId === link.discordId){
+      html += '<div style="margin-top:12px;border-top:1px solid var(--hairline);padding-top:12px;display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:8px;align-items:center;">';
+      html += '<input class="rb-input" id="rb-team-change-input" placeholder="New team name" value="' + escapeHtml(UI.teamChangeTeam || '') + '" list="rb-team-change-options" />';
+      html += '<button class="rb-btn rb-btn-gold" id="rb-team-change-save">Save</button>';
+      html += '<button class="rb-btn" id="rb-team-change-cancel">Cancel</button>';
+      html += '</div>';
+    }
+    html += '</div>';
+  });
+  if (!visible.length) html += '<div class="rb-card" style="padding:28px;text-align:center;color:var(--slate);">No teams match that search.</div>';
+  html += '<datalist id="rb-team-change-options">';
+  teams.forEach(function(brand){ html += '<option value="' + escapeHtml(brand.region) + '"></option>'; });
+  html += '</datalist>';
+  html += '</div>';
+  return html;
+}
+
 function renderFeed(){
   if (!DB.threads.length){
     return '<div class="rb-card" style="padding:40px;text-align:center;">' +
@@ -2046,21 +2106,6 @@ function renderClassSetup(){
   if (UI.brandingFileName) html += '<span class="rb-mono" style="font-size:12px;color:var(--slate);margin-left:10px;">' + escapeHtml(UI.brandingFileName) + '</span>';
   if (UI.brandingStatus) html += '<div style="font-size:12px;color:var(--gold);margin-top:8px;">' + escapeHtml(UI.brandingStatus) + '</div>';
   if (UI.brandingError) html += '<div style="font-size:12px;color:var(--alert);margin-top:8px;">' + escapeHtml(UI.brandingError) + '</div>';
-  html += '</div>';
-  html += '<div class="rb-card" style="padding:20px 24px;max-width:640px;margin-top:14px;">';
-  html += '<div class="rb-h" style="font-size:16px;margin-bottom:12px;">Discord Account Admin</div>';
-  html += '<div style="display:grid;grid-template-columns:1fr 1fr auto;gap:8px;align-items:end;margin-bottom:12px;">';
-  html += '<div><label style="font-size:12px;color:var(--slate);">Discord ID</label><input class="rb-input" id="rb-admin-unlink-discord" placeholder="optional if team is entered" /></div>';
-  html += '<div><label style="font-size:12px;color:var(--slate);">Team</label><input class="rb-input" id="rb-admin-unlink-team" placeholder="Michigan State" /></div>';
-  html += '<button class="rb-btn" id="rb-admin-unlink-btn">Unlink</button>';
-  html += '</div>';
-  html += '<div style="display:grid;grid-template-columns:1fr 1fr auto;gap:8px;align-items:end;">';
-  html += '<div><label style="font-size:12px;color:var(--slate);">Discord ID</label><input class="rb-input" id="rb-admin-switch-discord" placeholder="required" /></div>';
-  html += '<div><label style="font-size:12px;color:var(--slate);">New team</label><input class="rb-input" id="rb-admin-switch-team" placeholder="Michigan State" /></div>';
-  html += '<button class="rb-btn rb-btn-gold" id="rb-admin-switch-btn">Switch</button>';
-  html += '</div>';
-  if (UI.adminActionStatus) html += '<div style="font-size:12px;color:var(--gold);margin-top:8px;">' + escapeHtml(UI.adminActionStatus) + '</div>';
-  if (UI.adminActionError) html += '<div style="font-size:12px;color:var(--alert);margin-top:8px;">' + escapeHtml(UI.adminActionError) + '</div>';
   html += '</div>';
   if (UI.adminMode){
     html += '<div class="rb-card" style="padding:20px 24px;max-width:640px;margin-top:14px;border-color:#6F1D1B;">';
@@ -2281,7 +2326,11 @@ function renderResetConfirmModal(){
 
 function bindEvents(){
   document.querySelectorAll('[data-nav]').forEach(function(el){
-    el.onclick = function(){ UI.view = el.getAttribute('data-nav'); render(); };
+    el.onclick = function(){
+      UI.view = el.getAttribute('data-nav');
+      render();
+      if (UI.view === 'teams') loadTeamAvailability().then(render);
+    };
   });
   document.querySelectorAll('[data-open-thread]').forEach(function(el){
     el.onclick = function(){ UI.view = 'thread'; UI.threadId = el.getAttribute('data-open-thread'); render(); };
@@ -2469,6 +2518,43 @@ function bindEvents(){
 
   const adminToggle = document.getElementById('rb-admin-mode-toggle');
   if (adminToggle) adminToggle.onchange = function(){ setAdminMode(adminToggle.checked); };
+  const teamSearch = document.getElementById('rb-team-search');
+  if (teamSearch) teamSearch.oninput = function(){
+    const q = teamSearch.value.toLowerCase().trim();
+    UI.teamSearch = teamSearch.value;
+    document.querySelectorAll('[data-team-card]').forEach(function(card){
+      const haystack = card.getAttribute('data-search') || '';
+      card.style.display = !q || haystack.indexOf(q) !== -1 ? '' : 'none';
+    });
+  };
+  document.querySelectorAll('[data-admin-unlink-team]').forEach(function(el){
+    el.onclick = function(){
+      const team = el.getAttribute('data-admin-unlink-team') || '';
+      if (!window.confirm('Remove the Discord link for ' + team + '?')) return;
+      runAdminAccountAction('unlink', { team: team });
+    };
+  });
+  document.querySelectorAll('[data-admin-change-team]').forEach(function(el){
+    el.onclick = function(){
+      UI.teamChangeDiscordId = el.getAttribute('data-admin-change-team') || '';
+      UI.teamChangeTeam = '';
+      UI.adminActionError = null;
+      UI.adminActionStatus = null;
+      render();
+    };
+  });
+  const teamChangeInput = document.getElementById('rb-team-change-input');
+  if (teamChangeInput) teamChangeInput.oninput = function(){ UI.teamChangeTeam = teamChangeInput.value; };
+  const teamChangeSave = document.getElementById('rb-team-change-save');
+  if (teamChangeSave) teamChangeSave.onclick = function(){
+    runAdminAccountAction('switch', { discordId: UI.teamChangeDiscordId, team: teamChangeInput ? teamChangeInput.value : UI.teamChangeTeam });
+  };
+  const teamChangeCancel = document.getElementById('rb-team-change-cancel');
+  if (teamChangeCancel) teamChangeCancel.onclick = function(){
+    UI.teamChangeDiscordId = '';
+    UI.teamChangeTeam = '';
+    render();
+  };
   const adminUnlinkBtn = document.getElementById('rb-admin-unlink-btn');
   if (adminUnlinkBtn) adminUnlinkBtn.onclick = function(){ runAdminAccountAction('unlink'); };
   const adminSwitchBtn = document.getElementById('rb-admin-switch-btn');

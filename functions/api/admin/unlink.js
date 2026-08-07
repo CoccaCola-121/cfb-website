@@ -19,12 +19,13 @@ export async function onRequestPost({ request, env }) {
   const user = await env.AUTH_KV.get(userKey, 'json');
   if (!user) return json({ ok: false, error: 'No linked account found.' }, { status: 404 });
 
-  if (user.team) await deleteTeamClaim(env, user.team);
+  const oldTeam = user.team;
+  if (oldTeam) await deleteTeamClaim(env, oldTeam);
   user.team = '';
   user.updatedAt = Date.now();
   await env.AUTH_KV.put(userKey, JSON.stringify(user));
 
-  if (body.team && teamKey(body.team) !== teamKey(user.team)) {
+  if (body.team && teamKey(body.team) !== teamKey(oldTeam)) {
     await deleteTeamClaim(env, body.team);
   }
 
