@@ -3,6 +3,7 @@ import {
   readOauthState,
   requireEnv,
   sessionCookie,
+  setupErrorResponse,
   signSession,
 } from '../../_lib/auth.js';
 
@@ -33,7 +34,11 @@ async function fetchDiscordUser(token) {
 }
 
 export async function onRequestGet({ request, env }) {
-  requireEnv(env, ['DISCORD_CLIENT_ID', 'DISCORD_CLIENT_SECRET', 'SESSION_SECRET', 'AUTH_KV']);
+  try {
+    requireEnv(env, ['DISCORD_CLIENT_ID', 'DISCORD_CLIENT_SECRET', 'SESSION_SECRET', 'AUTH_KV']);
+  } catch (error) {
+    return setupErrorResponse(error);
+  }
   const url = new URL(request.url);
   const code = url.searchParams.get('code') || '';
   const state = url.searchParams.get('state') || '';

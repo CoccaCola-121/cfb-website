@@ -99,6 +99,38 @@ export function requireEnv(env, names) {
   if (missing.length) throw new Error(`Missing environment: ${missing.join(', ')}`);
 }
 
+export function setupErrorResponse(error) {
+  const message = error && error.message ? error.message : 'Discord auth is not configured yet.';
+  return new Response(`<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>RecruitHQ Setup Needed</title>
+<style>
+body{margin:0;background:#0F1420;color:#EDEEF0;font-family:Inter,system-ui,sans-serif;display:grid;place-items:center;min-height:100vh;padding:24px}
+main{max-width:620px;background:#161C2B;border:1px solid #2A3348;border-radius:12px;padding:28px}
+h1{font-family:Impact,Arial Black,sans-serif;letter-spacing:.04em;margin:0 0 10px;font-size:30px}
+p{color:#A7B0C2;line-height:1.5}
+code{display:block;background:#0F1420;border:1px solid #2A3348;border-radius:8px;padding:12px;color:#D2564C;white-space:pre-wrap}
+a{color:#C9A227}
+</style>
+</head>
+<body>
+<main>
+<h1>Discord setup needed</h1>
+<p>RecruitHQ reached the Discord login route, but Cloudflare is missing part of the auth setup.</p>
+<code>${message.replace(/[&<>"']/g, (c) => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]))}</code>
+<p>Check the Cloudflare Pages environment variables and the <code style="display:inline;padding:2px 5px;">AUTH_KV</code> binding, then redeploy.</p>
+<p><a href="/">Back to RecruitHQ</a></p>
+</main>
+</body>
+</html>`, {
+    status: 500,
+    headers: { 'content-type': 'text/html; charset=utf-8' },
+  });
+}
+
 export async function getCurrentUser(request, env) {
   const session = await readSession(request, env);
   if (!session || !session.discordId || !env.AUTH_KV) return null;
