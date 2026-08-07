@@ -1968,7 +1968,7 @@ function renderTeamsPage(){
   const canCommission = !!(canManageAccess() && UI.adminMode);
   const visible = teams.filter(function(brand){
     const link = UI.teamLinks[teamKey(brand.region)] || null;
-    const haystack = [brand.region, brand.abbrev, brand.nickname, brand.displayName, link && link.displayName, link && link.username, link && link.discordId].join(' ').toLowerCase();
+    const haystack = [brand.region, brand.abbrev, brand.nickname, brand.displayName, link && link.displayName, link && link.username, canAdmin && link && link.discordId].join(' ').toLowerCase();
     return !q || haystack.indexOf(q) !== -1;
   });
   let html = '<div class="rb-card" style="padding:18px 20px;margin-bottom:14px;">';
@@ -1981,7 +1981,7 @@ function renderTeamsPage(){
   html += '<div style="display:flex;flex-direction:column;gap:10px;">';
   visible.forEach(function(brand){
     const link = UI.teamLinks[teamKey(brand.region)] || null;
-    const rowSearch = [brand.region, brand.abbrev, brand.nickname, brand.displayName, link && link.displayName, link && link.username, link && link.discordId].join(' ').toLowerCase();
+    const rowSearch = [brand.region, brand.abbrev, brand.nickname, brand.displayName, link && link.displayName, link && link.username, canAdmin && link && link.discordId].join(' ').toLowerCase();
     html += '<div class="rb-card" data-team-card="1" data-search="' + escapeHtml(rowSearch) + '" style="padding:14px 18px;border-color:' + escapeHtml(brand.primary || 'var(--hairline)') + '66;">';
     html += '<div style="display:grid;grid-template-columns:minmax(0,1fr) auto;gap:14px;align-items:center;">';
     html += '<div style="min-width:0;display:flex;align-items:center;gap:12px;">' + renderTeamLogo(brand) +
@@ -1990,7 +1990,7 @@ function renderTeamsPage(){
     html += '<div style="display:flex;align-items:center;gap:10px;justify-content:flex-end;flex-wrap:wrap;">';
     if (link){
       const level = String(link.accessLevel || 'coach').toLowerCase();
-      html += '<span class="rb-tag" style="display:inline-flex;margin:0;align-items:center;gap:7px;">' + escapeHtml(link.displayName || link.username || 'Discord linked') + '<span class="rb-mono" style="font-size:10px;color:var(--slate);">(' + escapeHtml(link.discordId) + ')</span></span>';
+      html += '<span class="rb-tag" style="display:inline-flex;margin:0;align-items:center;gap:7px;">' + escapeHtml(link.displayName || link.username || 'Discord linked') + (canAdmin ? '<span class="rb-mono" style="font-size:10px;color:var(--slate);">(' + escapeHtml(link.discordId) + ')</span>' : '') + '</span>';
       html += '<span class="rb-mono" style="font-size:11px;color:' + (level === 'commissioner' ? 'var(--gold)' : 'var(--slate)') + ';">' + escapeHtml(level) + '</span>';
       if (canAdmin){
         html += '<button class="rb-btn" data-admin-unlink-team="' + escapeHtml(brand.region) + '">Remove</button>';
