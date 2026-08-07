@@ -176,6 +176,7 @@ body { margin: 0; background: #0F1420; }
 
 <div id="rb-app" class="rb-root"></div>
 
+<script src="team-branding.js"></script>
 <script>
 (function(){
 
@@ -191,7 +192,6 @@ let UI = { view: 'feed', threadId: null, showSubmitModal: false, submitting: fal
            lastSummary: null, loginError: null, classError: null, classDraft: '', assignError: {},
            rescindError: null, classFileName: '', myOfferSearch: '', confirmReset: null,
            commitError: null, commitStatus: null, updatingCommits: false, commitEditing: false,
-           brandingFileName: '', brandingError: null, brandingStatus: null,
            submitTargetId: null, editOfferTarget: null, editError: null, prospectReturnView: 'feed',
            pendingVisitEdit: null, adminMode: false, loginStep: 'account', loginMode: 'login', pendingAuthEmail: '' };
 let dbReady = false, sessionReady = false;
@@ -238,7 +238,7 @@ function teamKey(value){
 function teamBrandKeys(team){
   const keys = [];
   const region = team.region || '';
-  const name = team.name || '';
+  const name = team.name || team.nickname || '';
   const abbrev = team.abbrev || '';
   [region, name, abbrev, (region + ' ' + name).trim()].forEach(function(value){
     const key = teamKey(value);
@@ -247,8 +247,20 @@ function teamBrandKeys(team){
   return keys;
 }
 
+function builtInTeamBranding(){
+  const branding = {};
+  (window.NZCFL_TEAM_BRANDS || []).forEach(function(brand){
+    teamBrandKeys(brand).forEach(function(key){ branding[key] = brand; });
+  });
+  return branding;
+}
+
+function allTeamBranding(){
+  return Object.assign({}, DB.teamBranding || {}, builtInTeamBranding());
+}
+
 function getTeamBranding(teamName){
-  return (DB.teamBranding || {})[teamKey(teamName)] || null;
+  return allTeamBranding()[teamKey(teamName)] || null;
 }
 
 function renderTeamLogo(brand){
@@ -467,53 +479,6 @@ function loadClassFile(file){
     render();
   };
   reader.readAsText(file);
-}
-
-async function fileToText(file){
-  const buffer = await file.arrayBuffer();
-  if (/\.gz$/i.test(file.name || '')){
-    if (typeof DecompressionStream === 'undefined') throw new Error('This browser cannot read .gz files directly. Try an unzipped JSON export.');
-    const stream = new Blob([buffer]).stream().pipeThrough(new DecompressionStream('gzip'));
-    return await new Response(stream).text();
-  }
-  return new TextDecoder().decode(buffer);
-}
-
-async function loadTeamBrandingFile(file){
-  if (!file) return;
-  UI.brandingFileName = file.name || '';
-  UI.brandingError = null;
-  UI.brandingStatus = null;
-  render();
-  try {
-    const text = await fileToText(file);
-    const data = JSON.parse(text);
-    if (!data || !Array.isArray(data.teams)) throw new Error('No teams array found in that export.');
-    const branding = {};
-    let count = 0;
-    data.teams.forEach(function(team){
-      if (!team || !team.region) return;
-      const colors = Array.isArray(team.colors) ? team.colors : [];
-      const brand = {
-        region: team.region || '',
-        nickname: team.name || '',
-        abbrev: team.abbrev || '',
-        displayName: (team.region || '') + (team.name ? ' ' + team.name : ''),
-        primary: colors[0] || '',
-        secondary: colors[1] || colors[2] || '',
-        logoUrl: team.imgURL || ''
-      };
-      teamBrandKeys(team).forEach(function(key){ branding[key] = brand; });
-      count++;
-    });
-    DB.teamBranding = branding;
-    UI.brandingStatus = 'Imported branding for ' + count + ' teams.';
-    UI.brandingError = null;
-    saveDB(); render();
-  } catch (e) {
-    UI.brandingError = e.message || 'Could not import team branding.';
-    render();
-  }
 }
 
 function makeThread(title, prospectIds, stars){
@@ -1390,11 +1355,12 @@ function render(){
 
 function teamLoginOptions(){
   const names = [];
+  const branding = allTeamBranding();
   Object.keys(DB.teams || {}).forEach(function(team){
     if (team && names.indexOf(team) === -1) names.push(team);
   });
-  Object.keys(DB.teamBranding || {}).forEach(function(key){
-    const brand = DB.teamBranding[key];
+  Object.keys(branding).forEach(function(key){
+    const brand = branding[key];
     if (brand && brand.region && names.indexOf(brand.region) === -1) names.push(brand.region);
   });
   names.sort(function(a,b){ return a.localeCompare(b); });
@@ -1798,11 +1764,7 @@ function renderClassSetup(){
   html += '</div>';
   html += '<div class="rb-card" style="padding:20px 24px;max-width:640px;margin-top:14px;">';
   html += '<div class="rb-h" style="font-size:16px;margin-bottom:12px;">Team Branding</div>';
-  html += '<input class="rb-file-input" type="file" id="rb-branding-file" accept=".json,.gz,application/json" />';
-  html += '<label class="rb-file-label" for="rb-branding-file">Import league export</label>';
-  html += '<span class="rb-mono" style="font-size:12px;color:var(--slate);margin-left:10px;">' + escapeHtml(UI.brandingFileName || 'No file selected') + '</span>';
-  if (UI.brandingStatus) html += '<div style="font-size:12px;color:var(--gold);margin-top:8px;">' + escapeHtml(UI.brandingStatus) + '</div>';
-  if (UI.brandingError) html += '<div style="font-size:12px;color:var(--alert);margin-top:8px;">' + escapeHtml(UI.brandingError) + '</div>';
+  html += '<div class="rb-tag" style="display:inline-flex;margin:0;align-items:center;gap:8px;">Locked in from league export &middot; ' + escapeHtml((window.NZCFL_TEAM_BRANDS || []).length) + ' active teams</div>';
   html += '</div>';
   if (UI.adminMode){
     html += '<div class="rb-card" style="padding:20px 24px;max-width:640px;margin-top:14px;border-color:#6F1D1B;">';
@@ -2212,8 +2174,6 @@ function bindEvents(){
 
   const classFile = document.getElementById('rb-class-file');
   if (classFile) classFile.onchange = function(){ loadClassFile(classFile.files && classFile.files[0]); };
-  const brandingFile = document.getElementById('rb-branding-file');
-  if (brandingFile) brandingFile.onchange = function(){ loadTeamBrandingFile(brandingFile.files && brandingFile.files[0]); };
   const updateCommitsBtn = document.getElementById('rb-update-commits');
   if (updateCommitsBtn) updateCommitsBtn.onclick = updateCommitsFromSheet;
   const saveCommitSheetBtn = document.getElementById('rb-save-commit-sheet');
