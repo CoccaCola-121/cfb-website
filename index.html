@@ -293,8 +293,50 @@ function renderStorylineLine(storyline, extraStyle){
   return '<div class="rb-mono" title="' + escapeHtml(text) + '" style="font-size:10px;color:var(--slate);margin-top:5px;line-height:1.2;white-space:normal;overflow-wrap:anywhere;max-width:100%;min-width:0;' + (extraStyle || '') + '">' + escapeHtml(text) + '</div>';
 }
 
-function formatOfferText(text){
-  return escapeHtml(text).replace(/\*\*(.+?)\*\*/g, '<strong style="color:var(--gold);">$1</strong>');
+function uniquePush(list, value){
+  value = String(value || '').replace(/\s+/g, ' ').trim();
+  if (!value) return;
+  const key = value.toLowerCase();
+  if (list.some(function(item){ return item.toLowerCase() === key; })) return;
+  list.push(value);
+}
+
+function formatOfferText(text, promises){
+  const raw = String(text || '');
+  const clean = raw.replace(/\*\*([\s\S]*?)\*\*/g, '$1');
+  const phrases = [];
+  raw.replace(/\*\*([\s\S]*?)\*\*/g, function(_, phrase){
+    uniquePush(phrases, phrase);
+    return phrase;
+  });
+  (promises && promises.length ? promises : extractPromises(raw)).forEach(function(p){
+    uniquePush(phrases, p && p.text);
+  });
+
+  const ranges = [];
+  const lower = clean.toLowerCase();
+  phrases.sort(function(a,b){ return b.length - a.length; }).forEach(function(phrase){
+    const needle = phrase.toLowerCase();
+    let start = lower.indexOf(needle);
+    while (start !== -1){
+      const end = start + phrase.length;
+      const overlaps = ranges.some(function(r){ return start < r.end && end > r.start; });
+      if (!overlaps) ranges.push({ start: start, end: end });
+      start = lower.indexOf(needle, end);
+    }
+  });
+  ranges.sort(function(a,b){ return a.start - b.start; });
+  if (!ranges.length) return escapeHtml(clean);
+
+  let html = '';
+  let cursor = 0;
+  ranges.forEach(function(range){
+    html += escapeHtml(clean.slice(cursor, range.start));
+    html += '<strong style="color:var(--gold);font-weight:800;">' + escapeHtml(clean.slice(range.start, range.end)) + '</strong>';
+    cursor = range.end;
+  });
+  html += escapeHtml(clean.slice(cursor));
+  return html;
 }
 
 function starsOrLabel(stars){
@@ -1511,14 +1553,21 @@ function findPitchTitle(text, promiseStart){
 function extractPromises(text){
   const promises = [];
   const seen = {};
+  const addPromise = function(promise, start){
+    promise = String(promise || '').replace(/\*\*/g, '').replace(/\s+/g, ' ').trim();
+    if (!promise || seen[promise.toLowerCase()]) return;
+    seen[promise.toLowerCase()] = true;
+    const title = findPitchTitle(text, start) || promiseCategory(promise).replace(/_/g, ' ');
+    promises.push({ text: promise, title: title, category: promiseCategory(promise) });
+  };
   const re = /\*\*([\s\S]*?)\*\*/g;
   let match;
   while ((match = re.exec(text || ''))){
-    const promise = match[1].replace(/\s+/g, ' ').trim();
-    if (!promise || seen[promise]) continue;
-    seen[promise] = true;
-    const title = findPitchTitle(text, match.index) || promiseCategory(promise).replace(/_/g, ' ');
-    promises.push({ text: promise, title: title, category: promiseCategory(promise) });
+    addPromise(match[1], match.index);
+  }
+  const plainRe = /\b(?:I|we)\s+promise\b[\s\S]*?(?:[.!?](?=\s+(?:[A-Z0-9#"]|$))|[.!?]?$)/gi;
+  while ((match = plainRe.exec(text || ''))){
+    addPromise(match[0], match.index);
   }
   return promises;
 }
@@ -2144,10 +2193,11 @@ function renderTeamsPage(){
   teams.forEach(function(brand){ html += '<option value="' + escapeHtml(brand.region) + '"></option>'; });
   html += '</datalist>';
   if (canAdmin || canCommission){
-    html += '<div class="rb-card" style="padding:14px 18px;margin-top:14px;display:flex;justify-content:flex-end;align-items:center;gap:10px;flex-wrap:wrap;position:sticky;bottom:12px;z-index:3;">';
+    html += '<div style="display:flex;justify-content:center;margin-top:12px;position:sticky;bottom:12px;z-index:3;">';
+    html += '<div class="rb-card" style="padding:8px 10px;display:flex;justify-content:center;align-items:center;gap:8px;flex-wrap:wrap;width:auto;max-width:max-content;">';
     if (pendingCount) html += '<button class="rb-btn" id="rb-discard-team-changes">Discard changes</button>';
-    html += '<button class="rb-btn rb-btn-gold" id="rb-save-team-changes" ' + (!pendingCount ? 'disabled' : '') + '>Save team changes</button>';
-    html += '</div>';
+    html += '<button class="rb-btn rb-btn-gold" id="rb-save-team-changes" ' + (!pendingCount ? 'disabled' : '') + '>Save changes</button>';
+    html += '</div></div>';
   }
   html += '</div>';
   return html;
@@ -2376,11 +2426,12 @@ function renderOfferBlock(o, opts){
     html += '<div style="margin-top:8px;"><span class="rb-tag" style="display:inline-block;margin:0;color:var(--alert);border-color:#6F1D1B;background:rgba(111,29,27,0.18);font-weight:600;">Rescinded</span></div>';
   } else {
     const scrollStyle = opts.fullText ? '' : 'max-height:140px;overflow:auto;';
-    html += '<div style="font-size:13px;color:var(--chalk);margin-top:6px;white-space:pre-wrap;' + scrollStyle + '" class="rb-scrollbar">' + formatOfferText(o.text) + '</div>';
+    html += '<div style="font-size:13px;color:var(--chalk);margin-top:6px;white-space:pre-wrap;' + scrollStyle + '" class="rb-scrollbar">' + formatOfferText(o.text, o.promises) + '</div>';
   }
-  if (!o.rescinded && o.promises && o.promises.length){
+  const displayPromises = !o.rescinded ? ((o.promises && o.promises.length) ? o.promises : extractPromises(o.text || '')) : [];
+  if (displayPromises.length){
     html += '<div style="margin-top:8px;">';
-    o.promises.forEach(function(p){
+    displayPromises.forEach(function(p){
       const title = titleForPromise(o, p);
       html += '<div class="rb-tag">' +
         '<span class="rb-mono" style="color:var(--gold);font-size:10px;text-transform:uppercase;letter-spacing:0.05em;">' + escapeHtml(String(title).replace(/_/g, ' ')) + ':</span> ' +
