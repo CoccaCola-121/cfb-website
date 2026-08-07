@@ -205,16 +205,21 @@ body { margin: 0; background: #0F1420; }
 <div id="rb-app" class="rb-root"></div>
 
 <script src="team-branding.js"></script>
+<script src="default-class-2062.js"></script>
 <script>
 (function(){
 
 const DB_KEY = 'recruiting-board-db-v2';
 const SESSION_KEY = 'rb-session-v1';
 const ADMIN_MODE_KEY = 'rb-admin-mode-v1';
+const DEFAULT_CLASS_FILE = 'recruiting-class-2062.csv';
+const DEFAULT_CLASS_NAME = 'Recruiting Classes - 2062.csv';
+const DEFAULT_COMMIT_SHEET_URL = 'https://docs.google.com/spreadsheets/d/1lJId_aHADTpoS03HcWbj2MZ_GNM_7syYJW_HKXHZlyg/edit?gid=874510495#gid=874510495';
 
 let DB = { fullRoster: [], released: {}, wave1Released: false, wave2Released: false,
            prospects: {}, threads: [], offersByProspect: {}, unmatched: [], teams: {},
-           teamBranding: {}, users: {}, commitSheetUrl: '', commitUpdatedAt: null };
+           teamBranding: {}, users: {}, commitSheetUrl: DEFAULT_COMMIT_SHEET_URL, commitUpdatedAt: null,
+           defaultClassLoaded: false };
 let SESSION = null;
 let UI = { view: 'feed', threadId: null, showSubmitModal: false, submitting: false,
            lastSummary: null, loginError: null, classError: null, classDraft: '', assignError: {},
@@ -423,6 +428,7 @@ async function loadAll(){
     const res = await getStored(DB_KEY, true);
     if (res && res.value) DB = Object.assign(DB, JSON.parse(res.value));
   } catch (e) { /* first run */ }
+  await ensureDefaultSeasonData();
   dbReady = true;
   try {
     const res = await getStored(SESSION_KEY, false);
@@ -441,6 +447,38 @@ async function loadAll(){
 
 function saveDB(){
   setStored(DB_KEY, JSON.stringify(DB), true);
+}
+
+function applyDefaultClassData(text){
+  const list = parseFullClass(text || '');
+  if (!list || !list.length) return false;
+  DB.fullRoster = list;
+  DB.defaultClassLoaded = true;
+  UI.classFileName = DEFAULT_CLASS_NAME;
+  UI.classError = null;
+  return true;
+}
+
+async function ensureDefaultSeasonData(){
+  let changed = false;
+  if (!DB.commitSheetUrl){
+    DB.commitSheetUrl = DEFAULT_COMMIT_SHEET_URL;
+    changed = true;
+  }
+  if (!DB.fullRoster.length){
+    try {
+      let text = window.NZCFL_DEFAULT_CLASS_CSV || '';
+      if (!text){
+        const res = await fetch(DEFAULT_CLASS_FILE);
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        text = await res.text();
+      }
+      if (applyDefaultClassData(text)) changed = true;
+    } catch (e) {
+      UI.classError = 'Default class could not load automatically. Use the CSV upload if you are viewing from a local file.';
+    }
+  }
+  if (changed) saveDB();
 }
 
 function setAdminMode(on){
@@ -1448,7 +1486,7 @@ function confirmReset(){
   if (UI.confirmReset === 'offers'){
     DB.offersByProspect = {};
     DB.unmatched = [];
-    DB.commitSheetUrl = '';
+    DB.commitSheetUrl = DEFAULT_COMMIT_SHEET_URL;
     DB.commitUpdatedAt = null;
     UI.lastSummary = null;
     UI.rescindError = null;
@@ -1462,6 +1500,9 @@ function confirmReset(){
     DB.threads = [];
     DB.offersByProspect = {};
     DB.unmatched = [];
+    DB.defaultClassLoaded = false;
+    applyDefaultClassData(window.NZCFL_DEFAULT_CLASS_CSV || '');
+    DB.commitSheetUrl = DEFAULT_COMMIT_SHEET_URL;
     UI.threadId = null;
     UI.view = 'setup';
     UI.classFileName = '';
@@ -1876,9 +1917,10 @@ function renderClassSetup(){
 
   html += '<div class="rb-card" style="padding:24px;max-width:640px;">';
   html += '<div class="rb-h" style="font-size:18px;margin-bottom:14px;">Season class setup</div>';
+  html += '<div class="rb-mono" style="font-size:12px;color:var(--slate);margin-bottom:12px;">Default: ' + escapeHtml(DEFAULT_CLASS_NAME) + '</div>';
   html += '<input class="rb-file-input" type="file" id="rb-class-file" accept=".csv,text/csv" />';
-  html += '<label class="rb-file-label" for="rb-class-file">Choose CSV file</label>';
-  html += '<span class="rb-mono" style="font-size:12px;color:var(--slate);margin-left:10px;">' + escapeHtml(UI.classFileName || 'No file selected') + '</span>';
+  html += '<label class="rb-file-label" for="rb-class-file">Replace CSV file</label>';
+  html += '<span class="rb-mono" style="font-size:12px;color:var(--slate);margin-left:10px;">' + escapeHtml(UI.classFileName || (DB.fullRoster.length ? DEFAULT_CLASS_NAME : 'No file selected')) + '</span>';
   if (UI.classError) html += '<div style="font-size:12px;color:var(--alert);margin-top:8px;">' + escapeHtml(UI.classError) + '</div>';
   html += '</div>';
 
