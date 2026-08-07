@@ -72,6 +72,22 @@ body { margin: 0; background: #0F1420; }
 .rb-scrollbar::-webkit-scrollbar { width: 8px; }
 .rb-scrollbar::-webkit-scrollbar-thumb { background: var(--hairline); border-radius: 4px; }
 .rb-tag { font-size: 11px; background: var(--panel-alt); border: 1px solid var(--hairline); border-radius: 6px; padding: 6px 10px; margin-top: 4px; display: block; }
+.rb-filter-row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-top: 10px; }
+.rb-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--slate);
+  font-size: 12px;
+  cursor: pointer;
+  user-select: none;
+  background: var(--panel-alt);
+  border: 1px solid var(--hairline);
+  border-radius: 999px;
+  padding: 7px 10px;
+}
+.rb-toggle input { accent-color: var(--gold); }
+.rb-mobile-only { display: none; }
 .rb-home {
   min-height: calc(100vh - 56px);
   display: grid;
@@ -193,6 +209,13 @@ body { margin: 0; background: #0F1420; }
 }
 @media (max-width: 720px) {
   .rb-root { padding: 16px; border-radius: 0; }
+  .rb-btn { padding: 8px 11px; font-size: 12px; }
+  .rb-card { border-radius: 8px; }
+  .rb-desktop-only { display: none !important; }
+  .rb-mobile-only { display: inline !important; }
+  .rb-mobile-stack { grid-template-columns: 1fr !important; }
+  .rb-mobile-tight { padding: 11px 12px !important; }
+  .rb-h { letter-spacing: 0.02em; }
   .rb-home { grid-template-columns: 1fr; }
   .rb-home-hero { min-height: auto; padding: 24px; }
   .rb-home-title { font-size: 38px; }
@@ -227,7 +250,7 @@ let UI = { view: 'feed', threadId: null, showSubmitModal: false, submitting: fal
            submitTargetId: null, editOfferTarget: null, editError: null, prospectReturnView: 'feed',
            pendingVisitEdit: null, loginStep: 'account', pendingDiscordUser: null,
            teamLinkQuery: '', unavailableTeamKeys: [], teamLinks: {}, teamSearch: '',
-           teamFilterCoached: false,
+           teamFilterCoached: false, hideCommittedBoards: false,
            teamChangeDiscordId: '', teamChangeTeam: '', teamPending: { unlinks: {}, switches: {}, roles: {} },
            teamCommitsTeam: '', teamOffersTeam: '',
            brandingStatus: null, brandingError: null,
@@ -419,13 +442,13 @@ function renderCommittedTag(teamName){
   }
   const primary = brand.primary || 'var(--hairline)';
   const secondary = brand.secondary || 'var(--chalk)';
-  return '<span class="rb-tag" style="display:inline-flex;align-items:center;gap:7px;margin:0;white-space:nowrap;border-color:' + escapeHtml(primary) + ';background:linear-gradient(90deg,' + escapeHtml(primary) + '44,' + escapeHtml(secondary) + '1f);">' + renderTeamLogo(brand) + '<span>Committed: ' + escapeHtml(brand.region || teamName) + '</span></span>';
+  return '<span class="rb-tag" style="display:inline-flex;align-items:center;gap:7px;margin:0;white-space:nowrap;border-color:' + escapeHtml(primary) + ';background:linear-gradient(90deg,' + escapeHtml(primary) + '44,' + escapeHtml(secondary) + '1f);">' + renderTeamLogo(brand) + '<span>Committed: <span class="rb-desktop-only">' + escapeHtml(brand.region || teamName) + '</span><span class="rb-mobile-only">' + escapeHtml(brand.abbrev || brand.region || teamName) + '</span></span></span>';
 }
 
 function renderTeamCoachBadge(teamName){
   const brand = getTeamBranding(teamName);
   if (!brand) return '<strong style="color:var(--chalk);">' + escapeHtml(teamName) + '</strong>';
-  return '<span style="display:inline-flex;align-items:center;gap:6px;vertical-align:middle;line-height:1;">' + renderTeamLogo(brand) + '<strong style="color:' + escapeHtml(brand.primary || 'var(--chalk)') + ';line-height:1;">' + escapeHtml(teamName) + '</strong></span>';
+  return '<span style="display:inline-flex;align-items:center;gap:6px;vertical-align:middle;line-height:1;">' + renderTeamLogo(brand) + '<strong style="color:' + escapeHtml(brand.primary || 'var(--chalk)') + ';line-height:1;"><span class="rb-desktop-only">' + escapeHtml(teamName) + '</span><span class="rb-mobile-only">' + escapeHtml(brand.abbrev || teamName) + '</span></strong></span>';
 }
 
 function committedCardStyle(teamName){
@@ -443,6 +466,13 @@ function offerCountForProspect(pid){
 function offerCountTag(pid){
   const count = offerCountForProspect(pid);
   return '<span class="rb-tag" style="display:inline-block;margin:0;white-space:nowrap;">' + count + ' offer' + (count === 1 ? '' : 's') + '</span>';
+}
+
+function visibleBoardProspectIds(t){
+  return (t.prospectIds || []).filter(function(pid){
+    const p = DB.prospects[pid];
+    return p && (!UI.hideCommittedBoards || !p.commitTeam);
+  });
 }
 
 function rankRangeForThread(t){
@@ -1618,6 +1648,55 @@ function titleForPromise(offer, promise){
   return 'Promise';
 }
 
+function buildPromiseArchive(){
+  const rows = Object.keys(DB.prospects || {}).map(function(pid){ return DB.prospects[pid]; }).filter(function(p){
+    return p && p.commitTeam;
+  }).sort(function(a,b){ return a.rank - b.rank; }).map(function(p){
+    const winningOffers = (DB.offersByProspect[p.id] || []).filter(function(o){
+      return !o.rescinded && o.team && o.team.toLowerCase() === String(p.commitTeam || '').toLowerCase();
+    });
+    const promises = [];
+    winningOffers.forEach(function(o){
+      cleanDisplayPromises(o).forEach(function(pr){
+        promises.push({
+          category: String(titleForPromise(o, pr)).replace(/_/g, ' '),
+          promise: pr.text
+        });
+      });
+    });
+    return {
+      rank: p.rank,
+      name: p.name,
+      position: p.position,
+      rating: p.rating,
+      hometown: p.hometown,
+      committedTeam: p.commitTeam,
+      promises: promises
+    };
+  }).filter(function(row){ return row.promises.length; });
+
+  return {
+    exportedAt: new Date().toISOString(),
+    className: UI.classFileName || DEFAULT_CLASS_NAME,
+    commitSheetUrl: DB.commitSheetUrl || '',
+    commitsWithPromises: rows.length,
+    commits: rows
+  };
+}
+
+function exportPromiseArchive(){
+  const data = buildPromiseArchive();
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'nzcfl-promise-archive-' + new Date().toISOString().slice(0, 10) + '.json';
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
 function visitSummary(visits){
   visits = normalizeVisits(visits);
   const parts = [];
@@ -1919,7 +1998,7 @@ function renderNav(){
   if (SESSION){
     html += '<div style="font-size:12px;color:var(--slate);display:flex;align-items:center;gap:6px;">Coaching for ' + renderTeamCoachBadge(SESSION.team) + '<span>&middot;</span><a href="#" id="rb-logout" style="color:var(--gold);text-decoration:none;">Log out</a></div>';
   }
-  html += '<div style="display:flex;gap:8px;">' +
+  html += '<div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end;">' +
       '<button class="rb-btn" data-nav="feed">Prospect Board</button>' +
       (SESSION ? '<button class="rb-btn" data-nav="myoffers">My Offers</button>' : '') +
       (SESSION ? '<button class="rb-btn" data-nav="mycommits">My Commits</button>' : '') +
@@ -2216,7 +2295,7 @@ function renderTeamsPage(){
   html += '<div class="rb-h" style="font-size:18px;margin-bottom:6px;">Teams</div>';
   html += '<div style="font-size:13px;color:var(--slate);margin-bottom:12px;">' + teams.length + ' teams &middot; ' + Object.keys(UI.teamLinks || {}).length + ' linked Discord account' + (Object.keys(UI.teamLinks || {}).length === 1 ? '' : 's') + '</div>';
   html += '<input class="rb-input" id="rb-team-search" placeholder="Search teams or linked Discord accounts" value="' + escapeHtml(UI.teamSearch || '') + '" />';
-  html += '<label style="display:inline-flex;align-items:center;gap:8px;margin-top:10px;color:var(--slate);font-size:12px;cursor:pointer;"><input type="checkbox" id="rb-team-filter-coached" ' + (UI.teamFilterCoached ? 'checked' : '') + ' style="accent-color:var(--gold);" />Coached teams only</label>';
+  html += '<div class="rb-filter-row"><label class="rb-toggle"><input type="checkbox" id="rb-team-filter-coached" ' + (UI.teamFilterCoached ? 'checked' : '') + ' />Coached teams only</label></div>';
   if (pendingCount) html += '<div class="rb-mono" style="font-size:12px;color:var(--gold);margin-top:8px;">' + pendingCount + ' unsaved team change' + (pendingCount === 1 ? '' : 's') + '</div>';
   if (UI.adminActionStatus) html += '<div style="font-size:12px;color:var(--gold);margin-top:8px;">' + escapeHtml(UI.adminActionStatus) + '</div>';
   if (UI.adminActionError) html += '<div style="font-size:12px;color:var(--alert);margin-top:8px;">' + escapeHtml(UI.adminActionError) + '</div>';
@@ -2231,7 +2310,7 @@ function renderTeamsPage(){
     html += '<div class="rb-card" data-team-card="1" data-open-team-commits="' + escapeHtml(brand.region) + '" data-search="' + escapeHtml(rowSearch) + '" style="padding:14px 18px;border-color:' + escapeHtml(brand.primary || 'var(--hairline)') + '66;cursor:pointer;">';
     html += '<div style="display:grid;grid-template-columns:minmax(0,1fr) auto;gap:14px;align-items:center;">';
     html += '<div style="min-width:0;display:flex;align-items:center;gap:12px;">' + renderTeamLogo(brand) +
-      '<div style="min-width:0;"><div style="font-weight:700;color:var(--chalk);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + escapeHtml(brand.region) + '</div>' +
+      '<div style="min-width:0;"><div style="font-weight:700;color:var(--chalk);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;"><span class="rb-desktop-only">' + escapeHtml(brand.region) + '</span><span class="rb-mobile-only">' + escapeHtml(brand.abbrev || brand.region) + '</span></div>' +
       '<div class="rb-mono" style="font-size:11px;color:var(--slate);margin-top:2px;">' + escapeHtml(brand.abbrev || '') + (brand.nickname ? ' &middot; ' + escapeHtml(brand.nickname) : '') + '</div></div></div>';
     html += '<div style="display:flex;align-items:center;gap:10px;justify-content:flex-end;flex-wrap:wrap;">';
     if (link){
@@ -2288,17 +2367,21 @@ function renderFeed(){
       (canViewSettings() ? '<button class="rb-btn rb-btn-gold" data-nav="setup">Settings</button>' : '') +
     '</div>';
   }
-  let html = '<input class="rb-input" id="rb-board-search" placeholder="Search offers by recruit name, rank, position, or hometown" style="margin-bottom:14px;" />';
+  let html = '<div class="rb-card" style="padding:14px 16px;margin-bottom:14px;">';
+  html += '<input class="rb-input" id="rb-board-search" placeholder="Search offers by recruit name, rank, position, or hometown" />';
+  html += '<div class="rb-filter-row"><label class="rb-toggle"><input type="checkbox" id="rb-hide-committed-boards" ' + (UI.hideCommittedBoards ? 'checked' : '') + ' />Hide committed players</label></div>';
+  html += '</div>';
   html += '<div id="rb-board-cards" style="display:flex;flex-direction:column;gap:10px;">';
   DB.threads.forEach(function(t){
-    const offerCount = t.prospectIds.reduce(function(sum, pid){ return sum + ((DB.offersByProspect[pid] || []).length); }, 0);
+    const visibleIds = visibleBoardProspectIds(t);
+    const offerCount = visibleIds.reduce(function(sum, pid){ return sum + ((DB.offersByProspect[pid] || []).length); }, 0);
     const offerLabel = offerCount + ' offer' + (offerCount === 1 ? '' : 's') + ' on record';
     const uncommittedCount = t.prospectIds.reduce(function(sum, pid){
       const p = DB.prospects[pid];
       return sum + (p && !p.commitTeam ? 1 : 0);
     }, 0);
     const uncommittedLabel = uncommittedCount + ' uncommitted';
-    const threadSearch = (t.prospectIds || []).map(function(pid){
+    const threadSearch = visibleIds.map(function(pid){
       const p = DB.prospects[pid] || {};
       return [p.rank, '#' + p.rank, p.name, p.position, p.hometown].join(' ');
     }).join(' ').toLowerCase();
@@ -2315,7 +2398,7 @@ function renderFeed(){
   html += '</div>';
   html += '<div id="rb-board-player-results" style="display:none;flex-direction:column;gap:10px;">';
   DB.threads.forEach(function(t){
-    (t.prospectIds || []).forEach(function(pid){
+    visibleBoardProspectIds(t).forEach(function(pid){
       const p = DB.prospects[pid] || {};
       const searchText = [p.rank, '#' + p.rank, p.name, p.position, p.hometown].join(' ').toLowerCase();
       html += renderProspectBoardCard(pid, searchText);
@@ -2330,7 +2413,7 @@ function renderProspectBoardCard(pid, searchAttr){
   if (!p) return '';
   const offers = DB.offersByProspect[pid] || [];
   const searchText = searchAttr || [p.rank, '#' + p.rank, p.name, p.position, p.hometown].join(' ').toLowerCase();
-  let html = '<div class="rb-card" data-prospect-card="1" data-search="' + escapeHtml(searchText) + '" data-open-prospect="' + pid + '" style="padding:14px 18px;cursor:pointer;' + (p.commitTeam ? committedCardStyle(p.commitTeam) : '') + '">';
+  let html = '<div class="rb-card rb-mobile-tight" data-prospect-card="1" data-search="' + escapeHtml(searchText) + '" data-open-prospect="' + pid + '" style="padding:14px 18px;cursor:pointer;' + (p.commitTeam ? committedCardStyle(p.commitTeam) : '') + '">';
   html += '<div style="display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:10px;">';
   html += '<div style="min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' +
     '<span class="rb-mono" style="color:var(--slate);">#' + p.rank + '</span> ' +
@@ -2411,6 +2494,11 @@ function renderClassSetup(){
   if (UI.brandingStatus) html += '<div style="font-size:12px;color:var(--gold);margin-top:8px;">' + escapeHtml(UI.brandingStatus) + '</div>';
   if (UI.brandingError) html += '<div style="font-size:12px;color:var(--alert);margin-top:8px;">' + escapeHtml(UI.brandingError) + '</div>';
   html += '</div>';
+  html += '<div class="rb-card" style="padding:20px 24px;max-width:640px;margin-top:14px;">';
+  html += '<div class="rb-h" style="font-size:16px;margin-bottom:8px;">Promise Archive</div>';
+  html += '<div class="rb-mono" style="font-size:12px;color:var(--slate);margin-bottom:12px;">Exports committed winners and their promises only.</div>';
+  html += '<button class="rb-btn rb-btn-gold" id="rb-export-promise-archive">Export promise archive</button>';
+  html += '</div>';
   if (canUseDangerZone()){
     html += '<div class="rb-card" style="padding:20px 24px;max-width:640px;margin-top:14px;border-color:#6F1D1B;">';
     html += '<div class="rb-h" style="font-size:14px;margin-bottom:12px;color:#FFF2F1;">Danger Zone</div>';
@@ -2432,12 +2520,14 @@ function renderThread(){
   html += '<input class="rb-input" data-thread-search="' + t.id + '" placeholder="Search offers by recruit name, rank, position, or hometown" style="margin-bottom:14px;" />';
 
   html += '<div style="display:flex;flex-direction:column;gap:10px;">';
-  t.prospectIds.forEach(function(pid){
+  const visibleIds = visibleBoardProspectIds(t);
+  visibleIds.forEach(function(pid){
     const p = DB.prospects[pid];
     if (!p) return;
     const searchText = [p.rank, '#' + p.rank, p.name, p.position, p.hometown].join(' ').toLowerCase();
     html += renderProspectBoardCard(pid, searchText);
   });
+  if (!visibleIds.length) html += '<div class="rb-card" style="padding:28px;text-align:center;color:var(--slate);">No uncommitted prospects on this board.</div>';
   html += '</div>';
   return html;
 }
@@ -2747,6 +2837,11 @@ function bindEvents(){
       card.style.display = !q || haystack.indexOf(q) !== -1 ? '' : 'none';
     });
   };
+  const hideCommittedBoards = document.getElementById('rb-hide-committed-boards');
+  if (hideCommittedBoards) hideCommittedBoards.onchange = function(){
+    UI.hideCommittedBoards = !!hideCommittedBoards.checked;
+    render();
+  };
 
   const myOfferSearch = document.getElementById('rb-my-offer-search');
   if (myOfferSearch) myOfferSearch.oninput = function(){
@@ -2925,6 +3020,8 @@ function bindEvents(){
   if (brandingFile) brandingFile.onchange = function(){ loadTeamBrandingFile(brandingFile.files && brandingFile.files[0]); };
   const offersLockToggle = document.getElementById('rb-offers-lock-toggle');
   if (offersLockToggle) offersLockToggle.onchange = function(){ setOffersLocked(offersLockToggle.checked); };
+  const exportPromiseArchiveBtn = document.getElementById('rb-export-promise-archive');
+  if (exportPromiseArchiveBtn) exportPromiseArchiveBtn.onclick = exportPromiseArchive;
   const updateCommitsBtn = document.getElementById('rb-update-commits');
   if (updateCommitsBtn) updateCommitsBtn.onclick = updateCommitsFromSheet;
   const saveCommitSheetBtn = document.getElementById('rb-save-commit-sheet');
