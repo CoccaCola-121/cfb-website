@@ -1991,7 +1991,7 @@ function renderTeamsPage(){
     if (link){
       const level = String(link.accessLevel || 'coach').toLowerCase();
       html += '<span class="rb-tag" style="display:inline-flex;margin:0;align-items:center;gap:7px;">' + escapeHtml(link.displayName || link.username || 'Discord linked') + (canAdmin ? '<span class="rb-mono" style="font-size:10px;color:var(--slate);">(' + escapeHtml(link.discordId) + ')</span>' : '') + '</span>';
-      html += '<span class="rb-mono" style="font-size:11px;color:' + (level === 'commissioner' ? 'var(--gold)' : 'var(--slate)') + ';">' + escapeHtml(level) + '</span>';
+      if (level !== 'coach') html += '<span class="rb-mono" style="font-size:11px;color:' + (level === 'commissioner' ? 'var(--gold)' : 'var(--slate)') + ';">' + escapeHtml(level) + '</span>';
       if (canAdmin){
         html += '<button class="rb-btn" data-admin-unlink-team="' + escapeHtml(brand.region) + '">Remove</button>';
         html += '<button class="rb-btn rb-btn-gold" data-admin-change-team="' + escapeHtml(link.discordId) + '">Change team</button>';
