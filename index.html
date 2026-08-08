@@ -2417,7 +2417,7 @@ function renderMyOffers(){
   }
   const rows = getOfferRowsForTeam(SESSION.team);
   let html = renderVisitLedger();
-  html += '<div class="rb-card" style="padding:18px 20px;margin-bottom:14px;' + (p.commitTeam ? committedCardStyle(p.commitTeam) : '') + '">';
+  html += '<div class="rb-card" style="padding:18px 20px;margin-bottom:14px;">';
   html += '<div class="rb-h" style="font-size:18px;margin-bottom:6px;">My Offers</div>';
   html += '<div style="font-size:13px;color:var(--slate);margin-bottom:12px;">' + rows.length + ' offer' + (rows.length === 1 ? '' : 's') + ' from ' + escapeHtml(SESSION.team) + '.</div>';
   html += '<div style="margin-bottom:12px;"><button class="rb-btn rb-btn-gold" id="rb-open-submit" ' + (DB.offersLocked ? 'disabled title="Offers are locked"' : '') + '>' + (DB.offersLocked ? 'Offers locked' : 'Submit offer') + '</button></div>';
@@ -2822,7 +2822,7 @@ function renderProspectDetail(){
   const returnView = UI.prospectReturnView || 'feed';
   const returnLabel = returnView === 'myoffers' ? 'Back to My Offers' : (returnView === 'mycommits' ? 'Back to My Commits' : (returnView === 'teamcommits' ? 'Back to Team Commits' : (returnView === 'teamoffers' ? 'Back to Team Offers' : 'Back to board')));
   let html = '<div style="margin-bottom:16px;"><button class="rb-btn" data-nav="' + escapeHtml(returnView) + '">&larr; ' + escapeHtml(returnLabel) + '</button></div>';
-  html += '<div class="rb-card" style="padding:18px 20px;margin-bottom:14px;">';
+  html += '<div class="rb-card" style="padding:18px 20px;margin-bottom:14px;' + (p.commitTeam ? committedCardStyle(p.commitTeam) : '') + '">';
   html += '<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;">';
   html += '<div style="min-width:0;flex:1 1 420px;"><div class="rb-h" style="font-size:22px;">#' + p.rank + ' ' + escapeHtml(p.name) + '</div>';
   html += '<div class="rb-mono" style="font-size:13px;color:var(--slate);margin-top:4px;">' + escapeHtml(p.position) + (p.rating ? ' &middot; ' + escapeHtml(p.rating) : '') + (p.hometown ? ' &middot; ' + escapeHtml(p.hometown) : '') + '</div>';
