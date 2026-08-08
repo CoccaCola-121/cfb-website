@@ -2723,7 +2723,6 @@ function renderTeamsPage(){
     html += '<div style="display:flex;align-items:center;gap:10px;justify-content:flex-end;flex-wrap:wrap;">';
     if (link){
       const level = String((pendingRole && pendingRole.accessLevel) || link.accessLevel || 'coach').toLowerCase();
-      if (level !== 'coach') html += '<span class="rb-mono rb-mobile-admin-control" style="font-size:11px;color:' + (level === 'commissioner' ? 'var(--gold)' : 'var(--slate)') + ';">' + escapeHtml(level) + '</span>';
       html += '<span class="rb-tag rb-coach-pill">' + escapeHtml(link.displayName || link.username || 'Discord linked') + '</span>';
       if (pendingUnlink) html += '<span class="rb-mono rb-mobile-admin-control" style="font-size:11px;color:var(--alert);">pending remove</span>';
       if (pendingSwitch) html += '<span class="rb-mono rb-mobile-admin-control" style="font-size:11px;color:var(--gold);">pending move to ' + escapeHtml(pendingSwitch.team) + '</span>';
