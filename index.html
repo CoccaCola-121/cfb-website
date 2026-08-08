@@ -447,7 +447,8 @@ const DEFAULT_COMMIT_SHEET_URL = 'https://docs.google.com/spreadsheets/d/1lJId_a
 let DB = { fullRoster: [], released: {}, wave1Released: false, wave2Released: false,
            prospects: {}, threads: [], offersByProspect: {}, unmatched: [], teams: {},
            teamBranding: {}, users: {}, commitSheetUrl: DEFAULT_COMMIT_SHEET_URL, commitUpdatedAt: null,
-           defaultClassLoaded: false, offersLocked: false, dangerApprovals: {} };
+           discordCommitUpdatedAt: null, discordCommitChannelId: '', defaultClassLoaded: false,
+           offersLocked: false, dangerApprovals: {} };
 let SESSION = null;
 let UI = { view: 'feed', threadId: null, showSubmitModal: false, submitting: false,
            lastSummary: null, loginError: null, classError: null, classDraft: '', assignError: {},
@@ -905,6 +906,8 @@ function leagueStatePayload(){
     teamBranding: DB.teamBranding,
     commitSheetUrl: DB.commitSheetUrl,
     commitUpdatedAt: DB.commitUpdatedAt,
+    discordCommitUpdatedAt: DB.discordCommitUpdatedAt,
+    discordCommitChannelId: DB.discordCommitChannelId,
     defaultClassLoaded: DB.defaultClassLoaded,
     offersLocked: !!DB.offersLocked,
     dangerApprovals: DB.dangerApprovals || {}
@@ -917,16 +920,18 @@ function mergeLeagueState(state){
     offersByProspect: DB.offersByProspect,
     prospects: DB.prospects,
     threads: DB.threads,
-    commitUpdatedAt: DB.commitUpdatedAt
+    commitUpdatedAt: DB.commitUpdatedAt,
+    discordCommitUpdatedAt: DB.discordCommitUpdatedAt
   });
-  ['fullRoster','released','wave1Released','wave2Released','prospects','threads','offersByProspect','unmatched','teams','teamBranding','commitSheetUrl','commitUpdatedAt','defaultClassLoaded','offersLocked','dangerApprovals'].forEach(function(field){
+  ['fullRoster','released','wave1Released','wave2Released','prospects','threads','offersByProspect','unmatched','teams','teamBranding','commitSheetUrl','commitUpdatedAt','discordCommitUpdatedAt','discordCommitChannelId','defaultClassLoaded','offersLocked','dangerApprovals'].forEach(function(field){
     if (Object.prototype.hasOwnProperty.call(state, field)) DB[field] = state[field];
   });
   const after = JSON.stringify({
     offersByProspect: DB.offersByProspect,
     prospects: DB.prospects,
     threads: DB.threads,
-    commitUpdatedAt: DB.commitUpdatedAt
+    commitUpdatedAt: DB.commitUpdatedAt,
+    discordCommitUpdatedAt: DB.discordCommitUpdatedAt
   });
   setStored(DB_KEY, JSON.stringify(DB), true);
   return before !== after;
@@ -1492,7 +1497,7 @@ function applyCommitRows(rows){
 async function updateCommitsFromSheet(){
   const input = document.getElementById('rb-commit-sheet-url');
   const rawUrl = (input ? input.value : DB.commitSheetUrl || '').trim();
-  if (!rawUrl){
+  if (!apiAvailable() && !rawUrl){
     UI.commitError = 'Save the season commit sheet URL first.';
     render(); return;
   }
@@ -1500,16 +1505,42 @@ async function updateCommitsFromSheet(){
   UI.commitError = null;
   UI.commitStatus = null;
   render();
+  if (apiAvailable()){
+    try {
+      const res = await fetch('/api/commits/discord', { method: 'POST', credentials: 'include' });
+      const data = await res.json().catch(function(){ return {}; });
+      if (res.ok && data.ok){
+        await syncLeagueState(false);
+        UI.commitStatus = 'Discord commits updated: ' + data.updated + ' changed, ' + data.unchanged + ' already current, ' + data.commitsFound + ' found in ' + data.messagesRead + ' messages' + (data.unmatchedCount ? ', ' + data.unmatchedCount + ' unmatched' : '') + '.';
+        UI.updatingCommits = false;
+        render();
+        return;
+      }
+      UI.commitError = data.error || 'Discord commit updater is not configured yet.';
+      if (!rawUrl){
+        UI.updatingCommits = false;
+        render();
+        return;
+      }
+    } catch (e) {
+      UI.commitError = e.message || 'Could not update commits from Discord.';
+      if (!rawUrl){
+        UI.updatingCommits = false;
+        render();
+        return;
+      }
+    }
+  }
   try {
     const rows = await fetchCommitRows(rawUrl);
     const count = applyCommitRows(rows);
     const storylineCount = applyStorylineRows(rows);
     DB.commitSheetUrl = rawUrl;
     UI.commitEditing = false;
-    UI.commitStatus = 'Updated ' + count + ' commit' + (count === 1 ? '' : 's') + (storylineCount ? ' and imported ' + storylineCount + ' storyline' + (storylineCount === 1 ? '' : 's') : '') + '.';
+    UI.commitStatus = 'Sheet fallback updated ' + count + ' commit' + (count === 1 ? '' : 's') + (storylineCount ? ' and imported ' + storylineCount + ' storyline' + (storylineCount === 1 ? '' : 's') : '') + '.';
     await saveDBNow();
   } catch (e) {
-    UI.commitError = 'Could not read that sheet from the browser. Share-with-link may not be enough; use File > Share > Publish to web for this tab, or paste the published CSV link.';
+    UI.commitError = UI.commitError || 'Could not update commits from Discord or read the sheet fallback.';
   }
   UI.updatingCommits = false;
   render();
@@ -2891,7 +2922,7 @@ function renderClassSetup(){
     html += '</div></div>';
   }
   html += '<div class="rb-card" style="padding:20px 24px;max-width:640px;margin-top:14px;">';
-  html += '<div class="rb-h" style="font-size:16px;margin-bottom:12px;">Commit Sheet</div>';
+  html += '<div class="rb-h" style="font-size:16px;margin-bottom:12px;">Commit Tracking</div>';
   if (DB.commitSheetUrl && !UI.commitEditing){
     html += '<div style="border:1px solid var(--hairline);border-radius:8px;background:var(--panel-alt);padding:10px 12px;display:flex;justify-content:space-between;gap:10px;align-items:center;flex-wrap:wrap;">';
     html += '<span class="rb-mono" style="font-size:12px;color:var(--slate);max-width:420px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + escapeHtml(DB.commitSheetUrl) + '</span>';
@@ -2905,7 +2936,7 @@ function renderClassSetup(){
     html += '</div>';
   }
   html += '<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:10px;">';
-  html += '<button class="rb-btn rb-btn-gold" id="rb-update-commits" ' + (UI.updatingCommits || !DB.commitSheetUrl ? 'disabled' : '') + '>' + (UI.updatingCommits ? 'Updating...' : 'Update commits') + '</button>';
+  html += '<button class="rb-btn rb-btn-gold" id="rb-update-commits" ' + (UI.updatingCommits || (!apiAvailable() && !DB.commitSheetUrl) ? 'disabled' : '') + '>' + (UI.updatingCommits ? 'Updating...' : 'Update commits from Discord') + '</button>';
   if (DB.commitUpdatedAt) html += '<span class="rb-mono" style="font-size:12px;color:var(--slate);">Last update: ' + escapeHtml(new Date(DB.commitUpdatedAt).toLocaleString()) + '</span>';
   html += '</div>';
   if (UI.commitStatus) html += '<div style="font-size:12px;color:var(--gold);margin-top:8px;">' + escapeHtml(UI.commitStatus) + '</div>';
