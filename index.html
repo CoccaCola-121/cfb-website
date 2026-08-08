@@ -131,6 +131,53 @@ body { margin: 0; background: #0F1420; }
   gap: 14px;
   align-items: center;
 }
+.rb-coach-pill {
+  display: inline-flex;
+  align-items: center;
+  min-height: 34px;
+  min-width: 220px;
+  max-width: 330px;
+  margin: 0;
+  padding: 8px 14px;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--chalk);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.rb-board-list {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.rb-board-tile {
+  min-height: 132px;
+  padding: 28px 30px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+}
+.rb-board-tile-inner {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 22px;
+  width: 100%;
+}
+.rb-board-title {
+  font-size: 22px;
+  font-weight: 600;
+}
+.rb-board-meta {
+  font-size: 15px;
+  color: var(--slate);
+  margin-top: 8px;
+}
+.rb-board-stars {
+  font-size: 22px;
+  white-space: nowrap;
+}
 .rb-values-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(118px, 1fr));
@@ -173,11 +220,24 @@ body { margin: 0; background: #0F1420; }
   gap: 10px;
 }
 .rb-nav-session {
-  font-size: 12px;
-  color: var(--slate);
+  font-size: 15px;
+  color: var(--chalk);
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 9px;
+  line-height: 1;
+  min-height: 32px;
+}
+.rb-nav-session a {
+  color: var(--gold);
+  text-decoration: none;
+  font-weight: 600;
+}
+.rb-nav-team {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  line-height: 1;
 }
 .rb-nav-actions {
   display: flex;
@@ -313,12 +373,19 @@ body { margin: 0; background: #0F1420; }
   .rb-mobile-admin-control { display: none !important; }
   .rb-team-card-mobile { padding: 10px 12px !important; }
   .rb-team-card-row { grid-template-columns: minmax(0, 1fr); gap: 6px; }
+  .rb-coach-pill { min-width: 0; max-width: 100%; min-height: 30px; padding: 6px 10px; font-size: 12px; }
   .rb-nav-shell { align-items: stretch; }
   .rb-nav-side { align-items: stretch; width: 100%; }
   .rb-nav-session { justify-content: flex-start; }
   .rb-nav-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); width: 100%; }
   .rb-nav-actions .rb-btn { width: 100%; }
   .rb-nav-actions .rb-btn:last-child:nth-child(odd) { grid-column: 1 / -1; }
+  .rb-board-list { gap: 10px; }
+  .rb-board-tile { min-height: 94px; padding: 16px 18px; }
+  .rb-board-tile-inner { gap: 10px; }
+  .rb-board-title { font-size: 16px; }
+  .rb-board-meta { font-size: 12px; margin-top: 5px; }
+  .rb-board-stars { font-size: 16px; }
   .rb-values-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
   .rb-value-chip { padding: 6px 6px; }
   .rb-value-chip > span { flex-direction: column; align-items: flex-start !important; gap: 2px !important; }
@@ -595,7 +662,9 @@ function teamMatchesForQuery(query){
 
 function renderTeamLogo(brand){
   if (!brand || !brand.logoUrl) return '';
-  return '<span style="width:22px;height:22px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;background:rgba(226,230,239,0.18);border:1px solid rgba(226,230,239,0.24);flex:0 0 auto;"><img src="' + escapeHtml(brand.logoUrl) + '" alt="" style="width:17px;height:17px;object-fit:contain;display:block;" /></span>';
+  const size = arguments.length > 1 ? Number(arguments[1]) : 22;
+  const imgSize = Math.max(14, size - 5);
+  return '<span style="width:' + size + 'px;height:' + size + 'px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;background:rgba(226,230,239,0.18);border:1px solid rgba(226,230,239,0.24);flex:0 0 auto;"><img src="' + escapeHtml(brand.logoUrl) + '" alt="" style="width:' + imgSize + 'px;height:' + imgSize + 'px;object-fit:contain;display:block;" /></span>';
 }
 
 function renderCommittedTag(teamName){
@@ -610,8 +679,8 @@ function renderCommittedTag(teamName){
 
 function renderTeamCoachBadge(teamName){
   const brand = getTeamBranding(teamName);
-  if (!brand) return '<strong style="color:var(--chalk);">' + escapeHtml(teamName) + '</strong>';
-  return '<span style="display:inline-flex;align-items:center;gap:6px;vertical-align:middle;line-height:1;">' + renderTeamLogo(brand) + '<strong style="color:' + escapeHtml(brand.primary || 'var(--chalk)') + ';line-height:1;"><span class="rb-desktop-only">' + escapeHtml(teamName) + '</span><span class="rb-mobile-only">' + escapeHtml(brand.abbrev || teamName) + '</span></strong></span>';
+  if (!brand) return '<strong class="rb-nav-team" style="color:var(--chalk);">' + escapeHtml(teamName) + '</strong>';
+  return '<span class="rb-nav-team">' + renderTeamLogo(brand, 28) + '<strong style="color:' + escapeHtml(brand.primary || 'var(--chalk)') + ';line-height:1;"><span class="rb-desktop-only">' + escapeHtml(teamName) + '</span><span class="rb-mobile-only">' + escapeHtml(brand.abbrev || teamName) + '</span></strong></span>';
 }
 
 function committedCardStyle(teamName){
@@ -2279,7 +2348,7 @@ function renderNav(){
     '</div>';
   html += '<div class="rb-nav-side">';
   if (SESSION){
-    html += '<div class="rb-nav-session">Coaching for ' + renderTeamCoachBadge(SESSION.team) + '<span>&middot;</span><a href="#" id="rb-logout" style="color:var(--gold);text-decoration:none;">Log out</a></div>';
+    html += '<div class="rb-nav-session">' + renderTeamCoachBadge(SESSION.team) + '<span style="color:var(--slate);">&middot;</span><a href="#" id="rb-logout">Log out</a></div>';
   }
   html += '<div class="rb-nav-actions">' +
       '<button class="rb-btn" data-nav="feed">Prospect Board</button>' +
@@ -2597,7 +2666,7 @@ function renderTeamsPage(){
     html += '<div style="display:flex;align-items:center;gap:10px;justify-content:flex-end;flex-wrap:wrap;">';
     if (link){
       const level = String((pendingRole && pendingRole.accessLevel) || link.accessLevel || 'coach').toLowerCase();
-      html += '<span class="rb-tag" style="display:inline-flex;margin:0;align-items:center;gap:7px;">' + escapeHtml(link.displayName || link.username || 'Discord linked') + (canAdmin ? '<span class="rb-mono rb-mobile-admin-control" style="font-size:10px;color:var(--slate);">(' + escapeHtml(link.discordId) + ')</span>' : '') + '</span>';
+      html += '<span class="rb-tag rb-coach-pill"' + (canAdmin ? ' title="Discord ID: ' + escapeHtml(link.discordId) + '"' : '') + '>' + escapeHtml(link.displayName || link.username || 'Discord linked') + '</span>';
       if (level !== 'coach') html += '<span class="rb-mono rb-mobile-admin-control" style="font-size:11px;color:' + (level === 'commissioner' ? 'var(--gold)' : 'var(--slate)') + ';">' + escapeHtml(level) + '</span>';
       if (pendingUnlink) html += '<span class="rb-mono rb-mobile-admin-control" style="font-size:11px;color:var(--alert);">pending remove</span>';
       if (pendingSwitch) html += '<span class="rb-mono rb-mobile-admin-control" style="font-size:11px;color:var(--gold);">pending move to ' + escapeHtml(pendingSwitch.team) + '</span>';
@@ -2650,7 +2719,7 @@ function renderFeed(){
     '</div>';
   }
   let html = '<input class="rb-input" id="rb-board-search" placeholder="Search offers by recruit name, rank, position, or hometown" style="margin-bottom:14px;" />';
-  html += '<div id="rb-board-cards" style="display:flex;flex-direction:column;gap:10px;">';
+  html += '<div id="rb-board-cards" class="rb-board-list">';
   DB.threads.forEach(function(t){
     const visibleIds = visibleBoardProspectIds(t);
     const offerCount = visibleIds.reduce(function(sum, pid){ return sum + ((DB.offersByProspect[pid] || []).length); }, 0);
@@ -2664,13 +2733,13 @@ function renderFeed(){
       const p = DB.prospects[pid] || {};
       return [p.rank, '#' + p.rank, p.name, p.position, p.hometown].join(' ');
     }).join(' ').toLowerCase();
-    html += '<div class="rb-card" style="padding:16px 20px;cursor:pointer;" data-board-card="1" data-search="' + escapeHtml(threadSearch) + '" data-open-thread="' + t.id + '">' +
-      '<div style="display:flex;justify-content:space-between;align-items:center;">' +
-        '<div>' +
-          '<div class="rb-h" style="font-size:16px;font-weight:600;">' + escapeHtml(t.title) + '</div>' +
-          '<div style="font-size:13px;color:var(--slate);margin-top:4px;">' + rankRangeForThread(t) + ' &middot; ' + uncommittedLabel + ' &middot; ' + offerLabel + '</div>' +
+    html += '<div class="rb-card rb-board-tile" data-board-card="1" data-search="' + escapeHtml(threadSearch) + '" data-open-thread="' + t.id + '">' +
+      '<div class="rb-board-tile-inner">' +
+        '<div style="min-width:0;">' +
+          '<div class="rb-h rb-board-title">' + escapeHtml(t.title) + '</div>' +
+          '<div class="rb-board-meta">' + rankRangeForThread(t) + ' &middot; ' + uncommittedLabel + ' &middot; ' + offerLabel + '</div>' +
         '</div>' +
-        '<div>' + starsOrLabel(t.stars) + '</div>' +
+        '<div class="rb-board-stars">' + starsOrLabel(t.stars) + '</div>' +
       '</div>' +
     '</div>';
 	  });
