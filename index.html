@@ -214,6 +214,19 @@ body { margin: 0; background: #0F1420; }
   flex-wrap: wrap;
   gap: 14px;
 }
+.rb-nav-brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.rb-nav-logo {
+  width: 44px;
+  height: 44px;
+  border-radius: 11px;
+  object-fit: cover;
+  border: 1px solid rgba(237,238,240,0.18);
+  box-shadow: 0 8px 24px rgba(0,0,0,0.3);
+}
 .rb-nav-side {
   display: flex;
   flex-direction: column;
@@ -375,6 +388,8 @@ body { margin: 0; background: #0F1420; }
   .rb-team-card-mobile { padding: 10px 12px !important; }
   .rb-team-card-row { grid-template-columns: minmax(0, 1fr); gap: 6px; }
   .rb-coach-pill { min-width: 0; max-width: 100%; min-height: 28px; padding: 6px 10px; font-size: 12px; justify-content: flex-start; }
+  .rb-nav-brand { gap: 9px; }
+  .rb-nav-logo { width: 38px; height: 38px; border-radius: 9px; }
   .rb-nav-shell { align-items: stretch; }
   .rb-nav-side { align-items: stretch; width: 100%; }
   .rb-nav-session { justify-content: flex-start; }
@@ -1576,6 +1591,10 @@ async function logout(){
   UI.pendingDiscordUser = null;
   UI.loginStep = 'account';
   UI.teamLinkQuery = '';
+  UI.view = 'feed';
+  if (canUseBrowserRoutes() && window.location.pathname !== '/') {
+    window.history.replaceState({}, '', '/');
+  }
   deleteStored(SESSION_KEY, false);
   render();
 }
@@ -2399,9 +2418,12 @@ function renderHomePage(){
 
 function renderNav(){
   let html = '<div class="rb-nav-shell">';
-  html += '<div>' +
-      '<div class="rb-h" style="font-size:22px;font-weight:700;letter-spacing:0.06em;text-transform:none;">NZCFL RecruitHQ</div>' +
-      '<div class="rb-mono" style="font-size:12px;color:var(--slate);margin-top:2px;">every offer, on the record</div>' +
+  html += '<div class="rb-nav-brand">' +
+      '<img class="rb-nav-logo" src="/NZCFL.jpg" alt="NZCFL logo">' +
+      '<div>' +
+        '<div class="rb-h" style="font-size:22px;font-weight:700;letter-spacing:0.06em;text-transform:none;">NZCFL RecruitHQ</div>' +
+        '<div class="rb-mono" style="font-size:12px;color:var(--slate);margin-top:2px;">every offer, on the record</div>' +
+      '</div>' +
     '</div>';
   html += '<div class="rb-nav-side">';
   if (SESSION){
