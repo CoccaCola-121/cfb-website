@@ -13,14 +13,14 @@
 <meta property="og:title" content="NZCFL RecruitHQ">
 <meta property="og:description" content="Every offer, on the record.">
 <meta property="og:type" content="website">
-<meta property="og:image" content="NZCFL.jpg">
+<meta property="og:image" content="/NZCFL.jpg">
 <meta name="twitter:card" content="summary">
 <meta name="twitter:title" content="NZCFL RecruitHQ">
 <meta name="twitter:description" content="Every offer, on the record.">
-<meta name="twitter:image" content="NZCFL.jpg">
-<link rel="icon" href="NZCFL.jpg" type="image/jpeg">
-<link rel="apple-touch-icon" href="NZCFL.jpg">
-<link rel="manifest" href="manifest.webmanifest">
+<meta name="twitter:image" content="/NZCFL.jpg">
+<link rel="icon" href="/NZCFL.jpg" type="image/jpeg">
+<link rel="apple-touch-icon" href="/NZCFL.jpg">
+<link rel="manifest" href="/manifest.webmanifest">
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Oswald:wght@500;600;700&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap');
 
@@ -134,12 +134,13 @@ body { margin: 0; background: #0F1420; }
 .rb-coach-pill {
   display: inline-flex;
   align-items: center;
-  min-height: 34px;
-  min-width: 220px;
-  max-width: 330px;
+  justify-content: center;
+  min-height: 30px;
+  min-width: 110px;
+  max-width: 190px;
   margin: 0;
-  padding: 8px 14px;
-  font-size: 14px;
+  padding: 7px 12px;
+  font-size: 13px;
   font-weight: 700;
   color: var(--chalk);
   white-space: nowrap;
@@ -373,7 +374,7 @@ body { margin: 0; background: #0F1420; }
   .rb-mobile-admin-control { display: none !important; }
   .rb-team-card-mobile { padding: 10px 12px !important; }
   .rb-team-card-row { grid-template-columns: minmax(0, 1fr); gap: 6px; }
-  .rb-coach-pill { min-width: 0; max-width: 100%; min-height: 30px; padding: 6px 10px; font-size: 12px; }
+  .rb-coach-pill { min-width: 0; max-width: 100%; min-height: 28px; padding: 6px 10px; font-size: 12px; justify-content: flex-start; }
   .rb-nav-shell { align-items: stretch; }
   .rb-nav-side { align-items: stretch; width: 100%; }
   .rb-nav-session { justify-content: flex-start; }
@@ -474,6 +475,61 @@ function canLeaveTeamsPage(){
   return window.confirm('You have unsaved team changes. Leave without saving?');
 }
 
+const VIEW_ROUTES = {
+  feed: '/prospectboard',
+  myoffers: '/myoffers',
+  mycommits: '/mycommits',
+  teams: '/teams',
+  setup: '/settings'
+};
+
+function canUseBrowserRoutes(){
+  return /^https?:$/.test(window.location.protocol);
+}
+
+function routeFromPath(pathname){
+  let path = String(pathname || '/').replace(/\/+$/, '');
+  if (!path || path === '/index.html') path = '/';
+  if (path === '/' || path === '/prospectboard' || path === '/board') return { view: 'feed' };
+  if (path === '/myoffers') return { view: 'myoffers' };
+  if (path === '/mycommits') return { view: 'mycommits' };
+  if (path === '/teams') return { view: 'teams' };
+  if (path === '/settings') return { view: 'setup' };
+  const prospectMatch = path.match(/^\/prospect\/([^/]+)$/);
+  if (prospectMatch) return { view: 'prospect', prospectId: decodeURIComponent(prospectMatch[1]) };
+  const boardMatch = path.match(/^\/prospectboard\/([^/]+)$/);
+  if (boardMatch) return { view: 'thread', threadId: decodeURIComponent(boardMatch[1]) };
+  const teamCommitsMatch = path.match(/^\/teams\/([^/]+)\/commits$/);
+  if (teamCommitsMatch) return { view: 'teamcommits', teamCommitsTeam: decodeURIComponent(teamCommitsMatch[1]) };
+  const teamOffersMatch = path.match(/^\/teams\/([^/]+)\/offers$/);
+  if (teamOffersMatch) return { view: 'teamoffers', teamOffersTeam: decodeURIComponent(teamOffersMatch[1]) };
+  return { view: 'feed' };
+}
+
+function pathForView(view){
+  if (view === 'prospect' && UI.prospectId) return '/prospect/' + encodeURIComponent(UI.prospectId);
+  if (view === 'thread' && UI.threadId) return '/prospectboard/' + encodeURIComponent(UI.threadId);
+  if (view === 'teamcommits' && UI.teamCommitsTeam) return '/teams/' + encodeURIComponent(UI.teamCommitsTeam) + '/commits';
+  if (view === 'teamoffers' && UI.teamOffersTeam) return '/teams/' + encodeURIComponent(UI.teamOffersTeam) + '/offers';
+  return VIEW_ROUTES[view] || '/prospectboard';
+}
+
+function applyRoute(route){
+  route = route || routeFromPath(window.location.pathname);
+  UI.view = route.view || 'feed';
+  UI.threadId = route.threadId || null;
+  UI.prospectId = route.prospectId || null;
+  UI.teamCommitsTeam = route.teamCommitsTeam || '';
+  UI.teamOffersTeam = route.teamOffersTeam || '';
+}
+
+function syncBrowserRoute(replace){
+  if (!canUseBrowserRoutes()) return;
+  const path = pathForView(UI.view);
+  if (window.location.pathname === path) return;
+  window.history[replace ? 'replaceState' : 'pushState']({ view: UI.view }, '', path);
+}
+
 function navigateTo(view, options){
   options = options || {};
   if (!canLeaveTeamsPage()) return;
@@ -482,6 +538,7 @@ function navigateTo(view, options){
   if (options.prospectId != null) UI.prospectId = options.prospectId;
   if (options.teamCommitsTeam != null) UI.teamCommitsTeam = options.teamCommitsTeam;
   if (options.teamOffersTeam != null) UI.teamOffersTeam = options.teamOffersTeam;
+  syncBrowserRoute(!!options.replaceRoute);
   render();
   if (UI.view === 'teams') loadTeamAvailability().then(render);
 }
@@ -2309,7 +2366,7 @@ function renderHomePage(){
   let html = '<div class="rb-home">';
   html += '<section class="rb-home-hero">' +
     '<div style="position:relative;z-index:1;">' +
-      '<img class="rb-home-logo" src="NZCFL.jpg" alt="NZCFL logo">' +
+      '<img class="rb-home-logo" src="/NZCFL.jpg" alt="NZCFL logo">' +
       '<div class="rb-home-title">NZCFL RecruitHQ</div>' +
       '<div class="rb-home-copy">The recruiting room for the league: prospects, public offers, visits, commits, and promises all tracked in one clean place.</div>' +
     '</div>' +
@@ -2666,7 +2723,7 @@ function renderTeamsPage(){
     html += '<div style="display:flex;align-items:center;gap:10px;justify-content:flex-end;flex-wrap:wrap;">';
     if (link){
       const level = String((pendingRole && pendingRole.accessLevel) || link.accessLevel || 'coach').toLowerCase();
-      html += '<span class="rb-tag rb-coach-pill"' + (canAdmin ? ' title="Discord ID: ' + escapeHtml(link.discordId) + '"' : '') + '>' + escapeHtml(link.displayName || link.username || 'Discord linked') + '</span>';
+      html += '<span class="rb-tag rb-coach-pill">' + escapeHtml(link.displayName || link.username || 'Discord linked') + '</span>';
       if (level !== 'coach') html += '<span class="rb-mono rb-mobile-admin-control" style="font-size:11px;color:' + (level === 'commissioner' ? 'var(--gold)' : 'var(--slate)') + ';">' + escapeHtml(level) + '</span>';
       if (pendingUnlink) html += '<span class="rb-mono rb-mobile-admin-control" style="font-size:11px;color:var(--alert);">pending remove</span>';
       if (pendingSwitch) html += '<span class="rb-mono rb-mobile-admin-control" style="font-size:11px;color:var(--gold);">pending move to ' + escapeHtml(pendingSwitch.team) + '</span>';
@@ -3394,14 +3451,25 @@ function bindEvents(){
   if (release2) release2.onclick = releaseWave2;
 }
 
+applyRoute(routeFromPath(window.location.pathname));
 render();
+window.addEventListener('popstate', function(){
+  if (!canLeaveTeamsPage()){
+    syncBrowserRoute(true);
+    return;
+  }
+  applyRoute(routeFromPath(window.location.pathname));
+  render();
+  if (UI.view === 'teams') loadTeamAvailability().then(render);
+  scrollPageTop();
+});
 window.addEventListener('beforeunload', function(e){
   if (!hasPendingTeamChanges()) return;
   e.preventDefault();
   e.returnValue = '';
 });
 if ('serviceWorker' in navigator && /^https?:$/.test(window.location.protocol)) {
-  navigator.serviceWorker.register('./sw.js').catch(function(e){ console.warn('service worker registration failed', e); });
+  navigator.serviceWorker.register('/sw.js').catch(function(e){ console.warn('service worker registration failed', e); });
 }
 loadAll();
 
