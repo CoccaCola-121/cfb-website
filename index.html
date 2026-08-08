@@ -325,8 +325,9 @@ body { margin: 0; background: #0F1420; }
   .rb-value-chip .rb-mono { font-size: 8px !important; letter-spacing: 0.02em !important; }
   .rb-value-chip strong.rb-mono { font-size: 10px !important; }
   .rb-offer-block-header { display: grid !important; grid-template-columns: 1fr !important; gap: 9px !important; }
-  .rb-offer-visit-wrap { display: grid !important; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 7px !important; width: 100%; overflow: visible !important; }
+  .rb-offer-visit-wrap { display: grid !important; grid-template-columns: max-content minmax(0, 1fr); gap: 7px !important; width: 100%; overflow: visible !important; }
   .rb-visit-badge { width: 100%; min-height: 34px; display: flex !important; align-items: center; justify-content: center; text-align: center; line-height: 1.2; white-space: normal !important; padding: 7px 8px !important; }
+  .rb-visit-badge-coach { width: auto; min-width: 118px; }
   .rb-visit-badge-campus { grid-column: auto / span 1; }
   .rb-my-offer-summary-grid { grid-template-columns: 1fr; gap: 12px; }
   .rb-my-offer-meta { gap: 8px; }
@@ -1716,10 +1717,18 @@ function visitEditLocks(team, offer){
 function visitBadges(visits, compact){
   visits = normalizeVisits(visits);
   const margin = compact ? '0' : '0 6px 6px 0';
+  const campusText = visits.campusLabel ? 'Campus Visit: ' + visits.campusLabel : 'Campus Visit';
   let html = '';
-  if (visits.coach) html += '<span class="rb-tag rb-visit-badge" style="display:inline-block;margin:' + margin + ';">Coach Visit</span>';
-  if (visits.campus) html += '<span class="rb-tag rb-visit-badge rb-visit-badge-campus" style="display:inline-block;margin:' + margin + ';">Campus Visit' + (visits.campusLabel ? ': ' + escapeHtml(visits.campusLabel) : '') + '</span>';
+  if (visits.coach) html += '<span class="rb-tag rb-visit-badge rb-visit-badge-coach" style="display:inline-block;margin:' + margin + ';">Coach Visit</span>';
+  if (visits.campus) html += '<span class="rb-tag rb-visit-badge rb-visit-badge-campus" style="display:inline-block;margin:' + margin + ';">' + formatVisitBadgeText(campusText) + '</span>';
   return html;
+}
+
+function formatVisitBadgeText(text){
+  const escaped = escapeHtml(text || '');
+  return escaped.replace(/\bvs\.?\s+([^<]+)$/i, function(_, opponent){
+    return 'vs. <span style="white-space:nowrap;">' + opponent.replace(/\s+/g, '&nbsp;') + '</span>';
+  });
 }
 
 function findOfferForTeam(prospectId, team){
@@ -2408,7 +2417,7 @@ function renderMyOffers(){
   }
   const rows = getOfferRowsForTeam(SESSION.team);
   let html = renderVisitLedger();
-  html += '<div class="rb-card" style="padding:18px 20px;margin-bottom:14px;">';
+  html += '<div class="rb-card" style="padding:18px 20px;margin-bottom:14px;' + (p.commitTeam ? committedCardStyle(p.commitTeam) : '') + '">';
   html += '<div class="rb-h" style="font-size:18px;margin-bottom:6px;">My Offers</div>';
   html += '<div style="font-size:13px;color:var(--slate);margin-bottom:12px;">' + rows.length + ' offer' + (rows.length === 1 ? '' : 's') + ' from ' + escapeHtml(SESSION.team) + '.</div>';
   html += '<div style="margin-bottom:12px;"><button class="rb-btn rb-btn-gold" id="rb-open-submit" ' + (DB.offersLocked ? 'disabled title="Offers are locked"' : '') + '>' + (DB.offersLocked ? 'Offers locked' : 'Submit offer') + '</button></div>';
