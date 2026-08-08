@@ -2778,7 +2778,7 @@ function renderTeamsPage(){
   teams.forEach(function(brand){ html += '<option value="' + escapeHtml(brand.region) + '"></option>'; });
   html += '</datalist>';
   if (canAdmin || canCommission){
-    html += '<div style="display:flex;justify-content:center;margin-top:12px;position:sticky;bottom:12px;z-index:3;">';
+    html += '<div class="rb-mobile-admin-control" style="display:flex;justify-content:center;margin-top:12px;position:sticky;bottom:12px;z-index:3;">';
     html += '<div class="rb-card" style="padding:8px 10px;display:flex;justify-content:center;align-items:center;gap:8px;flex-wrap:wrap;width:auto;max-width:max-content;">';
     if (pendingCount) html += '<button class="rb-btn" id="rb-discard-team-changes">Discard changes</button>';
     html += '<button class="rb-btn rb-btn-gold" id="rb-save-team-changes" ' + (!pendingCount ? 'disabled' : '') + '>Save changes</button>';
