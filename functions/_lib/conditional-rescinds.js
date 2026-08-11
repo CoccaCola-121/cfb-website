@@ -26,8 +26,10 @@ function starsForRank(rank) {
 
 function ruleMatchesProspect(rule, prospect, offer) {
   if (!rule || !prospect) return false;
-  const position = String(rule.position || '').trim().toUpperCase();
-  if (position && String(prospect.position || '').trim().toUpperCase() !== position) return false;
+  const positions = Array.isArray(rule.positions)
+    ? rule.positions.map((pos) => String(pos || '').trim().toUpperCase()).filter(Boolean)
+    : String(rule.position || '').split(',').map((pos) => pos.trim().toUpperCase()).filter(Boolean);
+  if (positions.length && !positions.includes(String(prospect.position || '').trim().toUpperCase())) return false;
 
   if (rule.stars !== '' && rule.stars != null) {
     const expectedStars = Number(rule.stars);

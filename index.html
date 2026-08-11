@@ -462,6 +462,7 @@ let UI = { view: 'feed', threadId: null, showSubmitModal: false, submitting: fal
            teamCommitsTeam: '', teamOffersTeam: '',
            brandingStatus: null, brandingError: null, conditionalError: null, conditionalStatus: null,
            massRescindError: null, massRescindStatus: null, pendingMassRescind: null,
+           pendingMassRescindFinal: null, pendingSingleRescind: null,
            brandingFileName: '', adminActionStatus: null, adminActionError: null };
 let dbReady = false, sessionReady = false;
 let summaryTimer = null;
@@ -1936,8 +1937,8 @@ function normalizeConditionalRules(){
 
 function conditionalRuleMatchesProspect(rule, prospect, offer){
   if (!rule || !prospect) return false;
-  const position = String(rule.position || '').trim().toUpperCase();
-  if (position && String(prospect.position || '').trim().toUpperCase() !== position) return false;
+  const positions = Array.isArray(rule.positions) ? rule.positions.map(function(pos){ return String(pos || '').trim().toUpperCase(); }).filter(Boolean) : String(rule.position || '').split(',').map(function(pos){ return pos.trim().toUpperCase(); }).filter(Boolean);
+  if (positions.length && positions.indexOf(String(prospect.position || '').trim().toUpperCase()) === -1) return false;
   if (rule.stars !== '' && rule.stars != null){
     const expectedStars = Number(rule.stars);
     if (Number.isFinite(expectedStars) && starsForRank(prospect.rank) !== expectedStars) return false;
@@ -2028,6 +2029,36 @@ function rescindOfferById(prospectId, offerId){
   offer.rescindedAt = Date.now();
   UI.rescindError = null;
   saveDB(); render();
+}
+
+function requestSingleRescind(prospectId, offerId){
+  if (!SESSION) return;
+  const prospect = DB.prospects[prospectId];
+  if (prospect && prospect.commitTeam){
+    UI.rescindError = 'Cannot rescind: #' + prospect.rank + ' ' + prospect.name + ' has already committed to ' + prospect.commitTeam + '.';
+    render(); return;
+  }
+  const offers = DB.offersByProspect[prospectId] || [];
+  const offer = offers.find(function(o){ return o.id === offerId && o.team === SESSION.team && !o.rescinded; });
+  if (!offer){
+    UI.rescindError = 'That offer is no longer active.';
+    render(); return;
+  }
+  UI.pendingSingleRescind = { prospectId: prospectId, offerId: offerId };
+  UI.rescindError = null;
+  render();
+}
+
+function cancelSingleRescind(){
+  UI.pendingSingleRescind = null;
+  render();
+}
+
+function confirmSingleRescind(){
+  const pending = UI.pendingSingleRescind;
+  UI.pendingSingleRescind = null;
+  if (!pending) return;
+  rescindOfferById(pending.prospectId, pending.offerId);
 }
 
 // ---------- Offers ----------
@@ -2482,6 +2513,8 @@ function render(){
   if (UI.editOfferTarget) html += renderEditOfferModal();
   if (UI.pendingVisitEdit) html += renderVisitConfirmModal();
   if (UI.pendingMassRescind) html += renderMassRescindModal();
+  if (UI.pendingMassRescindFinal) html += renderMassRescindFinalModal();
+  if (UI.pendingSingleRescind) html += renderSingleRescindConfirmModal();
   if (UI.confirmReset) html += renderResetConfirmModal();
   root.innerHTML = html;
   bindEvents();
@@ -2644,7 +2677,7 @@ function renderVisitLedger(){
 
 const POSITION_ORDER = ['QB','RB','WR','TE','OL','DL','LB','CB','S','K','P'];
 
-function positionOptions(selected){
+function availablePositions(){
   const positions = {};
   Object.keys(DB.prospects || {}).forEach(function(pid){
     const pos = String((DB.prospects[pid] && DB.prospects[pid].position) || '').trim().toUpperCase();
@@ -2654,15 +2687,37 @@ function positionOptions(selected){
   Object.keys(positions).sort().forEach(function(pos){
     if (ordered.indexOf(pos) === -1) ordered.push(pos);
   });
-  return ordered.map(function(pos){
-    return '<option value="' + escapeHtml(pos) + '" ' + (selected === pos ? 'selected' : '') + '>' + escapeHtml(pos) + '</option>';
-  }).join('');
+  return ordered;
+}
+
+function renderPositionChecklist(prefix){
+  const positions = availablePositions();
+  let html = '<div><div class="rb-mono" style="font-size:11px;color:var(--slate);margin-bottom:6px;">Positions</div>';
+  html += '<div class="rb-card" style="padding:8px;background:var(--ink);display:flex;gap:6px;flex-wrap:wrap;">';
+  positions.forEach(function(pos){
+    html += '<label class="rb-tag" style="display:inline-flex;align-items:center;gap:5px;margin:0;cursor:pointer;">';
+    html += '<input type="checkbox" class="rb-position-check" data-position-prefix="' + escapeHtml(prefix) + '" value="' + escapeHtml(pos) + '" style="accent-color:var(--gold);" /> ' + escapeHtml(pos);
+    html += '</label>';
+  });
+  html += '</div></div>';
+  return html;
+}
+
+function readPositionChecklist(prefix){
+  const positions = [];
+  document.querySelectorAll('.rb-position-check[data-position-prefix="' + prefix + '"]:checked').forEach(function(input){
+    const pos = String(input.value || '').trim().toUpperCase();
+    if (pos && positions.indexOf(pos) === -1) positions.push(pos);
+  });
+  return positions;
 }
 
 function conditionalRuleSummary(rule){
   const parts = [];
   parts.push(Number(rule.count || 1) + ' commit' + (Number(rule.count || 1) === 1 ? '' : 's'));
-  if (rule.position) parts.push(String(rule.position).toUpperCase());
+  const positions = Array.isArray(rule.positions) ? rule.positions : (rule.position ? String(rule.position).split(',') : []);
+  const cleanPositions = positions.map(function(pos){ return String(pos || '').trim().toUpperCase(); }).filter(Boolean);
+  if (cleanPositions.length) parts.push(cleanPositions.join('/'));
   if (rule.stars !== '' && rule.stars != null) parts.push(rule.stars + ' star' + (Number(rule.stars) === 1 ? '' : 's'));
   if (rule.rankValue) parts.push((rule.rankMode === 'better' ? '#' + rule.rankValue + ' or better' : 'below #' + rule.rankValue));
   if (rule.overallValue) parts.push((rule.overallMode === 'below' ? 'ovr below ' : 'ovr at least ') + rule.overallValue);
@@ -2677,12 +2732,12 @@ function rescindFilterSummary(rule){
 
 function renderRescindFilterFields(prefix, includeCount){
   let html = '';
-  html += '<div class="rb-mobile-stack" style="display:grid;grid-template-columns:' + (includeCount ? '0.8fr ' : '') + '1fr 0.9fr 1fr;gap:10px;margin-bottom:10px;">';
+  html += '<div class="rb-mobile-stack" style="display:grid;grid-template-columns:' + (includeCount ? '0.8fr ' : '') + '1fr 0.9fr;gap:10px;margin-bottom:10px;">';
   if (includeCount) html += '<label><span class="rb-mono" style="font-size:11px;color:var(--slate);">Commits needed</span><input class="rb-input" id="' + prefix + '-count" type="number" min="1" value="1" /></label>';
-  html += '<label><span class="rb-mono" style="font-size:11px;color:var(--slate);">Position</span><select class="rb-input" id="' + prefix + '-position"><option value="">Any position</option>' + positionOptions('') + '</select></label>';
   html += '<label><span class="rb-mono" style="font-size:11px;color:var(--slate);">Stars</span><select class="rb-input" id="' + prefix + '-stars"><option value="">Any stars</option><option value="5">5 stars</option><option value="4">4 stars</option><option value="3">3 stars</option><option value="2">2 stars</option><option value="1">1 star</option><option value="0">0 stars</option></select></label>';
   html += '<label><span class="rb-mono" style="font-size:11px;color:var(--slate);">Offer type</span><select class="rb-input" id="' + prefix + '-scholarship"><option value="">Any type</option><option value="scholarship">Scholarship</option><option value="walkon">Walk-on</option></select></label>';
   html += '</div>';
+  html += '<div style="margin-bottom:10px;">' + renderPositionChecklist(prefix) + '</div>';
   html += '<div class="rb-mobile-stack" style="display:grid;grid-template-columns:1fr 0.8fr 1fr 0.8fr;gap:10px;align-items:end;">';
   html += '<label><span class="rb-mono" style="font-size:11px;color:var(--slate);">Rank filter</span><select class="rb-input" id="' + prefix + '-rank-mode"><option value="worse">Rescind ranks below #</option><option value="better">Rescind # or better</option></select></label>';
   html += '<input class="rb-input" id="' + prefix + '-rank-value" type="number" min="1" placeholder="blank = any rank" />';
@@ -2740,7 +2795,7 @@ function readRescindRuleForm(prefix, includeCount){
   const overallValue = conditionalFormValue(prefix + '-overall-value');
   return {
     count: includeCount ? Math.max(1, Number(conditionalFormValue(prefix + '-count')) || 1) : 1,
-    position: conditionalFormValue(prefix + '-position').toUpperCase(),
+    positions: readPositionChecklist(prefix),
     stars: conditionalFormValue(prefix + '-stars'),
     rankMode: rankValue ? (conditionalFormValue(prefix + '-rank-mode') || 'worse') : '',
     rankValue: rankValue,
@@ -2754,7 +2809,7 @@ function validateRescindRuleDraft(draft, options){
   options = options || {};
   const hasRank = draft.rankMode && draft.rankValue;
   const hasOverall = draft.overallMode && draft.overallValue;
-  if (!draft.position && draft.stars === '' && !hasRank && !hasOverall && !draft.scholarship){
+  if (!(draft.positions || []).length && draft.stars === '' && !hasRank && !hasOverall && !draft.scholarship){
     return options.actionLabel ? 'Pick at least one filter before ' + options.actionLabel + '.' : 'Pick at least one filter.';
   }
   return '';
@@ -2763,7 +2818,8 @@ function validateRescindRuleDraft(draft, options){
 function normalizeRescindRuleDraft(draft){
   return {
     count: Math.max(1, Number(draft.count) || 1),
-    position: String(draft.position || '').trim().toUpperCase(),
+    positions: (draft.positions || []).map(function(pos){ return String(pos || '').trim().toUpperCase(); }).filter(Boolean),
+    position: '',
     stars: draft.stars,
     rankMode: draft.rankMode,
     rankValue: draft.rankMode && draft.rankValue ? Number(draft.rankValue) : '',
@@ -2788,7 +2844,8 @@ function addConditionalRule(){
     team: SESSION.team,
     enabled: true,
     count: normalized.count,
-    position: normalized.position,
+    positions: normalized.positions,
+    position: '',
     stars: normalized.stars,
     rankMode: normalized.rankMode,
     rankValue: normalized.rankValue,
@@ -2839,12 +2896,12 @@ function previewMassRescind(){
 }
 
 function confirmMassRescind(){
-  if (!SESSION || !UI.pendingMassRescind) return;
-  const rule = UI.pendingMassRescind.rule;
+  if (!SESSION || !UI.pendingMassRescindFinal) return;
+  const rule = UI.pendingMassRescindFinal.rule;
   const matches = massRescindMatches(rule);
   const checked = {};
-  document.querySelectorAll('.rb-mass-rescind-check:checked').forEach(function(input){
-    checked[(input.getAttribute('data-prospect-id') || '') + ':' + (input.getAttribute('data-offer-id') || '')] = true;
+  (UI.pendingMassRescindFinal.selectedKeys || []).forEach(function(key){
+    checked[key] = true;
   });
   let count = 0;
   matches.forEach(function(row){
@@ -2859,12 +2916,47 @@ function confirmMassRescind(){
   UI.massRescindStatus = 'Rescinded ' + count + ' offer' + (count === 1 ? '' : 's') + '.';
   UI.massRescindError = null;
   UI.pendingMassRescind = null;
+  UI.pendingMassRescindFinal = null;
   saveDB(); render();
 }
 
 function cancelMassRescind(){
   UI.pendingMassRescind = null;
+  UI.pendingMassRescindFinal = null;
   UI.massRescindError = null;
+  render();
+}
+
+function previewMassRescindFinal(){
+  if (!SESSION || !UI.pendingMassRescind) return;
+  const selectedKeys = [];
+  document.querySelectorAll('.rb-mass-rescind-check:checked').forEach(function(input){
+    const key = (input.getAttribute('data-prospect-id') || '') + ':' + (input.getAttribute('data-offer-id') || '');
+    if (key !== ':') selectedKeys.push(key);
+  });
+  if (!selectedKeys.length){
+    UI.massRescindError = 'Select at least one offer to rescind.';
+    render(); return;
+  }
+  UI.pendingMassRescindFinal = {
+    rule: UI.pendingMassRescind.rule,
+    selectedKeys: selectedKeys,
+    count: selectedKeys.length
+  };
+  UI.pendingMassRescind = null;
+  UI.massRescindError = null;
+  render();
+}
+
+function backToMassRescindChecklist(){
+  if (!UI.pendingMassRescindFinal) return;
+  UI.pendingMassRescind = {
+    rule: UI.pendingMassRescindFinal.rule,
+    count: UI.pendingMassRescindFinal.count,
+    selectedKeys: UI.pendingMassRescindFinal.selectedKeys || [],
+    createdAt: Date.now()
+  };
+  UI.pendingMassRescindFinal = null;
   render();
 }
 
@@ -2919,7 +3011,6 @@ function renderMyOffers(){
   }
   const rows = getOfferRowsForTeam(SESSION.team);
   let html = renderVisitLedger();
-  html += renderConditionalRescinds();
   html += '<div class="rb-card" style="padding:18px 20px;margin-bottom:14px;">';
   html += '<div class="rb-h" style="font-size:18px;margin-bottom:6px;">My Offers</div>';
   html += '<div style="font-size:13px;color:var(--slate);margin-bottom:12px;">' + rows.length + ' offer' + (rows.length === 1 ? '' : 's') + ' from ' + escapeHtml(SESSION.team) + '.</div>';
@@ -2930,32 +3021,33 @@ function renderMyOffers(){
 
   if (!rows.length){
     html += '<div class="rb-card" style="padding:28px;text-align:center;color:var(--slate);">No offers yet.</div>';
-    return html;
-  }
-  html += '<div style="display:flex;flex-direction:column;gap:10px;">';
-  rows.forEach(function(row){
-    const p = row.prospect || {};
-    const o = row.offer;
-    const searchText = [p.rank, '#' + p.rank, p.name, p.position, p.hometown, p.storyline].join(' ').toLowerCase();
-    html += '<div class="rb-card rb-mobile-tight" data-my-offer-card="1" data-search="' + escapeHtml(searchText) + '" style="padding:14px 18px;">';
-    html += '<details>';
-    html += '<summary class="rb-offer-summary rb-my-offer-summary-grid" style="list-style:none;cursor:pointer;">';
-    html += '<span style="min-width:0;display:flex;flex-direction:column;gap:10px;">';
-    html += '<span class="rb-my-offer-meta">' +
-      '<span class="rb-mono" style="color:var(--slate);flex:0 0 auto;">#' + escapeHtml(p.rank || '?') + '</span>' +
-      '<strong data-open-prospect="' + escapeHtml(row.prospectId) + '" title="' + escapeHtml(p.name || '') + '" style="overflow:hidden;text-overflow:ellipsis;color:var(--chalk);cursor:pointer;">' + escapeHtml(shortText(p.name || 'Unknown prospect', 24)) + '</strong>' +
-      '<span class="rb-mono" style="color:var(--slate);font-size:13px;flex:0 0 auto;">' + escapeHtml(p.position || '') + (p.rating ? ' &middot; ' + escapeHtml(p.rating) : '') + '</span>' +
-      (p.hometown ? '<span class="rb-mono" style="color:var(--slate);font-size:13px;flex:0 0 auto;">&middot;</span><span class="rb-mono" title="' + escapeHtml(p.hometown) + '" style="color:var(--slate);font-size:13px;overflow:hidden;text-overflow:ellipsis;">' + escapeHtml(shortText(p.hometown, 24)) + '</span>' : '') +
-    '</span>';
-    html += '<span class="rb-my-offer-visits" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">' + visitBadges(o.visits, true) + '</span>';
-    html += '</span>';
-    html += '<span class="rb-my-offer-actions" style="display:flex;align-items:center;justify-content:flex-end;gap:8px;white-space:nowrap;">' + (o.rescinded ? '<span class="rb-mono" style="color:var(--alert);font-size:12px;">rescinded</span>' : (p.commitTeam ? '<span class="rb-mono" style="color:var(--slate);font-size:12px;">committed</span>' : '<button class="rb-btn" data-edit-offer="' + escapeHtml(row.prospectId) + ':' + escapeHtml(o.id) + '">Edit</button><button class="rb-btn" data-rescind-offer="' + escapeHtml(row.prospectId) + ':' + escapeHtml(o.id) + '">Rescind</button>')) + '</span>';
-    html += '</summary>';
-    html += '<div style="margin-top:10px;">' + renderOfferBlock(o, p.commitTeam ? { collapsed: true } : { expanded: true }) + '</div>';
-    html += '</details>';
+  } else {
+    html += '<div style="display:flex;flex-direction:column;gap:10px;">';
+    rows.forEach(function(row){
+      const p = row.prospect || {};
+      const o = row.offer;
+      const searchText = [p.rank, '#' + p.rank, p.name, p.position, p.hometown, p.storyline].join(' ').toLowerCase();
+      html += '<div class="rb-card rb-mobile-tight" data-my-offer-card="1" data-search="' + escapeHtml(searchText) + '" style="padding:14px 18px;">';
+      html += '<details>';
+      html += '<summary class="rb-offer-summary rb-my-offer-summary-grid" style="list-style:none;cursor:pointer;">';
+      html += '<span style="min-width:0;display:flex;flex-direction:column;gap:10px;">';
+      html += '<span class="rb-my-offer-meta">' +
+        '<span class="rb-mono" style="color:var(--slate);flex:0 0 auto;">#' + escapeHtml(p.rank || '?') + '</span>' +
+        '<strong data-open-prospect="' + escapeHtml(row.prospectId) + '" title="' + escapeHtml(p.name || '') + '" style="overflow:hidden;text-overflow:ellipsis;color:var(--chalk);cursor:pointer;">' + escapeHtml(shortText(p.name || 'Unknown prospect', 24)) + '</strong>' +
+        '<span class="rb-mono" style="color:var(--slate);font-size:13px;flex:0 0 auto;">' + escapeHtml(p.position || '') + (p.rating ? ' &middot; ' + escapeHtml(p.rating) : '') + '</span>' +
+        (p.hometown ? '<span class="rb-mono" style="color:var(--slate);font-size:13px;flex:0 0 auto;">&middot;</span><span class="rb-mono" title="' + escapeHtml(p.hometown) + '" style="color:var(--slate);font-size:13px;overflow:hidden;text-overflow:ellipsis;">' + escapeHtml(shortText(p.hometown, 24)) + '</span>' : '') +
+      '</span>';
+      html += '<span class="rb-my-offer-visits" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">' + visitBadges(o.visits, true) + '</span>';
+      html += '</span>';
+      html += '<span class="rb-my-offer-actions" style="display:flex;align-items:center;justify-content:flex-end;gap:8px;white-space:nowrap;">' + (o.rescinded ? '<span class="rb-mono" style="color:var(--alert);font-size:12px;">rescinded</span>' : (p.commitTeam ? '<span class="rb-mono" style="color:var(--slate);font-size:12px;">committed</span>' : '<button class="rb-btn" data-edit-offer="' + escapeHtml(row.prospectId) + ':' + escapeHtml(o.id) + '">Edit</button><button class="rb-btn" data-rescind-offer="' + escapeHtml(row.prospectId) + ':' + escapeHtml(o.id) + '">Rescind</button>')) + '</span>';
+      html += '</summary>';
+      html += '<div style="margin-top:10px;">' + renderOfferBlock(o, p.commitTeam ? { collapsed: true } : { expanded: true }) + '</div>';
+      html += '</details>';
+      html += '</div>';
+    });
     html += '</div>';
-  });
-  html += '</div>';
+  }
+  html += renderConditionalRescinds();
   return html;
 }
 
@@ -3474,9 +3566,13 @@ function renderMassRescindModal(){
   const rule = pending.rule || {};
   const matches = massRescindMatches(rule);
   const count = matches.length;
+  const selected = {};
+  if (Array.isArray(pending.selectedKeys)){
+    pending.selectedKeys.forEach(function(key){ selected[key] = true; });
+  }
   let html = '<div style="position:fixed;inset:0;background:rgba(0,0,0,0.68);display:flex;align-items:center;justify-content:center;z-index:60;">';
   html += '<div class="rb-card" style="padding:22px;width:720px;max-width:92vw;max-height:88vh;border-color:#6F1D1B;display:flex;flex-direction:column;">';
-  html += '<div class="rb-h" style="font-size:18px;margin-bottom:6px;color:#FFF2F1;">Confirm mass rescind</div>';
+  html += '<div class="rb-h" style="font-size:18px;margin-bottom:6px;color:#FFF2F1;">Choose offers to rescind</div>';
   html += '<div style="font-size:13px;color:var(--slate);line-height:1.45;margin-bottom:12px;">Uncheck any recruit you want to keep. Matching filter: <span class="rb-mono">' + escapeHtml(rescindFilterSummary(rule)) + '</span></div>';
   if (!count){
     html += '<div class="rb-card" style="padding:18px;text-align:center;color:var(--slate);background:var(--panel-alt);">No active offers match this filter.</div>';
@@ -3484,8 +3580,10 @@ function renderMassRescindModal(){
     html += '<div class="rb-scrollbar" style="overflow:auto;display:flex;flex-direction:column;gap:8px;padding-right:4px;">';
     matches.forEach(function(row){
       const p = row.prospect || {};
+      const key = row.prospectId + ':' + row.offer.id;
+      const isChecked = !Array.isArray(pending.selectedKeys) || selected[key];
       html += '<label class="rb-card" style="padding:10px 12px;background:var(--panel-alt);display:grid;grid-template-columns:auto minmax(0,1fr);gap:10px;align-items:center;cursor:pointer;">';
-      html += '<input type="checkbox" class="rb-mass-rescind-check" data-prospect-id="' + escapeHtml(row.prospectId) + '" data-offer-id="' + escapeHtml(row.offer.id) + '" checked style="accent-color:var(--alert);" />';
+      html += '<input type="checkbox" class="rb-mass-rescind-check" data-prospect-id="' + escapeHtml(row.prospectId) + '" data-offer-id="' + escapeHtml(row.offer.id) + '"' + (isChecked ? ' checked' : '') + ' style="accent-color:var(--alert);" />';
       html += '<span style="min-width:0;display:flex;align-items:baseline;gap:8px;white-space:nowrap;overflow:hidden;">' +
         '<span class="rb-mono" style="color:var(--slate);flex:0 0 auto;">#' + escapeHtml(p.rank || '?') + '</span>' +
         '<strong title="' + escapeHtml(p.name || '') + '" style="overflow:hidden;text-overflow:ellipsis;">' + escapeHtml(p.name || 'Unknown prospect') + '</strong>' +
@@ -3498,9 +3596,45 @@ function renderMassRescindModal(){
   }
   html += '<div style="display:flex;justify-content:space-between;gap:8px;align-items:center;flex-wrap:wrap;margin-top:14px;">';
   html += '<span class="rb-mono" style="font-size:12px;color:var(--slate);">' + count + ' matching offer' + (count === 1 ? '' : 's') + '</span>';
-  html += '<span style="display:flex;gap:8px;flex-wrap:wrap;"><button class="rb-btn" id="rb-cancel-mass-rescind">Cancel</button><button class="rb-btn rb-btn-danger" id="rb-confirm-mass-rescind" ' + (!count ? 'disabled' : '') + '>Rescind checked offers</button></span>';
+  html += '<span style="display:flex;gap:8px;flex-wrap:wrap;"><button class="rb-btn" id="rb-cancel-mass-rescind">Cancel</button><button class="rb-btn rb-btn-danger" id="rb-confirm-mass-rescind" ' + (!count ? 'disabled' : '') + '>Review rescind</button></span>';
   html += '</div></div></div>';
   return html;
+}
+
+function renderMassRescindFinalModal(){
+  const pending = UI.pendingMassRescindFinal || {};
+  const count = Number(pending.count || 0);
+  const rule = pending.rule || {};
+  return '<div style="position:fixed;inset:0;background:rgba(0,0,0,0.72);display:flex;align-items:center;justify-content:center;z-index:65;">' +
+    '<div class="rb-card" style="padding:24px;width:540px;max-width:90vw;border-color:#B33A32;">' +
+      '<div class="rb-h" style="font-size:20px;margin-bottom:8px;color:#FFF2F1;">Are you sure?</div>' +
+      '<div style="font-size:14px;color:var(--text);line-height:1.5;margin-bottom:10px;">You are about to rescind <strong>' + count + ' offer' + (count === 1 ? '' : 's') + '</strong>.</div>' +
+      '<div class="rb-card rb-mono" style="padding:10px 12px;background:var(--ink);font-size:12px;color:var(--slate);margin-bottom:14px;">' + escapeHtml(rescindFilterSummary(rule)) + '</div>' +
+      '<div style="font-size:13px;color:var(--alert);line-height:1.45;margin-bottom:18px;">This cannot be undone. The offers will still show on the record as rescinded.</div>' +
+      '<div style="display:flex;justify-content:flex-end;gap:8px;flex-wrap:wrap;">' +
+        '<button class="rb-btn" id="rb-back-mass-rescind">Back to checklist</button>' +
+        '<button class="rb-btn" id="rb-cancel-mass-rescind-final">Cancel</button>' +
+        '<button class="rb-btn rb-btn-danger" id="rb-final-confirm-mass-rescind">Yes, rescind offers</button>' +
+      '</div>' +
+    '</div>' +
+  '</div>';
+}
+
+function renderSingleRescindConfirmModal(){
+  const pending = UI.pendingSingleRescind || {};
+  const prospect = DB.prospects[pending.prospectId] || {};
+  const offer = (DB.offersByProspect[pending.prospectId] || []).find(function(o){ return o.id === pending.offerId; }) || {};
+  return '<div style="position:fixed;inset:0;background:rgba(0,0,0,0.72);display:flex;align-items:center;justify-content:center;z-index:65;">' +
+    '<div class="rb-card" style="padding:24px;width:520px;max-width:90vw;border-color:#B33A32;">' +
+      '<div class="rb-h" style="font-size:20px;margin-bottom:8px;color:#FFF2F1;">Rescind this offer?</div>' +
+      '<div style="font-size:14px;color:var(--text);line-height:1.5;margin-bottom:10px;">' + escapeHtml(offer.team || SESSION.team) + ' will rescind its offer to <strong>#' + escapeHtml(prospect.rank || '?') + ' ' + escapeHtml(prospect.name || 'this recruit') + '</strong>.</div>' +
+      '<div style="font-size:13px;color:var(--alert);line-height:1.45;margin-bottom:18px;">This cannot be undone. The offer will still show on the record as rescinded.</div>' +
+      '<div style="display:flex;justify-content:flex-end;gap:8px;flex-wrap:wrap;">' +
+        '<button class="rb-btn" id="rb-cancel-single-rescind">Cancel</button>' +
+        '<button class="rb-btn rb-btn-danger" id="rb-confirm-single-rescind">Yes, rescind offer</button>' +
+      '</div>' +
+    '</div>' +
+  '</div>';
 }
 
 function renderResetConfirmModal(){
@@ -3599,9 +3733,15 @@ function bindEvents(){
         e.stopPropagation();
       }
       const parts = el.getAttribute('data-rescind-offer').split(':');
-      rescindOfferById(parts[0], parts[1]);
+      requestSingleRescind(parts[0], parts[1]);
     };
   });
+
+  const confirmSingleRescindBtn = document.getElementById('rb-confirm-single-rescind');
+  if (confirmSingleRescindBtn) confirmSingleRescindBtn.onclick = confirmSingleRescind;
+
+  const cancelSingleRescindBtn = document.getElementById('rb-cancel-single-rescind');
+  if (cancelSingleRescindBtn) cancelSingleRescindBtn.onclick = cancelSingleRescind;
 
   const addConditionalBtn = document.getElementById('rb-add-conditional');
   if (addConditionalBtn) addConditionalBtn.onclick = addConditionalRule;
@@ -3610,10 +3750,19 @@ function bindEvents(){
   if (previewMassRescindBtn) previewMassRescindBtn.onclick = previewMassRescind;
 
   const confirmMassRescindBtn = document.getElementById('rb-confirm-mass-rescind');
-  if (confirmMassRescindBtn) confirmMassRescindBtn.onclick = confirmMassRescind;
+  if (confirmMassRescindBtn) confirmMassRescindBtn.onclick = previewMassRescindFinal;
 
   const cancelMassRescindBtn = document.getElementById('rb-cancel-mass-rescind');
   if (cancelMassRescindBtn) cancelMassRescindBtn.onclick = cancelMassRescind;
+
+  const finalConfirmMassRescindBtn = document.getElementById('rb-final-confirm-mass-rescind');
+  if (finalConfirmMassRescindBtn) finalConfirmMassRescindBtn.onclick = confirmMassRescind;
+
+  const cancelMassRescindFinalBtn = document.getElementById('rb-cancel-mass-rescind-final');
+  if (cancelMassRescindFinalBtn) cancelMassRescindFinalBtn.onclick = cancelMassRescind;
+
+  const backMassRescindBtn = document.getElementById('rb-back-mass-rescind');
+  if (backMassRescindBtn) backMassRescindBtn.onclick = backToMassRescindChecklist;
 
   document.querySelectorAll('[data-delete-conditional]').forEach(function(el){
     el.onclick = function(e){
