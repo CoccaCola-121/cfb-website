@@ -448,7 +448,7 @@ let DB = { fullRoster: [], released: {}, wave1Released: false, wave2Released: fa
            prospects: {}, threads: [], offersByProspect: {}, unmatched: [], teams: {},
            teamBranding: {}, users: {}, commitSheetUrl: DEFAULT_COMMIT_SHEET_URL, commitUpdatedAt: null,
            discordCommitUpdatedAt: null, discordCommitChannelId: '', defaultClassLoaded: false,
-           offersLocked: false, dangerApprovals: {} };
+           offersLocked: false, dangerApprovals: {}, conditionalRescinds: [] };
 let SESSION = null;
 let UI = { view: 'feed', threadId: null, showSubmitModal: false, submitting: false,
            lastSummary: null, loginError: null, classError: null, classDraft: '', assignError: {},
@@ -460,7 +460,8 @@ let UI = { view: 'feed', threadId: null, showSubmitModal: false, submitting: fal
            teamFilterCoached: false, hideCommittedBoards: false,
            teamChangeDiscordId: '', teamChangeTeam: '', teamPending: { unlinks: {}, switches: {}, roles: {} },
            teamCommitsTeam: '', teamOffersTeam: '',
-           brandingStatus: null, brandingError: null,
+           brandingStatus: null, brandingError: null, conditionalError: null, conditionalStatus: null,
+           massRescindError: null, massRescindStatus: null, pendingMassRescind: null,
            brandingFileName: '', adminActionStatus: null, adminActionError: null };
 let dbReady = false, sessionReady = false;
 let summaryTimer = null;
@@ -910,7 +911,8 @@ function leagueStatePayload(){
     discordCommitChannelId: DB.discordCommitChannelId,
     defaultClassLoaded: DB.defaultClassLoaded,
     offersLocked: !!DB.offersLocked,
-    dangerApprovals: DB.dangerApprovals || {}
+    dangerApprovals: DB.dangerApprovals || {},
+    conditionalRescinds: DB.conditionalRescinds || []
   };
 }
 
@@ -923,7 +925,7 @@ function mergeLeagueState(state){
     commitUpdatedAt: DB.commitUpdatedAt,
     discordCommitUpdatedAt: DB.discordCommitUpdatedAt
   });
-  ['fullRoster','released','wave1Released','wave2Released','prospects','threads','offersByProspect','unmatched','teams','teamBranding','commitSheetUrl','commitUpdatedAt','discordCommitUpdatedAt','discordCommitChannelId','defaultClassLoaded','offersLocked','dangerApprovals'].forEach(function(field){
+  ['fullRoster','released','wave1Released','wave2Released','prospects','threads','offersByProspect','unmatched','teams','teamBranding','commitSheetUrl','commitUpdatedAt','discordCommitUpdatedAt','discordCommitChannelId','defaultClassLoaded','offersLocked','dangerApprovals','conditionalRescinds'].forEach(function(field){
     if (Object.prototype.hasOwnProperty.call(state, field)) DB[field] = state[field];
   });
   const after = JSON.stringify({
@@ -1490,6 +1492,7 @@ function applyCommitRows(rows){
       count++;
     }
   }
+  applyConditionalRescinds();
   DB.commitUpdatedAt = Date.now();
   return count;
 }
@@ -1915,6 +1918,87 @@ function findAnyOfferForTeam(prospectId, team){
   return (DB.offersByProspect[prospectId] || []).find(function(o){ return o.team === team; });
 }
 
+function offerType(offer){
+  const text = String((offer && offer.text) || '').toLowerCase();
+  if (/\bwalk\s*-?\s*on\b|\bwo\b/.test(text)) return 'walkon';
+  return 'scholarship';
+}
+
+function prospectOverall(prospect){
+  const match = String((prospect && prospect.rating) || '').match(/(\d+)/);
+  return match ? Number(match[1]) : null;
+}
+
+function normalizeConditionalRules(){
+  if (!Array.isArray(DB.conditionalRescinds)) DB.conditionalRescinds = [];
+  return DB.conditionalRescinds;
+}
+
+function conditionalRuleMatchesProspect(rule, prospect, offer){
+  if (!rule || !prospect) return false;
+  const position = String(rule.position || '').trim().toUpperCase();
+  if (position && String(prospect.position || '').trim().toUpperCase() !== position) return false;
+  if (rule.stars !== '' && rule.stars != null){
+    const expectedStars = Number(rule.stars);
+    if (Number.isFinite(expectedStars) && starsForRank(prospect.rank) !== expectedStars) return false;
+  }
+  const rankLimit = Number(rule.rankValue);
+  if (Number.isFinite(rankLimit) && rankLimit > 0){
+    if (rule.rankMode === 'better' && Number(prospect.rank) > rankLimit) return false;
+    if (rule.rankMode === 'worse' && Number(prospect.rank) <= rankLimit) return false;
+  }
+  const overallLimit = Number(rule.overallValue);
+  const overall = prospectOverall(prospect);
+  if (Number.isFinite(overallLimit) && overallLimit > 0){
+    if (overall == null) return false;
+    if (rule.overallMode === 'below'){
+      if (overall >= overallLimit) return false;
+    } else if (overall < overallLimit) return false;
+  }
+  const scholarship = String(rule.scholarship || '').trim().toLowerCase();
+  if (scholarship && (!offer || offerType(offer) !== scholarship)) return false;
+  return true;
+}
+
+function applyConditionalRescinds(){
+  const rules = normalizeConditionalRules();
+  const results = [];
+  rules.forEach(function(rule){
+    if (!rule || !rule.enabled || !rule.team) return;
+    const threshold = Math.max(1, Number(rule.count) || 0);
+    const matchingCommits = Object.keys(DB.prospects || {}).filter(function(pid){
+      const prospect = DB.prospects[pid];
+      const winningOffer = (DB.offersByProspect[pid] || []).find(function(offer){ return offer && !offer.rescinded && teamKey(offer.team) === teamKey(rule.team); });
+      return prospect && teamKey(prospect.commitTeam) === teamKey(rule.team) && conditionalRuleMatchesProspect(rule, prospect, winningOffer);
+    });
+    if (matchingCommits.length < threshold) return;
+    let rescinded = 0;
+    const prospectOnlyRule = Object.assign({}, rule, { scholarship: '' });
+    Object.keys(DB.offersByProspect || {}).forEach(function(pid){
+      const prospect = DB.prospects[pid];
+      if (!prospect || prospect.commitTeam || !conditionalRuleMatchesProspect(prospectOnlyRule, prospect, null)) return;
+      (DB.offersByProspect[pid] || []).forEach(function(offer){
+        if (!offer || offer.rescinded || teamKey(offer.team) !== teamKey(rule.team)) return;
+        if (!conditionalRuleMatchesProspect(rule, prospect, offer)) return;
+        offer.rescinded = true;
+        offer.text = 'rescinded';
+        offer.promises = [];
+        offer.rescindedAt = Date.now();
+        offer.rescindReason = 'Conditional rescind: ' + (rule.name || 'rule met');
+        offer.conditionalRescindRuleId = rule.id || '';
+        rescinded++;
+      });
+    });
+    if (rescinded){
+      rule.lastTriggeredAt = Date.now();
+      rule.lastMatchedCommitCount = matchingCommits.length;
+      rule.lastRescindedCount = rescinded;
+      results.push({ ruleId: rule.id || '', team: rule.team, rescinded: rescinded });
+    }
+  });
+  return results;
+}
+
 function rescindOffer(prospectId, team){
   const offer = findOfferForTeam(prospectId, team);
   if (!offer) return;
@@ -2337,6 +2421,7 @@ async function confirmReset(){
   if (UI.confirmReset === 'offers'){
     DB.offersByProspect = {};
     DB.unmatched = [];
+    DB.conditionalRescinds = [];
     DB.commitSheetUrl = DEFAULT_COMMIT_SHEET_URL;
     DB.commitUpdatedAt = null;
     UI.lastSummary = null;
@@ -2351,6 +2436,7 @@ async function confirmReset(){
     DB.threads = [];
     DB.offersByProspect = {};
     DB.unmatched = [];
+    DB.conditionalRescinds = [];
     DB.defaultClassLoaded = false;
     applyDefaultClassData(window.NZCFL_DEFAULT_CLASS_CSV || '');
     DB.commitSheetUrl = DEFAULT_COMMIT_SHEET_URL;
@@ -2555,6 +2641,239 @@ function renderVisitLedger(){
   return html;
 }
 
+function positionOptions(selected){
+  const positions = {};
+  Object.keys(DB.prospects || {}).forEach(function(pid){
+    const pos = String((DB.prospects[pid] && DB.prospects[pid].position) || '').trim().toUpperCase();
+    if (pos) positions[pos] = true;
+  });
+  return Object.keys(positions).sort().map(function(pos){
+    return '<option value="' + escapeHtml(pos) + '" ' + (selected === pos ? 'selected' : '') + '>' + escapeHtml(pos) + '</option>';
+  }).join('');
+}
+
+function conditionalRuleSummary(rule){
+  const parts = [];
+  parts.push(Number(rule.count || 1) + ' commit' + (Number(rule.count || 1) === 1 ? '' : 's'));
+  if (rule.position) parts.push(String(rule.position).toUpperCase());
+  if (rule.stars !== '' && rule.stars != null) parts.push(rule.stars + ' star' + (Number(rule.stars) === 1 ? '' : 's'));
+  if (rule.rankValue) parts.push((rule.rankMode === 'better' ? '#' + rule.rankValue + ' or better' : 'below #' + rule.rankValue));
+  if (rule.overallValue) parts.push((rule.overallMode === 'below' ? 'ovr below ' : 'ovr at least ') + rule.overallValue);
+  if (rule.scholarship) parts.push(rule.scholarship === 'walkon' ? 'walk-on' : 'scholarship');
+  return parts.join(' · ');
+}
+
+function rescindFilterSummary(rule){
+  const clone = Object.assign({ count: 1 }, rule || {});
+  return conditionalRuleSummary(clone).replace(/^1 commit(?: · )?/, '') || 'all active offers';
+}
+
+function rulesForTeam(team){
+  return normalizeConditionalRules().filter(function(rule){ return rule && teamKey(rule.team) === teamKey(team); });
+}
+
+function renderConditionalRescinds(){
+  const rules = rulesForTeam(SESSION.team);
+  let html = '<div class="rb-card" style="padding:18px 20px;margin-bottom:14px;">';
+  html += '<div class="rb-h" style="font-size:18px;margin-bottom:6px;">Rescind Center</div>';
+  html += '<div style="font-size:13px;color:var(--slate);margin-bottom:12px;">Build automatic rescind rules or mass rescind matching active offers right now.</div>';
+  if (rules.length){
+    html += '<div style="display:flex;flex-direction:column;gap:8px;margin-bottom:14px;">';
+    rules.forEach(function(rule){
+      html += '<div class="rb-card" style="padding:10px 12px;background:var(--panel-alt);display:flex;justify-content:space-between;align-items:center;gap:12px;">';
+      html += '<span style="min-width:0;"><strong>' + escapeHtml(rule.name || 'Conditional rule') + '</strong><span class="rb-mono" style="display:block;color:var(--slate);font-size:12px;margin-top:3px;">' + escapeHtml(conditionalRuleSummary(rule)) + '</span></span>';
+      html += '<button class="rb-btn rb-btn-danger" data-delete-conditional="' + escapeHtml(rule.id) + '">Delete</button>';
+      html += '</div>';
+    });
+    html += '</div>';
+  }
+  html += '<div class="rb-card" style="padding:12px;background:var(--panel-alt);">';
+  html += '<div class="rb-h" style="font-size:14px;margin-bottom:10px;">Conditional Rule</div>';
+  html += '<div class="rb-mobile-stack" style="display:grid;grid-template-columns:0.8fr 1fr 0.9fr;gap:10px;margin-bottom:10px;">';
+  html += '<label><span class="rb-mono" style="font-size:11px;color:var(--slate);">Number of</span><input class="rb-input" id="rb-cond-count" type="number" min="1" value="1" /></label>';
+  html += '<label><span class="rb-mono" style="font-size:11px;color:var(--slate);">Position</span><select class="rb-input" id="rb-cond-position"><option value="">Any</option>' + positionOptions('') + '</select></label>';
+  html += '<label><span class="rb-mono" style="font-size:11px;color:var(--slate);">Stars</span><select class="rb-input" id="rb-cond-stars"><option value="">Any</option><option value="5">5 stars</option><option value="4">4 stars</option><option value="3">3 stars</option><option value="2">2 stars</option><option value="1">1 star</option><option value="0">0 stars</option></select></label>';
+  html += '</div>';
+  html += '<div class="rb-mobile-stack" style="display:grid;grid-template-columns:1fr 0.8fr 1fr 0.8fr 1fr;gap:10px;align-items:end;">';
+  html += '<label><span class="rb-mono" style="font-size:11px;color:var(--slate);">Rank</span><select class="rb-input" id="rb-cond-rank-mode"><option value="">Any</option><option value="worse">Below #</option><option value="better"># or better</option></select></label>';
+  html += '<input class="rb-input" id="rb-cond-rank-value" type="number" min="1" placeholder="250" />';
+  html += '<label><span class="rb-mono" style="font-size:11px;color:var(--slate);">Overall</span><select class="rb-input" id="rb-cond-overall-mode"><option value="">Any</option><option value="atLeast">At least</option><option value="below">Below</option></select></label>';
+  html += '<input class="rb-input" id="rb-cond-overall-value" type="number" min="1" max="99" placeholder="50" />';
+  html += '<label><span class="rb-mono" style="font-size:11px;color:var(--slate);">Type</span><select class="rb-input" id="rb-cond-scholarship"><option value="">Any</option><option value="scholarship">Scholarship</option><option value="walkon">Walk-on</option></select></label>';
+  html += '</div>';
+  html += '<div style="margin-top:10px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;"><button class="rb-btn rb-btn-gold" id="rb-add-conditional">Add rule</button><span class="rb-mono" style="font-size:11px;color:var(--slate);">At least one filter besides number is required.</span></div>';
+  if (UI.conditionalError) html += '<div style="font-size:12px;color:var(--alert);margin-top:8px;">' + escapeHtml(UI.conditionalError) + '</div>';
+  if (UI.conditionalStatus) html += '<div style="font-size:12px;color:var(--gold);margin-top:8px;">' + escapeHtml(UI.conditionalStatus) + '</div>';
+  html += '</div>';
+  html += '<div class="rb-card" style="padding:12px;background:var(--panel-alt);margin-top:12px;border-color:#6F1D1B;">';
+  html += '<div class="rb-h" style="font-size:14px;margin-bottom:10px;color:#FFF2F1;">Mass Rescind Now</div>';
+  html += '<div class="rb-mobile-stack" style="display:grid;grid-template-columns:1fr 0.9fr 1fr 0.8fr 1fr;gap:10px;align-items:end;">';
+  html += '<label><span class="rb-mono" style="font-size:11px;color:var(--slate);">Position</span><select class="rb-input" id="rb-mass-position"><option value="">Any</option>' + positionOptions('') + '</select></label>';
+  html += '<label><span class="rb-mono" style="font-size:11px;color:var(--slate);">Stars</span><select class="rb-input" id="rb-mass-stars"><option value="">Any</option><option value="5">5 stars</option><option value="4">4 stars</option><option value="3">3 stars</option><option value="2">2 stars</option><option value="1">1 star</option><option value="0">0 stars</option></select></label>';
+  html += '<label><span class="rb-mono" style="font-size:11px;color:var(--slate);">Rank</span><select class="rb-input" id="rb-mass-rank-mode"><option value="">Any</option><option value="worse">Below #</option><option value="better"># or better</option></select></label>';
+  html += '<input class="rb-input" id="rb-mass-rank-value" type="number" min="1" placeholder="250" />';
+  html += '<label><span class="rb-mono" style="font-size:11px;color:var(--slate);">Type</span><select class="rb-input" id="rb-mass-scholarship"><option value="">Any</option><option value="scholarship">Scholarship</option><option value="walkon">Walk-on</option></select></label>';
+  html += '</div>';
+  html += '<div class="rb-mobile-stack" style="display:grid;grid-template-columns:1fr 0.8fr minmax(130px,auto);gap:10px;align-items:end;margin-top:10px;">';
+  html += '<label><span class="rb-mono" style="font-size:11px;color:var(--slate);">Overall</span><select class="rb-input" id="rb-mass-overall-mode"><option value="">Any</option><option value="atLeast">At least</option><option value="below">Below</option></select></label>';
+  html += '<input class="rb-input" id="rb-mass-overall-value" type="number" min="1" max="99" placeholder="50" />';
+  html += '<button class="rb-btn rb-btn-danger" id="rb-preview-mass-rescind">Preview rescind</button>';
+  html += '</div>';
+  if (UI.pendingMassRescind){
+    html += '<div class="rb-card" style="padding:10px 12px;margin-top:10px;background:rgba(111,29,27,0.18);border-color:#6F1D1B;">';
+    html += '<div style="font-size:13px;color:#FFF2F1;margin-bottom:8px;">Rescind ' + UI.pendingMassRescind.count + ' active offer' + (UI.pendingMassRescind.count === 1 ? '' : 's') + ' matching: <span class="rb-mono">' + escapeHtml(rescindFilterSummary(UI.pendingMassRescind.rule)) + '</span>?</div>';
+    html += '<div style="display:flex;gap:8px;flex-wrap:wrap;"><button class="rb-btn rb-btn-danger" id="rb-confirm-mass-rescind" ' + (!UI.pendingMassRescind.count ? 'disabled' : '') + '>Confirm rescind</button><button class="rb-btn" id="rb-cancel-mass-rescind">Cancel</button></div>';
+    html += '</div>';
+  }
+  if (UI.massRescindError) html += '<div style="font-size:12px;color:var(--alert);margin-top:8px;">' + escapeHtml(UI.massRescindError) + '</div>';
+  if (UI.massRescindStatus) html += '<div style="font-size:12px;color:var(--gold);margin-top:8px;">' + escapeHtml(UI.massRescindStatus) + '</div>';
+  html += '</div></div>';
+  return html;
+}
+
+function conditionalFormValue(id){
+  const el = document.getElementById(id);
+  return el ? String(el.value || '').trim() : '';
+}
+
+function readRescindRuleForm(prefix, includeCount){
+  const rankValue = conditionalFormValue(prefix + '-rank-value');
+  const overallValue = conditionalFormValue(prefix + '-overall-value');
+  return {
+    count: includeCount ? Math.max(1, Number(conditionalFormValue(prefix + '-count')) || 1) : 1,
+    position: conditionalFormValue(prefix + '-position').toUpperCase(),
+    stars: conditionalFormValue(prefix + '-stars'),
+    rankMode: conditionalFormValue(prefix + '-rank-mode') || (rankValue ? 'worse' : ''),
+    rankValue: rankValue,
+    overallMode: conditionalFormValue(prefix + '-overall-mode') || (overallValue ? 'atLeast' : ''),
+    overallValue: overallValue,
+    scholarship: conditionalFormValue(prefix + '-scholarship')
+  };
+}
+
+function validateRescindRuleDraft(draft, options){
+  options = options || {};
+  const hasRank = draft.rankMode && draft.rankValue;
+  const hasOverall = draft.overallMode && draft.overallValue;
+  if (!draft.position && draft.stars === '' && !hasRank && !hasOverall && !draft.scholarship){
+    return options.actionLabel ? 'Pick at least one filter before ' + options.actionLabel + '.' : 'Pick at least one filter.';
+  }
+  if ((draft.rankMode && !draft.rankValue) || (!draft.rankMode && draft.rankValue)) return 'Rank needs both a direction and a number.';
+  if ((draft.overallMode && !draft.overallValue) || (!draft.overallMode && draft.overallValue)) return 'Overall needs both a direction and a number.';
+  return '';
+}
+
+function normalizeRescindRuleDraft(draft){
+  return {
+    count: Math.max(1, Number(draft.count) || 1),
+    position: String(draft.position || '').trim().toUpperCase(),
+    stars: draft.stars,
+    rankMode: draft.rankMode,
+    rankValue: draft.rankMode && draft.rankValue ? Number(draft.rankValue) : '',
+    overallMode: draft.overallMode || 'atLeast',
+    overallValue: draft.overallMode && draft.overallValue ? Number(draft.overallValue) : '',
+    scholarship: draft.scholarship
+  };
+}
+
+function addConditionalRule(){
+  if (!SESSION) return;
+  const draft = readRescindRuleForm('rb-cond', true);
+  const error = validateRescindRuleDraft(draft, { actionLabel: 'saving a conditional rescind' });
+  if (error){
+    UI.conditionalError = error;
+    UI.conditionalStatus = null;
+    render(); return;
+  }
+  const normalized = normalizeRescindRuleDraft(draft);
+  const rule = {
+    id: uid('cr'),
+    team: SESSION.team,
+    enabled: true,
+    count: normalized.count,
+    position: normalized.position,
+    stars: normalized.stars,
+    rankMode: normalized.rankMode,
+    rankValue: normalized.rankValue,
+    overallMode: normalized.overallMode,
+    overallValue: normalized.overallValue,
+    scholarship: normalized.scholarship,
+    createdAt: Date.now()
+  };
+  rule.name = conditionalRuleSummary(rule);
+  normalizeConditionalRules().push(rule);
+  const results = applyConditionalRescinds();
+  UI.conditionalError = null;
+  UI.conditionalStatus = 'Rule added' + (results.length ? ' and applied immediately.' : '.');
+  saveDB(); render();
+}
+
+function massRescindMatches(rule){
+  const rows = [];
+  const prospectOnlyRule = Object.assign({}, rule, { scholarship: '' });
+  Object.keys(DB.offersByProspect || {}).forEach(function(pid){
+    const prospect = DB.prospects[pid];
+    if (!prospect || prospect.commitTeam || !conditionalRuleMatchesProspect(prospectOnlyRule, prospect, null)) return;
+    (DB.offersByProspect[pid] || []).forEach(function(offer){
+      if (!offer || offer.rescinded || teamKey(offer.team) !== teamKey(SESSION.team)) return;
+      if (!conditionalRuleMatchesProspect(rule, prospect, offer)) return;
+      rows.push({ prospectId: pid, prospect: prospect, offer: offer });
+    });
+  });
+  return rows;
+}
+
+function previewMassRescind(){
+  if (!SESSION) return;
+  const draft = readRescindRuleForm('rb-mass', false);
+  const error = validateRescindRuleDraft(draft, { actionLabel: 'previewing a mass rescind' });
+  if (error){
+    UI.massRescindError = error;
+    UI.massRescindStatus = null;
+    UI.pendingMassRescind = null;
+    render(); return;
+  }
+  const rule = Object.assign(normalizeRescindRuleDraft(draft), { team: SESSION.team });
+  const matches = massRescindMatches(rule);
+  UI.pendingMassRescind = { rule: rule, count: matches.length };
+  UI.massRescindError = null;
+  UI.massRescindStatus = null;
+  render();
+}
+
+function confirmMassRescind(){
+  if (!SESSION || !UI.pendingMassRescind) return;
+  const rule = UI.pendingMassRescind.rule;
+  const matches = massRescindMatches(rule);
+  matches.forEach(function(row){
+    row.offer.rescinded = true;
+    row.offer.text = 'rescinded';
+    row.offer.promises = [];
+    row.offer.rescindedAt = Date.now();
+    row.offer.rescindReason = 'Mass rescind: ' + rescindFilterSummary(rule);
+  });
+  UI.massRescindStatus = 'Rescinded ' + matches.length + ' offer' + (matches.length === 1 ? '' : 's') + '.';
+  UI.massRescindError = null;
+  UI.pendingMassRescind = null;
+  saveDB(); render();
+}
+
+function cancelMassRescind(){
+  UI.pendingMassRescind = null;
+  UI.massRescindError = null;
+  render();
+}
+
+function deleteConditionalRule(ruleId){
+  if (!SESSION) return;
+  DB.conditionalRescinds = normalizeConditionalRules().filter(function(rule){
+    return !(rule && rule.id === ruleId && teamKey(rule.team) === teamKey(SESSION.team));
+  });
+  UI.conditionalError = null;
+  UI.conditionalStatus = 'Rule deleted.';
+  saveDB(); render();
+}
+
 function getOfferRowsForTeam(team){
   const rows = [];
   Object.keys(DB.offersByProspect || {}).forEach(function(pid){
@@ -2596,6 +2915,7 @@ function renderMyOffers(){
   }
   const rows = getOfferRowsForTeam(SESSION.team);
   let html = renderVisitLedger();
+  html += renderConditionalRescinds();
   html += '<div class="rb-card" style="padding:18px 20px;margin-bottom:14px;">';
   html += '<div class="rb-h" style="font-size:18px;margin-bottom:6px;">My Offers</div>';
   html += '<div style="font-size:13px;color:var(--slate);margin-bottom:12px;">' + rows.length + ' offer' + (rows.length === 1 ? '' : 's') + ' from ' + escapeHtml(SESSION.team) + '.</div>';
@@ -3044,6 +3364,7 @@ function renderOfferBlock(o, opts){
   }
   if (o.rescinded){
     html += '<div style="margin-top:8px;"><span class="rb-tag" style="display:inline-block;margin:0;color:var(--alert);border-color:#6F1D1B;background:rgba(111,29,27,0.18);font-weight:600;">Rescinded</span></div>';
+    if (o.rescindReason) html += '<div class="rb-mono" style="font-size:11px;color:var(--slate);margin-top:6px;">' + escapeHtml(o.rescindReason) + '</div>';
   } else {
     const scrollStyle = opts.fullText ? '' : 'max-height:140px;overflow:auto;';
     html += '<div style="font-size:13px;color:var(--chalk);margin-top:6px;white-space:pre-wrap;' + scrollStyle + '" class="rb-scrollbar">' + formatOfferText(o.text, cleanDisplayPromises(o)) + '</div>';
@@ -3241,6 +3562,28 @@ function bindEvents(){
       }
       const parts = el.getAttribute('data-rescind-offer').split(':');
       rescindOfferById(parts[0], parts[1]);
+    };
+  });
+
+  const addConditionalBtn = document.getElementById('rb-add-conditional');
+  if (addConditionalBtn) addConditionalBtn.onclick = addConditionalRule;
+
+  const previewMassRescindBtn = document.getElementById('rb-preview-mass-rescind');
+  if (previewMassRescindBtn) previewMassRescindBtn.onclick = previewMassRescind;
+
+  const confirmMassRescindBtn = document.getElementById('rb-confirm-mass-rescind');
+  if (confirmMassRescindBtn) confirmMassRescindBtn.onclick = confirmMassRescind;
+
+  const cancelMassRescindBtn = document.getElementById('rb-cancel-mass-rescind');
+  if (cancelMassRescindBtn) cancelMassRescindBtn.onclick = cancelMassRescind;
+
+  document.querySelectorAll('[data-delete-conditional]').forEach(function(el){
+    el.onclick = function(e){
+      if (e) {
+        e.preventDefault();
+        e.stopPropagation();
+      }
+      deleteConditionalRule(el.getAttribute('data-delete-conditional'));
     };
   });
 

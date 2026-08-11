@@ -18,6 +18,7 @@ const STATE_FIELDS = [
   'defaultClassLoaded',
   'offersLocked',
   'dangerApprovals',
+  'conditionalRescinds',
 ];
 
 export function sanitizeState(input) {

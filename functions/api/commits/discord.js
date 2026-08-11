@@ -1,4 +1,5 @@
 import { canModerate, getCurrentUser, json, requireEnv } from '../../_lib/auth.js';
+import { applyConditionalRescinds } from '../../_lib/conditional-rescinds.js';
 import { readLeagueState, writeLeagueState } from '../../_lib/league-state.js';
 import { TEAM_ROLE_ALIASES, TEAM_ROLE_IDS } from '../../_lib/team-role-map.js';
 import { findTeam } from '../../_lib/teams-util.js';
@@ -127,11 +128,12 @@ export function applyDiscordCommits(state, commits) {
     updated++;
   });
 
+  const conditionalRescinds = applyConditionalRescinds(state);
   state.prospects = prospects;
   state.commitUpdatedAt = Date.now();
   state.discordCommitUpdatedAt = state.commitUpdatedAt;
   state.discordCommitChannelId = state.discordCommitChannelId || '';
-  return { updated, unchanged, unmatched };
+  return { updated, unchanged, unmatched, conditionalRescinds };
 }
 
 async function canRunCommitSync(request, env) {
@@ -173,6 +175,7 @@ export async function onRequestPost({ request, env }) {
       unchanged: result.unchanged,
       unmatched: result.unmatched.slice(0, 20),
       unmatchedCount: result.unmatched.length,
+      conditionalRescinds: result.conditionalRescinds || [],
     });
   } catch (error) {
     return json({ ok: false, error: error.message || 'Could not update commits from Discord.' }, { status: 500 });

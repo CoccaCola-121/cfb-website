@@ -62,5 +62,6 @@ export async function onRequestPost({ request, env }) {
     unchanged: result.unchanged,
     unmatched: result.unmatched.slice(0, 20),
     unmatchedCount: result.unmatched.length,
+    conditionalRescinds: result.conditionalRescinds || [],
   });
 }
