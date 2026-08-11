@@ -459,7 +459,7 @@ let UI = { view: 'feed', threadId: null, showSubmitModal: false, submitting: fal
            teamLinkQuery: '', unavailableTeamKeys: [], teamLinks: {}, teamSearch: '',
            teamFilterCoached: false, hideCommittedBoards: false,
            teamChangeDiscordId: '', teamChangeTeam: '', teamPending: { unlinks: {}, switches: {}, roles: {} },
-           teamCommitsTeam: '', teamOffersTeam: '',
+           teamCommitsTeam: '', teamOffersTeam: '', teamCommitsReturn: null,
            brandingStatus: null, brandingError: null, conditionalError: null, conditionalStatus: null,
            massRescindError: null, massRescindStatus: null, pendingMassRescind: null,
            pendingMassRescindFinal: null, pendingSingleRescind: null,
@@ -539,6 +539,7 @@ function applyRoute(route){
   UI.prospectId = route.prospectId || null;
   UI.teamCommitsTeam = route.teamCommitsTeam || '';
   UI.teamOffersTeam = route.teamOffersTeam || '';
+  UI.teamCommitsReturn = null;
 }
 
 function syncBrowserRoute(replace){
@@ -556,6 +557,7 @@ function navigateTo(view, options){
   if (options.prospectId != null) UI.prospectId = options.prospectId;
   if (options.teamCommitsTeam != null) UI.teamCommitsTeam = options.teamCommitsTeam;
   if (options.teamOffersTeam != null) UI.teamOffersTeam = options.teamOffersTeam;
+  if (options.teamCommitsReturn !== undefined) UI.teamCommitsReturn = options.teamCommitsReturn;
   syncBrowserRoute(!!options.replaceRoute);
   render();
   if (UI.view === 'teams') loadTeamAvailability().then(render);
@@ -742,16 +744,22 @@ function renderTeamLogo(brand){
   return '<span style="width:' + size + 'px;height:' + size + 'px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;background:rgba(226,230,239,0.18);border:1px solid rgba(226,230,239,0.24);flex:0 0 auto;"><img src="' + escapeHtml(brand.logoUrl) + '" alt="" style="width:' + imgSize + 'px;height:' + imgSize + 'px;object-fit:contain;display:block;" /></span>';
 }
 
-function renderCommittedTag(teamName, clickable){
+function renderCommittedTag(teamName, clickable, returnContext){
   const brand = getTeamBranding(teamName);
-  const openAttr = clickable ? ' data-open-team-commits="' + escapeHtml(teamName) + '"' : '';
+  returnContext = returnContext || {};
+  const returnAttr = clickable ?
+    ' data-open-team-commits="' + escapeHtml(teamName) + '"' +
+    (returnContext.view ? ' data-team-commits-return-view="' + escapeHtml(returnContext.view) + '"' : '') +
+    (returnContext.prospectId ? ' data-team-commits-return-prospect="' + escapeHtml(returnContext.prospectId) + '"' : '') +
+    (returnContext.label ? ' data-team-commits-return-label="' + escapeHtml(returnContext.label) + '"' : '') :
+    '';
   const clickableStyle = clickable ? 'cursor:pointer;' : '';
   if (!brand){
-    return '<span class="rb-tag"' + openAttr + ' style="display:inline-flex;align-items:center;gap:6px;margin:0;white-space:nowrap;' + clickableStyle + '">Committed: ' + escapeHtml(teamName) + '</span>';
+    return '<span class="rb-tag"' + returnAttr + ' style="display:inline-flex;align-items:center;gap:6px;margin:0;white-space:nowrap;' + clickableStyle + '">Committed: ' + escapeHtml(teamName) + '</span>';
   }
   const primary = brand.primary || 'var(--hairline)';
   const secondary = brand.secondary || 'var(--chalk)';
-  return '<span class="rb-tag"' + openAttr + ' style="display:inline-flex;align-items:center;gap:7px;margin:0;white-space:nowrap;border-color:' + escapeHtml(primary) + ';background:linear-gradient(90deg,' + escapeHtml(primary) + '44,' + escapeHtml(secondary) + '1f);' + clickableStyle + '">' + renderTeamLogo(brand) + '<span>Committed: <span class="rb-desktop-only">' + escapeHtml(brand.region || teamName) + '</span><span class="rb-mobile-only">' + escapeHtml(brand.abbrev || brand.region || teamName) + '</span></span></span>';
+  return '<span class="rb-tag"' + returnAttr + ' style="display:inline-flex;align-items:center;gap:7px;margin:0;white-space:nowrap;border-color:' + escapeHtml(primary) + ';background:linear-gradient(90deg,' + escapeHtml(primary) + '44,' + escapeHtml(secondary) + '1f);' + clickableStyle + '">' + renderTeamLogo(brand) + '<span>Committed: <span class="rb-desktop-only">' + escapeHtml(brand.region || teamName) + '</span><span class="rb-mobile-only">' + escapeHtml(brand.abbrev || brand.region || teamName) + '</span></span></span>';
 }
 
 function renderTeamCoachBadge(teamName){
@@ -2571,7 +2579,7 @@ function renderHomePage(){
 
 function renderNav(){
   let html = '<div class="rb-nav-shell">';
-  html += '<div class="rb-nav-brand">' +
+  html += '<div class="rb-nav-brand" data-nav="feed" style="cursor:pointer;">' +
       '<img class="rb-nav-logo" src="/NZCFL.jpg" alt="NZCFL logo">' +
       '<div>' +
         '<div class="rb-h" style="font-size:22px;font-weight:700;letter-spacing:0.06em;text-transform:none;">NZCFL RecruitHQ</div>' +
@@ -3119,7 +3127,9 @@ function renderMyCommits(){
 function renderTeamCommits(){
   const team = UI.teamCommitsTeam || '';
   if (!team) return '<div class="rb-card" style="padding:28px;text-align:center;color:var(--slate);">No team selected.</div>';
-  return '<div style="margin-bottom:16px;display:flex;gap:10px;align-items:center;flex-wrap:wrap;"><button class="rb-btn" data-nav="teams">&larr; Back to Teams</button><button class="rb-btn rb-btn-gold" data-open-team-offers="' + escapeHtml(team) + '">View Offers</button></div>' +
+  const back = UI.teamCommitsReturn || { view: 'teams', label: 'Teams' };
+  const backLabel = back.view === 'prospect' ? ('Back to ' + (back.label || 'Prospect')) : (back.view === 'feed' ? 'Back to Prospect Board' : 'Back to Teams');
+  return '<div style="margin-bottom:16px;display:flex;gap:10px;align-items:center;flex-wrap:wrap;"><button class="rb-btn" data-team-commits-back="1">&larr; ' + escapeHtml(backLabel) + '</button><button class="rb-btn rb-btn-gold" data-open-team-offers="' + escapeHtml(team) + '">View Offers</button></div>' +
     renderCommitsForTeam(team, team + ' Commits');
 }
 
@@ -3296,7 +3306,7 @@ function renderProspectBoardCard(pid, searchAttr){
     '<span class="rb-mono" style="color:var(--slate);font-size:13px;">' + escapeHtml(p.position) + (p.rating ? ' &middot; ' + escapeHtml(p.rating) : '') + '</span>' +
     (p.hometown ? '<span style="color:var(--slate);font-size:13px;"> &middot; <span title="' + escapeHtml(p.hometown) + '">' + escapeHtml(shortText(p.hometown, 28)) + '</span></span>' : '') +
   '</div>';
-  html += '<div style="display:flex;align-items:center;gap:8px;white-space:nowrap;">' + (p.commitTeam ? '' : offerCountTag(pid)) + (p.commitTeam ? renderCommittedTag(p.commitTeam, true) : '') + '</div>';
+  html += '<div style="display:flex;align-items:center;gap:8px;white-space:nowrap;">' + (p.commitTeam ? '' : offerCountTag(pid)) + (p.commitTeam ? renderCommittedTag(p.commitTeam, true, { view: 'feed', label: 'Prospect Board' }) : '') + '</div>';
   html += '</div>';
   if (!p.commitTeam) html += renderStorylineLine(p.storyline, 'margin-top:6px;');
   if (offers.length && !p.commitTeam){
@@ -3425,7 +3435,7 @@ function renderProspectDetail(){
   html += '</div>';
   html += '<div style="display:flex;align-items:center;justify-content:flex-end;gap:10px;flex-wrap:wrap;">' +
     (SESSION && !p.commitTeam ? (sessionOffer ? '<button class="rb-btn" disabled title="Your team already has an offer on this recruit">Offer submitted</button>' : (DB.offersLocked ? '<button class="rb-btn" disabled title="Offers are locked">Offers locked</button>' : '<button class="rb-btn rb-btn-gold" data-open-submit="' + escapeHtml(p.id) + '">Submit offer</button>')) : '') +
-    (p.commitTeam ? renderCommittedTag(p.commitTeam) : '') +
+    (p.commitTeam ? renderCommittedTag(p.commitTeam, true, { view: 'prospect', prospectId: p.id, label: p.name }) : '') +
     '<span>' + starsOrLabel(p.stars) + '</span></div>';
   html += '</div>';
   html += renderStorylineLine(p.storyline, 'margin-top:8px;');
@@ -3922,7 +3932,30 @@ function bindEvents(){
         e.preventDefault();
         e.stopPropagation();
       }
-      navigateTo('teamcommits', { teamCommitsTeam: el.getAttribute('data-open-team-commits') || '' });
+      const returnView = el.getAttribute('data-team-commits-return-view') || 'teams';
+      const returnContext = {
+        view: returnView,
+        label: el.getAttribute('data-team-commits-return-label') || '',
+        prospectId: el.getAttribute('data-team-commits-return-prospect') || ''
+      };
+      navigateTo('teamcommits', { teamCommitsTeam: el.getAttribute('data-open-team-commits') || '', teamCommitsReturn: returnContext });
+      scrollPageTop();
+    };
+  });
+  document.querySelectorAll('[data-team-commits-back]').forEach(function(el){
+    el.onclick = function(e){
+      if (e) {
+        e.preventDefault();
+        e.stopPropagation();
+      }
+      const back = UI.teamCommitsReturn || { view: 'teams' };
+      if (back.view === 'prospect' && back.prospectId){
+        navigateTo('prospect', { prospectId: back.prospectId });
+      } else if (back.view === 'feed'){
+        navigateTo('feed');
+      } else {
+        navigateTo('teams');
+      }
       scrollPageTop();
     };
   });
@@ -3942,7 +3975,7 @@ function bindEvents(){
         e.preventDefault();
         e.stopPropagation();
       }
-      navigateTo('teamcommits', { teamCommitsTeam: el.getAttribute('data-open-team-commits-button') || '' });
+      navigateTo('teamcommits', { teamCommitsTeam: el.getAttribute('data-open-team-commits-button') || '', teamCommitsReturn: { view: 'teams', label: 'Teams' } });
       scrollPageTop();
     };
   });
