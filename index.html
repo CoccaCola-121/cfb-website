@@ -751,6 +751,7 @@ function renderCommittedTag(teamName, clickable, returnContext){
     ' data-open-team-commits="' + escapeHtml(teamName) + '"' +
     (returnContext.view ? ' data-team-commits-return-view="' + escapeHtml(returnContext.view) + '"' : '') +
     (returnContext.prospectId ? ' data-team-commits-return-prospect="' + escapeHtml(returnContext.prospectId) + '"' : '') +
+    (returnContext.threadId ? ' data-team-commits-return-thread="' + escapeHtml(returnContext.threadId) + '"' : '') +
     (returnContext.label ? ' data-team-commits-return-label="' + escapeHtml(returnContext.label) + '"' : '') :
     '';
   const clickableStyle = clickable ? 'cursor:pointer;' : '';
@@ -3128,7 +3129,7 @@ function renderTeamCommits(){
   const team = UI.teamCommitsTeam || '';
   if (!team) return '<div class="rb-card" style="padding:28px;text-align:center;color:var(--slate);">No team selected.</div>';
   const back = UI.teamCommitsReturn || { view: 'teams', label: 'Teams' };
-  const backLabel = back.view === 'prospect' ? ('Back to ' + (back.label || 'Prospect')) : (back.view === 'feed' ? 'Back to Prospect Board' : 'Back to Teams');
+  const backLabel = back.view === 'prospect' ? ('Back to ' + (back.label || 'Prospect')) : (back.view === 'thread' ? ('Back to ' + (back.label || 'Prospect Board')) : (back.view === 'feed' ? 'Back to Prospect Board' : 'Back to Teams'));
   return '<div style="margin-bottom:16px;display:flex;gap:10px;align-items:center;flex-wrap:wrap;"><button class="rb-btn" data-team-commits-back="1">&larr; ' + escapeHtml(backLabel) + '</button><button class="rb-btn rb-btn-gold" data-open-team-offers="' + escapeHtml(team) + '">View Offers</button></div>' +
     renderCommitsForTeam(team, team + ' Commits');
 }
@@ -3298,6 +3299,8 @@ function renderProspectBoardCard(pid, searchAttr){
   if (!p) return '';
   const offers = DB.offersByProspect[pid] || [];
   const searchText = searchAttr || [p.rank, '#' + p.rank, p.name, p.position, p.hometown].join(' ').toLowerCase();
+  const currentThread = UI.view === 'thread' ? DB.threads.find(function(t){ return t.id === UI.threadId; }) : null;
+  const commitReturn = currentThread ? { view: 'thread', threadId: currentThread.id, label: currentThread.title } : { view: 'feed', label: 'Prospect Board' };
   let html = '<div class="rb-card rb-mobile-tight" data-prospect-card="1" data-search="' + escapeHtml(searchText) + '" data-open-prospect="' + pid + '" style="padding:14px 18px;cursor:pointer;' + (p.commitTeam ? committedCardStyle(p.commitTeam) : '') + '">';
   html += '<div style="display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:10px;">';
   html += '<div style="min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' +
@@ -3306,7 +3309,7 @@ function renderProspectBoardCard(pid, searchAttr){
     '<span class="rb-mono" style="color:var(--slate);font-size:13px;">' + escapeHtml(p.position) + (p.rating ? ' &middot; ' + escapeHtml(p.rating) : '') + '</span>' +
     (p.hometown ? '<span style="color:var(--slate);font-size:13px;"> &middot; <span title="' + escapeHtml(p.hometown) + '">' + escapeHtml(shortText(p.hometown, 28)) + '</span></span>' : '') +
   '</div>';
-  html += '<div style="display:flex;align-items:center;gap:8px;white-space:nowrap;">' + (p.commitTeam ? '' : offerCountTag(pid)) + (p.commitTeam ? renderCommittedTag(p.commitTeam, true, { view: 'feed', label: 'Prospect Board' }) : '') + '</div>';
+  html += '<div style="display:flex;align-items:center;gap:8px;white-space:nowrap;">' + (p.commitTeam ? '' : offerCountTag(pid)) + (p.commitTeam ? renderCommittedTag(p.commitTeam, true, commitReturn) : '') + '</div>';
   html += '</div>';
   if (!p.commitTeam) html += renderStorylineLine(p.storyline, 'margin-top:6px;');
   if (offers.length && !p.commitTeam){
@@ -3936,7 +3939,8 @@ function bindEvents(){
       const returnContext = {
         view: returnView,
         label: el.getAttribute('data-team-commits-return-label') || '',
-        prospectId: el.getAttribute('data-team-commits-return-prospect') || ''
+        prospectId: el.getAttribute('data-team-commits-return-prospect') || '',
+        threadId: el.getAttribute('data-team-commits-return-thread') || ''
       };
       navigateTo('teamcommits', { teamCommitsTeam: el.getAttribute('data-open-team-commits') || '', teamCommitsReturn: returnContext });
       scrollPageTop();
@@ -3951,6 +3955,8 @@ function bindEvents(){
       const back = UI.teamCommitsReturn || { view: 'teams' };
       if (back.view === 'prospect' && back.prospectId){
         navigateTo('prospect', { prospectId: back.prospectId });
+      } else if (back.view === 'thread' && back.threadId){
+        navigateTo('thread', { threadId: back.threadId });
       } else if (back.view === 'feed'){
         navigateTo('feed');
       } else {
