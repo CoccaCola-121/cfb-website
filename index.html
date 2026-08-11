@@ -742,14 +742,16 @@ function renderTeamLogo(brand){
   return '<span style="width:' + size + 'px;height:' + size + 'px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;background:rgba(226,230,239,0.18);border:1px solid rgba(226,230,239,0.24);flex:0 0 auto;"><img src="' + escapeHtml(brand.logoUrl) + '" alt="" style="width:' + imgSize + 'px;height:' + imgSize + 'px;object-fit:contain;display:block;" /></span>';
 }
 
-function renderCommittedTag(teamName){
+function renderCommittedTag(teamName, clickable){
   const brand = getTeamBranding(teamName);
+  const openAttr = clickable ? ' data-open-team-commits="' + escapeHtml(teamName) + '"' : '';
+  const clickableStyle = clickable ? 'cursor:pointer;' : '';
   if (!brand){
-    return '<span class="rb-tag" style="display:inline-flex;align-items:center;gap:6px;margin:0;white-space:nowrap;">Committed: ' + escapeHtml(teamName) + '</span>';
+    return '<span class="rb-tag"' + openAttr + ' style="display:inline-flex;align-items:center;gap:6px;margin:0;white-space:nowrap;' + clickableStyle + '">Committed: ' + escapeHtml(teamName) + '</span>';
   }
   const primary = brand.primary || 'var(--hairline)';
   const secondary = brand.secondary || 'var(--chalk)';
-  return '<span class="rb-tag" style="display:inline-flex;align-items:center;gap:7px;margin:0;white-space:nowrap;border-color:' + escapeHtml(primary) + ';background:linear-gradient(90deg,' + escapeHtml(primary) + '44,' + escapeHtml(secondary) + '1f);">' + renderTeamLogo(brand) + '<span>Committed: <span class="rb-desktop-only">' + escapeHtml(brand.region || teamName) + '</span><span class="rb-mobile-only">' + escapeHtml(brand.abbrev || brand.region || teamName) + '</span></span></span>';
+  return '<span class="rb-tag"' + openAttr + ' style="display:inline-flex;align-items:center;gap:7px;margin:0;white-space:nowrap;border-color:' + escapeHtml(primary) + ';background:linear-gradient(90deg,' + escapeHtml(primary) + '44,' + escapeHtml(secondary) + '1f);' + clickableStyle + '">' + renderTeamLogo(brand) + '<span>Committed: <span class="rb-desktop-only">' + escapeHtml(brand.region || teamName) + '</span><span class="rb-mobile-only">' + escapeHtml(brand.abbrev || brand.region || teamName) + '</span></span></span>';
 }
 
 function renderTeamCoachBadge(teamName){
@@ -2739,9 +2741,9 @@ function renderRescindFilterFields(prefix, includeCount){
   html += '</div>';
   html += '<div style="margin-bottom:10px;">' + renderPositionChecklist(prefix) + '</div>';
   html += '<div class="rb-mobile-stack" style="display:grid;grid-template-columns:1fr 0.8fr 1fr 0.8fr;gap:10px;align-items:end;">';
-  html += '<label><span class="rb-mono" style="font-size:11px;color:var(--slate);">Rank filter</span><select class="rb-input" id="' + prefix + '-rank-mode"><option value="worse">Rescind ranks below #</option><option value="better">Rescind # or better</option></select></label>';
+  html += '<label><span class="rb-mono" style="font-size:11px;color:var(--slate);">Rank filter</span><select class="rb-input" id="' + prefix + '-rank-mode"><option value="worse">Ranks below #</option><option value="better">Ranks # or better</option></select></label>';
   html += '<input class="rb-input" id="' + prefix + '-rank-value" type="number" min="1" placeholder="blank = any rank" />';
-  html += '<label><span class="rb-mono" style="font-size:11px;color:var(--slate);">Overall filter</span><select class="rb-input" id="' + prefix + '-overall-mode"><option value="atLeast">Overall at least</option><option value="below">Overall below</option></select></label>';
+  html += '<label><span class="rb-mono" style="font-size:11px;color:var(--slate);">Overall filter</span><select class="rb-input" id="' + prefix + '-overall-mode"><option value="below">Overall below</option><option value="atLeast">Overall at least</option></select></label>';
   html += '<input class="rb-input" id="' + prefix + '-overall-value" type="number" min="1" max="99" placeholder="blank = any ovr" />';
   html += '</div>';
   return html;
@@ -3294,7 +3296,7 @@ function renderProspectBoardCard(pid, searchAttr){
     '<span class="rb-mono" style="color:var(--slate);font-size:13px;">' + escapeHtml(p.position) + (p.rating ? ' &middot; ' + escapeHtml(p.rating) : '') + '</span>' +
     (p.hometown ? '<span style="color:var(--slate);font-size:13px;"> &middot; <span title="' + escapeHtml(p.hometown) + '">' + escapeHtml(shortText(p.hometown, 28)) + '</span></span>' : '') +
   '</div>';
-  html += '<div style="display:flex;align-items:center;gap:8px;white-space:nowrap;">' + (p.commitTeam ? '' : offerCountTag(pid)) + (p.commitTeam ? renderCommittedTag(p.commitTeam) : '') + '</div>';
+  html += '<div style="display:flex;align-items:center;gap:8px;white-space:nowrap;">' + (p.commitTeam ? '' : offerCountTag(pid)) + (p.commitTeam ? renderCommittedTag(p.commitTeam, true) : '') + '</div>';
   html += '</div>';
   if (!p.commitTeam) html += renderStorylineLine(p.storyline, 'margin-top:6px;');
   if (offers.length && !p.commitTeam){
@@ -3916,6 +3918,10 @@ function bindEvents(){
   document.querySelectorAll('[data-open-team-commits]').forEach(function(el){
     el.onclick = function(e){
       if (e.target && e.target.closest && e.target.closest('button, select, input, a, label')) return;
+      if (e) {
+        e.preventDefault();
+        e.stopPropagation();
+      }
       navigateTo('teamcommits', { teamCommitsTeam: el.getAttribute('data-open-team-commits') || '' });
       scrollPageTop();
     };
