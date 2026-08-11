@@ -53,7 +53,7 @@ async function parseCommitLine(env, line) {
   };
 }
 
-async function parseDiscordCommits(env, messages) {
+export async function parseDiscordCommits(env, messages) {
   const commits = [];
   for (const message of messages) {
     const lines = messageText(message).split(/\n+/);
@@ -104,7 +104,7 @@ async function fetchDiscordMessages(env) {
   return messages;
 }
 
-function applyDiscordCommits(state, commits) {
+export function applyDiscordCommits(state, commits) {
   const prospects = state.prospects || {};
   let updated = 0;
   let unchanged = 0;

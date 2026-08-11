@@ -1,6 +1,10 @@
 export default {
   async scheduled(event, env, ctx) {
-    ctx.waitUntil(runCommitSync(env));
+    ctx.waitUntil(runCommitSync(env).then((result) => {
+      console.log('commit sync result', JSON.stringify(result));
+    }).catch((error) => {
+      console.error('commit sync failed', error && error.message ? error.message : error);
+    }));
   },
 
   async fetch(request, env) {

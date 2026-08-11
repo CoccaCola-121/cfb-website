@@ -2,7 +2,9 @@
 
 RecruitHQ can pull commits from the official Discord commitment channel.
 
-The button in Settings runs the sync manually. For near-live updates, add the small Cloudflare Cron Worker below so commits are pulled automatically.
+Recommended live setup: use the existing Railway Discord bot to push commitment messages to RecruitHQ as soon as they appear.
+
+The Settings button still runs a manual Discord history scan if `DISCORD_BOT_TOKEN` is configured on Cloudflare. The Cron Worker is now optional fallback behavior, not the preferred live route.
 
 ## Cloudflare Pages Variables
 
@@ -19,7 +21,58 @@ Add them to Production. Add them to Preview too if you test preview deployments.
 
 After saving variables, redeploy the site.
 
-## Near-Live Cron Worker
+For the Railway bot push setup, only `COMMIT_SYNC_SECRET` is required. `DISCORD_GUILD_ID` and `DISCORD_COMMIT_CHANNEL_ID` are strongly recommended because they let RecruitHQ reject messages from the wrong server/channel.
+
+## Live Railway Bot Push
+
+Add these Railway variables to the existing bot:
+
+| Name | Value |
+| --- | --- |
+| `RECRUITHQ_SITE_URL` | `https://cfb-website.pages.dev` or your custom domain |
+| `RECRUITHQ_COMMIT_SECRET` | Same exact value as the Pages `COMMIT_SYNC_SECRET` |
+| `DISCORD_COMMIT_CHANNEL_ID` | Commitment channel ID |
+
+Then add this listener to the bot:
+
+```js
+client.on('messageCreate', async (message) => {
+  if (message.author.bot) return;
+  if (String(message.channelId) !== String(process.env.DISCORD_COMMIT_CHANNEL_ID)) return;
+
+  const res = await fetch(`${process.env.RECRUITHQ_SITE_URL}/api/commits/push`, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      'x-commit-sync-secret': process.env.RECRUITHQ_COMMIT_SECRET,
+    },
+    body: JSON.stringify({
+      message: {
+        id: message.id,
+        content: message.content,
+        embeds: message.embeds?.map((embed) => embed.toJSON ? embed.toJSON() : embed) || [],
+        timestamp: message.createdAt?.toISOString(),
+        channel_id: message.channelId,
+        guild_id: message.guildId,
+      },
+    }),
+  });
+
+  const data = await res.json().catch(() => ({}));
+  console.log('RecruitHQ commit push', data);
+});
+```
+
+If the commitment bot edits messages after posting, add this too:
+
+```js
+client.on('messageUpdate', async (_oldMessage, newMessage) => {
+  if (newMessage.partial) newMessage = await newMessage.fetch();
+  client.emit('messageCreate', newMessage);
+});
+```
+
+## Optional Near-Live Cron Worker
 
 Cloudflare Pages Functions do not sit connected to Discord all day. The free-friendly version is a Cloudflare Worker Cron Trigger that calls RecruitHQ every minute.
 
