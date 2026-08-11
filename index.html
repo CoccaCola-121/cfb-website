@@ -2481,6 +2481,7 @@ function render(){
   if (UI.showSubmitModal) html += renderSubmitModal();
   if (UI.editOfferTarget) html += renderEditOfferModal();
   if (UI.pendingVisitEdit) html += renderVisitConfirmModal();
+  if (UI.pendingMassRescind) html += renderMassRescindModal();
   if (UI.confirmReset) html += renderResetConfirmModal();
   root.innerHTML = html;
   bindEvents();
@@ -2641,13 +2642,19 @@ function renderVisitLedger(){
   return html;
 }
 
+const POSITION_ORDER = ['QB','RB','WR','TE','OL','DL','LB','CB','S','K','P'];
+
 function positionOptions(selected){
   const positions = {};
   Object.keys(DB.prospects || {}).forEach(function(pid){
     const pos = String((DB.prospects[pid] && DB.prospects[pid].position) || '').trim().toUpperCase();
     if (pos) positions[pos] = true;
   });
-  return Object.keys(positions).sort().map(function(pos){
+  const ordered = POSITION_ORDER.filter(function(pos){ return positions[pos]; });
+  Object.keys(positions).sort().forEach(function(pos){
+    if (ordered.indexOf(pos) === -1) ordered.push(pos);
+  });
+  return ordered.map(function(pos){
     return '<option value="' + escapeHtml(pos) + '" ' + (selected === pos ? 'selected' : '') + '>' + escapeHtml(pos) + '</option>';
   }).join('');
 }
@@ -2717,12 +2724,6 @@ function renderConditionalRescinds(){
   html += '<div style="font-size:13px;color:var(--slate);margin-bottom:10px;">Rescind matching active offers immediately. You will preview the count before confirming.</div>';
   html += renderRescindFilterFields('rb-mass', false);
   html += '<div style="margin-top:10px;"><button class="rb-btn rb-btn-danger" id="rb-preview-mass-rescind">Preview rescind</button></div>';
-  if (UI.pendingMassRescind){
-    html += '<div class="rb-card" style="padding:10px 12px;margin-top:10px;background:rgba(111,29,27,0.18);border-color:#6F1D1B;">';
-    html += '<div style="font-size:13px;color:#FFF2F1;margin-bottom:8px;">Rescind ' + UI.pendingMassRescind.count + ' active offer' + (UI.pendingMassRescind.count === 1 ? '' : 's') + ' matching: <span class="rb-mono">' + escapeHtml(rescindFilterSummary(UI.pendingMassRescind.rule)) + '</span>?</div>';
-    html += '<div style="display:flex;gap:8px;flex-wrap:wrap;"><button class="rb-btn rb-btn-danger" id="rb-confirm-mass-rescind" ' + (!UI.pendingMassRescind.count ? 'disabled' : '') + '>Confirm rescind</button><button class="rb-btn" id="rb-cancel-mass-rescind">Cancel</button></div>';
-    html += '</div>';
-  }
   if (UI.massRescindError) html += '<div style="font-size:12px;color:var(--alert);margin-top:8px;">' + escapeHtml(UI.massRescindError) + '</div>';
   if (UI.massRescindStatus) html += '<div style="font-size:12px;color:var(--gold);margin-top:8px;">' + escapeHtml(UI.massRescindStatus) + '</div>';
   html += '</div></div>';
@@ -2831,7 +2832,7 @@ function previewMassRescind(){
   }
   const rule = Object.assign(normalizeRescindRuleDraft(draft), { team: SESSION.team });
   const matches = massRescindMatches(rule);
-  UI.pendingMassRescind = { rule: rule, count: matches.length };
+  UI.pendingMassRescind = { rule: rule, count: matches.length, createdAt: Date.now() };
   UI.massRescindError = null;
   UI.massRescindStatus = null;
   render();
@@ -2841,14 +2842,21 @@ function confirmMassRescind(){
   if (!SESSION || !UI.pendingMassRescind) return;
   const rule = UI.pendingMassRescind.rule;
   const matches = massRescindMatches(rule);
+  const checked = {};
+  document.querySelectorAll('.rb-mass-rescind-check:checked').forEach(function(input){
+    checked[(input.getAttribute('data-prospect-id') || '') + ':' + (input.getAttribute('data-offer-id') || '')] = true;
+  });
+  let count = 0;
   matches.forEach(function(row){
+    if (!checked[row.prospectId + ':' + row.offer.id]) return;
     row.offer.rescinded = true;
     row.offer.text = 'rescinded';
     row.offer.promises = [];
     row.offer.rescindedAt = Date.now();
     row.offer.rescindReason = 'Mass rescind: ' + rescindFilterSummary(rule);
+    count++;
   });
-  UI.massRescindStatus = 'Rescinded ' + matches.length + ' offer' + (matches.length === 1 ? '' : 's') + '.';
+  UI.massRescindStatus = 'Rescinded ' + count + ' offer' + (count === 1 ? '' : 's') + '.';
   UI.massRescindError = null;
   UI.pendingMassRescind = null;
   saveDB(); render();
@@ -3459,6 +3467,40 @@ function renderVisitConfirmModal(){
       '</div>' +
     '</div>' +
   '</div>';
+}
+
+function renderMassRescindModal(){
+  const pending = UI.pendingMassRescind || {};
+  const rule = pending.rule || {};
+  const matches = massRescindMatches(rule);
+  const count = matches.length;
+  let html = '<div style="position:fixed;inset:0;background:rgba(0,0,0,0.68);display:flex;align-items:center;justify-content:center;z-index:60;">';
+  html += '<div class="rb-card" style="padding:22px;width:720px;max-width:92vw;max-height:88vh;border-color:#6F1D1B;display:flex;flex-direction:column;">';
+  html += '<div class="rb-h" style="font-size:18px;margin-bottom:6px;color:#FFF2F1;">Confirm mass rescind</div>';
+  html += '<div style="font-size:13px;color:var(--slate);line-height:1.45;margin-bottom:12px;">Uncheck any recruit you want to keep. Matching filter: <span class="rb-mono">' + escapeHtml(rescindFilterSummary(rule)) + '</span></div>';
+  if (!count){
+    html += '<div class="rb-card" style="padding:18px;text-align:center;color:var(--slate);background:var(--panel-alt);">No active offers match this filter.</div>';
+  } else {
+    html += '<div class="rb-scrollbar" style="overflow:auto;display:flex;flex-direction:column;gap:8px;padding-right:4px;">';
+    matches.forEach(function(row){
+      const p = row.prospect || {};
+      html += '<label class="rb-card" style="padding:10px 12px;background:var(--panel-alt);display:grid;grid-template-columns:auto minmax(0,1fr);gap:10px;align-items:center;cursor:pointer;">';
+      html += '<input type="checkbox" class="rb-mass-rescind-check" data-prospect-id="' + escapeHtml(row.prospectId) + '" data-offer-id="' + escapeHtml(row.offer.id) + '" checked style="accent-color:var(--alert);" />';
+      html += '<span style="min-width:0;display:flex;align-items:baseline;gap:8px;white-space:nowrap;overflow:hidden;">' +
+        '<span class="rb-mono" style="color:var(--slate);flex:0 0 auto;">#' + escapeHtml(p.rank || '?') + '</span>' +
+        '<strong title="' + escapeHtml(p.name || '') + '" style="overflow:hidden;text-overflow:ellipsis;">' + escapeHtml(p.name || 'Unknown prospect') + '</strong>' +
+        '<span class="rb-mono" style="color:var(--slate);font-size:12px;flex:0 0 auto;">' + escapeHtml(p.position || '') + (p.rating ? ' · ' + escapeHtml(p.rating) : '') + '</span>' +
+        (p.hometown ? '<span class="rb-mono" title="' + escapeHtml(p.hometown) + '" style="color:var(--slate);font-size:12px;overflow:hidden;text-overflow:ellipsis;">· ' + escapeHtml(p.hometown) + '</span>' : '') +
+      '</span>';
+      html += '</label>';
+    });
+    html += '</div>';
+  }
+  html += '<div style="display:flex;justify-content:space-between;gap:8px;align-items:center;flex-wrap:wrap;margin-top:14px;">';
+  html += '<span class="rb-mono" style="font-size:12px;color:var(--slate);">' + count + ' matching offer' + (count === 1 ? '' : 's') + '</span>';
+  html += '<span style="display:flex;gap:8px;flex-wrap:wrap;"><button class="rb-btn" id="rb-cancel-mass-rescind">Cancel</button><button class="rb-btn rb-btn-danger" id="rb-confirm-mass-rescind" ' + (!count ? 'disabled' : '') + '>Rescind checked offers</button></span>';
+  html += '</div></div></div>';
+  return html;
 }
 
 function renderResetConfirmModal(){
