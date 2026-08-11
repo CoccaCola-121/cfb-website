@@ -1514,7 +1514,7 @@ async function updateCommitsFromSheet(){
       const data = await res.json().catch(function(){ return {}; });
       if (res.ok && data.ok){
         await syncLeagueState(false);
-        UI.commitStatus = 'Discord commits updated: ' + data.updated + ' changed, ' + data.unchanged + ' already current, ' + data.commitsFound + ' found in ' + data.messagesRead + ' messages' + (data.unmatchedCount ? ', ' + data.unmatchedCount + ' unmatched' : '') + '.';
+        UI.commitStatus = 'Manual push updated: ' + data.updated + ' changed, ' + data.unchanged + ' already current, ' + data.commitsFound + ' found in ' + data.messagesRead + ' messages' + (data.unmatchedCount ? ', ' + data.unmatchedCount + ' unmatched' : '') + '.';
         UI.updatingCommits = false;
         render();
         return;
@@ -2668,6 +2668,23 @@ function rescindFilterSummary(rule){
   return conditionalRuleSummary(clone).replace(/^1 commit(?: · )?/, '') || 'all active offers';
 }
 
+function renderRescindFilterFields(prefix, includeCount){
+  let html = '';
+  html += '<div class="rb-mobile-stack" style="display:grid;grid-template-columns:' + (includeCount ? '0.8fr ' : '') + '1fr 0.9fr 1fr;gap:10px;margin-bottom:10px;">';
+  if (includeCount) html += '<label><span class="rb-mono" style="font-size:11px;color:var(--slate);">Commits needed</span><input class="rb-input" id="' + prefix + '-count" type="number" min="1" value="1" /></label>';
+  html += '<label><span class="rb-mono" style="font-size:11px;color:var(--slate);">Position</span><select class="rb-input" id="' + prefix + '-position"><option value="">Any position</option>' + positionOptions('') + '</select></label>';
+  html += '<label><span class="rb-mono" style="font-size:11px;color:var(--slate);">Stars</span><select class="rb-input" id="' + prefix + '-stars"><option value="">Any stars</option><option value="5">5 stars</option><option value="4">4 stars</option><option value="3">3 stars</option><option value="2">2 stars</option><option value="1">1 star</option><option value="0">0 stars</option></select></label>';
+  html += '<label><span class="rb-mono" style="font-size:11px;color:var(--slate);">Offer type</span><select class="rb-input" id="' + prefix + '-scholarship"><option value="">Any type</option><option value="scholarship">Scholarship</option><option value="walkon">Walk-on</option></select></label>';
+  html += '</div>';
+  html += '<div class="rb-mobile-stack" style="display:grid;grid-template-columns:1fr 0.8fr 1fr 0.8fr;gap:10px;align-items:end;">';
+  html += '<label><span class="rb-mono" style="font-size:11px;color:var(--slate);">Rank filter</span><select class="rb-input" id="' + prefix + '-rank-mode"><option value="worse">Rescind ranks below #</option><option value="better">Rescind # or better</option></select></label>';
+  html += '<input class="rb-input" id="' + prefix + '-rank-value" type="number" min="1" placeholder="blank = any rank" />';
+  html += '<label><span class="rb-mono" style="font-size:11px;color:var(--slate);">Overall filter</span><select class="rb-input" id="' + prefix + '-overall-mode"><option value="atLeast">Overall at least</option><option value="below">Overall below</option></select></label>';
+  html += '<input class="rb-input" id="' + prefix + '-overall-value" type="number" min="1" max="99" placeholder="blank = any ovr" />';
+  html += '</div>';
+  return html;
+}
+
 function rulesForTeam(team){
   return normalizeConditionalRules().filter(function(rule){ return rule && teamKey(rule.team) === teamKey(team); });
 }
@@ -2681,7 +2698,7 @@ function renderConditionalRescinds(){
     html += '<div style="display:flex;flex-direction:column;gap:8px;margin-bottom:14px;">';
     rules.forEach(function(rule){
       html += '<div class="rb-card" style="padding:10px 12px;background:var(--panel-alt);display:flex;justify-content:space-between;align-items:center;gap:12px;">';
-      html += '<span style="min-width:0;"><strong>' + escapeHtml(rule.name || 'Conditional rule') + '</strong><span class="rb-mono" style="display:block;color:var(--slate);font-size:12px;margin-top:3px;">' + escapeHtml(conditionalRuleSummary(rule)) + '</span></span>';
+      html += '<span style="min-width:0;"><strong>After ' + escapeHtml(conditionalRuleSummary(rule)) + '</strong><span class="rb-mono" style="display:block;color:var(--slate);font-size:12px;margin-top:3px;">Rescind remaining active offers matching those filters.</span></span>';
       html += '<button class="rb-btn rb-btn-danger" data-delete-conditional="' + escapeHtml(rule.id) + '">Delete</button>';
       html += '</div>';
     });
@@ -2689,36 +2706,17 @@ function renderConditionalRescinds(){
   }
   html += '<div class="rb-card" style="padding:12px;background:var(--panel-alt);">';
   html += '<div class="rb-h" style="font-size:14px;margin-bottom:10px;">Conditional Rule</div>';
-  html += '<div class="rb-mobile-stack" style="display:grid;grid-template-columns:0.8fr 1fr 0.9fr;gap:10px;margin-bottom:10px;">';
-  html += '<label><span class="rb-mono" style="font-size:11px;color:var(--slate);">Number of</span><input class="rb-input" id="rb-cond-count" type="number" min="1" value="1" /></label>';
-  html += '<label><span class="rb-mono" style="font-size:11px;color:var(--slate);">Position</span><select class="rb-input" id="rb-cond-position"><option value="">Any</option>' + positionOptions('') + '</select></label>';
-  html += '<label><span class="rb-mono" style="font-size:11px;color:var(--slate);">Stars</span><select class="rb-input" id="rb-cond-stars"><option value="">Any</option><option value="5">5 stars</option><option value="4">4 stars</option><option value="3">3 stars</option><option value="2">2 stars</option><option value="1">1 star</option><option value="0">0 stars</option></select></label>';
-  html += '</div>';
-  html += '<div class="rb-mobile-stack" style="display:grid;grid-template-columns:1fr 0.8fr 1fr 0.8fr 1fr;gap:10px;align-items:end;">';
-  html += '<label><span class="rb-mono" style="font-size:11px;color:var(--slate);">Rank</span><select class="rb-input" id="rb-cond-rank-mode"><option value="">Any</option><option value="worse">Below #</option><option value="better"># or better</option></select></label>';
-  html += '<input class="rb-input" id="rb-cond-rank-value" type="number" min="1" placeholder="250" />';
-  html += '<label><span class="rb-mono" style="font-size:11px;color:var(--slate);">Overall</span><select class="rb-input" id="rb-cond-overall-mode"><option value="">Any</option><option value="atLeast">At least</option><option value="below">Below</option></select></label>';
-  html += '<input class="rb-input" id="rb-cond-overall-value" type="number" min="1" max="99" placeholder="50" />';
-  html += '<label><span class="rb-mono" style="font-size:11px;color:var(--slate);">Type</span><select class="rb-input" id="rb-cond-scholarship"><option value="">Any</option><option value="scholarship">Scholarship</option><option value="walkon">Walk-on</option></select></label>';
-  html += '</div>';
-  html += '<div style="margin-top:10px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;"><button class="rb-btn rb-btn-gold" id="rb-add-conditional">Add rule</button><span class="rb-mono" style="font-size:11px;color:var(--slate);">At least one filter besides number is required.</span></div>';
+  html += '<div style="font-size:13px;color:var(--slate);margin-bottom:10px;">When I win this many matching recruits, rescind my other active offers matching the same filters.</div>';
+  html += renderRescindFilterFields('rb-cond', true);
+  html += '<div style="margin-top:10px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;"><button class="rb-btn rb-btn-gold" id="rb-add-conditional">Save auto rule</button><span class="rb-mono" style="font-size:11px;color:var(--slate);">Blank rank/overall means that filter is ignored.</span></div>';
   if (UI.conditionalError) html += '<div style="font-size:12px;color:var(--alert);margin-top:8px;">' + escapeHtml(UI.conditionalError) + '</div>';
   if (UI.conditionalStatus) html += '<div style="font-size:12px;color:var(--gold);margin-top:8px;">' + escapeHtml(UI.conditionalStatus) + '</div>';
   html += '</div>';
   html += '<div class="rb-card" style="padding:12px;background:var(--panel-alt);margin-top:12px;border-color:#6F1D1B;">';
   html += '<div class="rb-h" style="font-size:14px;margin-bottom:10px;color:#FFF2F1;">Mass Rescind Now</div>';
-  html += '<div class="rb-mobile-stack" style="display:grid;grid-template-columns:1fr 0.9fr 1fr 0.8fr 1fr;gap:10px;align-items:end;">';
-  html += '<label><span class="rb-mono" style="font-size:11px;color:var(--slate);">Position</span><select class="rb-input" id="rb-mass-position"><option value="">Any</option>' + positionOptions('') + '</select></label>';
-  html += '<label><span class="rb-mono" style="font-size:11px;color:var(--slate);">Stars</span><select class="rb-input" id="rb-mass-stars"><option value="">Any</option><option value="5">5 stars</option><option value="4">4 stars</option><option value="3">3 stars</option><option value="2">2 stars</option><option value="1">1 star</option><option value="0">0 stars</option></select></label>';
-  html += '<label><span class="rb-mono" style="font-size:11px;color:var(--slate);">Rank</span><select class="rb-input" id="rb-mass-rank-mode"><option value="">Any</option><option value="worse">Below #</option><option value="better"># or better</option></select></label>';
-  html += '<input class="rb-input" id="rb-mass-rank-value" type="number" min="1" placeholder="250" />';
-  html += '<label><span class="rb-mono" style="font-size:11px;color:var(--slate);">Type</span><select class="rb-input" id="rb-mass-scholarship"><option value="">Any</option><option value="scholarship">Scholarship</option><option value="walkon">Walk-on</option></select></label>';
-  html += '</div>';
-  html += '<div class="rb-mobile-stack" style="display:grid;grid-template-columns:1fr 0.8fr minmax(130px,auto);gap:10px;align-items:end;margin-top:10px;">';
-  html += '<label><span class="rb-mono" style="font-size:11px;color:var(--slate);">Overall</span><select class="rb-input" id="rb-mass-overall-mode"><option value="">Any</option><option value="atLeast">At least</option><option value="below">Below</option></select></label>';
-  html += '<input class="rb-input" id="rb-mass-overall-value" type="number" min="1" max="99" placeholder="50" />';
-  html += '<button class="rb-btn rb-btn-danger" id="rb-preview-mass-rescind">Preview rescind</button>';
-  html += '</div>';
+  html += '<div style="font-size:13px;color:var(--slate);margin-bottom:10px;">Rescind matching active offers immediately. You will preview the count before confirming.</div>';
+  html += renderRescindFilterFields('rb-mass', false);
+  html += '<div style="margin-top:10px;"><button class="rb-btn rb-btn-danger" id="rb-preview-mass-rescind">Preview rescind</button></div>';
   if (UI.pendingMassRescind){
     html += '<div class="rb-card" style="padding:10px 12px;margin-top:10px;background:rgba(111,29,27,0.18);border-color:#6F1D1B;">';
     html += '<div style="font-size:13px;color:#FFF2F1;margin-bottom:8px;">Rescind ' + UI.pendingMassRescind.count + ' active offer' + (UI.pendingMassRescind.count === 1 ? '' : 's') + ' matching: <span class="rb-mono">' + escapeHtml(rescindFilterSummary(UI.pendingMassRescind.rule)) + '</span>?</div>';
@@ -2743,9 +2741,9 @@ function readRescindRuleForm(prefix, includeCount){
     count: includeCount ? Math.max(1, Number(conditionalFormValue(prefix + '-count')) || 1) : 1,
     position: conditionalFormValue(prefix + '-position').toUpperCase(),
     stars: conditionalFormValue(prefix + '-stars'),
-    rankMode: conditionalFormValue(prefix + '-rank-mode') || (rankValue ? 'worse' : ''),
+    rankMode: rankValue ? (conditionalFormValue(prefix + '-rank-mode') || 'worse') : '',
     rankValue: rankValue,
-    overallMode: conditionalFormValue(prefix + '-overall-mode') || (overallValue ? 'atLeast' : ''),
+    overallMode: overallValue ? (conditionalFormValue(prefix + '-overall-mode') || 'atLeast') : '',
     overallValue: overallValue,
     scholarship: conditionalFormValue(prefix + '-scholarship')
   };
@@ -2758,8 +2756,6 @@ function validateRescindRuleDraft(draft, options){
   if (!draft.position && draft.stars === '' && !hasRank && !hasOverall && !draft.scholarship){
     return options.actionLabel ? 'Pick at least one filter before ' + options.actionLabel + '.' : 'Pick at least one filter.';
   }
-  if ((draft.rankMode && !draft.rankValue) || (!draft.rankMode && draft.rankValue)) return 'Rank needs both a direction and a number.';
-  if ((draft.overallMode && !draft.overallValue) || (!draft.overallMode && draft.overallValue)) return 'Overall needs both a direction and a number.';
   return '';
 }
 
@@ -3256,7 +3252,7 @@ function renderClassSetup(){
     html += '</div>';
   }
   html += '<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:10px;">';
-  html += '<button class="rb-btn rb-btn-gold" id="rb-update-commits" ' + (UI.updatingCommits || (!apiAvailable() && !DB.commitSheetUrl) ? 'disabled' : '') + '>' + (UI.updatingCommits ? 'Updating...' : 'Update commits from Discord') + '</button>';
+  html += '<button class="rb-btn rb-btn-gold" id="rb-update-commits" ' + (UI.updatingCommits || (!apiAvailable() && !DB.commitSheetUrl) ? 'disabled' : '') + '>' + (UI.updatingCommits ? 'Updating...' : 'Manual push') + '</button>';
   if (DB.commitUpdatedAt) html += '<span class="rb-mono" style="font-size:12px;color:var(--slate);">Last update: ' + escapeHtml(new Date(DB.commitUpdatedAt).toLocaleString()) + '</span>';
   html += '</div>';
   if (UI.commitStatus) html += '<div style="font-size:12px;color:var(--gold);margin-top:8px;">' + escapeHtml(UI.commitStatus) + '</div>';
