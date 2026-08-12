@@ -1,4 +1,5 @@
 import { json, requireEnv } from '../../_lib/auth.js';
+import { queueLeagueBackup } from '../../_lib/backup.js';
 import { readLeagueState, writeLeagueState } from '../../_lib/league-state.js';
 import { applyDiscordCommits, parseDiscordCommits } from './discord.js';
 
@@ -20,7 +21,7 @@ function normalizeMessage(body) {
   };
 }
 
-export async function onRequestPost({ request, env }) {
+export async function onRequestPost({ request, env, waitUntil }) {
   try {
     requireEnv(env, ['AUTH_KV', 'COMMIT_SYNC_SECRET']);
   } catch (error) {
@@ -54,6 +55,7 @@ export async function onRequestPost({ request, env }) {
   const result = applyDiscordCommits(state, commits);
   state.discordCommitChannelId = env.DISCORD_COMMIT_CHANNEL_ID || message.channel_id || '';
   await writeLeagueState(env, state);
+  queueLeagueBackup(env, state, waitUntil, { source: 'live-discord-commit' });
 
   return json({
     ok: true,

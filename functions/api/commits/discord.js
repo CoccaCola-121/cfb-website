@@ -1,4 +1,5 @@
 import { canModerate, getCurrentUser, json, requireEnv } from '../../_lib/auth.js';
+import { queueLeagueBackup } from '../../_lib/backup.js';
 import { applyConditionalRescinds } from '../../_lib/conditional-rescinds.js';
 import { readLeagueState, writeLeagueState } from '../../_lib/league-state.js';
 import { TEAM_ROLE_ALIASES, TEAM_ROLE_IDS } from '../../_lib/team-role-map.js';
@@ -145,7 +146,7 @@ async function canRunCommitSync(request, env) {
   return canModerate(env, user);
 }
 
-export async function onRequestPost({ request, env }) {
+export async function onRequestPost({ request, env, waitUntil }) {
   try {
     requireEnv(env, ['AUTH_KV', 'DISCORD_BOT_TOKEN', 'DISCORD_GUILD_ID', 'DISCORD_COMMIT_CHANNEL_ID']);
   } catch (error) {
@@ -167,6 +168,7 @@ export async function onRequestPost({ request, env }) {
     const result = applyDiscordCommits(state, commits);
     state.discordCommitChannelId = env.DISCORD_COMMIT_CHANNEL_ID || '';
     await writeLeagueState(env, state);
+    queueLeagueBackup(env, state, waitUntil, { source: 'manual-commit-push' });
     return json({
       ok: true,
       messagesRead: messages.length,

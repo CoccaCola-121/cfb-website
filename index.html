@@ -463,6 +463,7 @@ let UI = { view: 'feed', threadId: null, showSubmitModal: false, submitting: fal
            brandingStatus: null, brandingError: null, conditionalError: null, conditionalStatus: null,
            massRescindError: null, massRescindStatus: null, pendingMassRescind: null,
            pendingMassRescindFinal: null, pendingSingleRescind: null,
+           backupStatus: null, backupError: null, backingUp: false,
            brandingFileName: '', adminActionStatus: null, adminActionError: null };
 let dbReady = false, sessionReady = false;
 let summaryTimer = null;
@@ -561,6 +562,7 @@ function navigateTo(view, options){
   syncBrowserRoute(!!options.replaceRoute);
   render();
   if (UI.view === 'teams') loadTeamAvailability().then(render);
+  if (UI.view === 'setup') loadBackupStatus(true);
 }
 
 function escapeHtml(s){
@@ -1558,6 +1560,38 @@ async function updateCommitsFromSheet(){
     UI.commitError = UI.commitError || 'Could not update commits from Discord or read the sheet fallback.';
   }
   UI.updatingCommits = false;
+  render();
+}
+
+async function loadBackupStatus(renderAfter){
+  if (!apiAvailable() || !canViewSettings()) return;
+  try {
+    const res = await fetch('/api/admin/backup', { credentials: 'include' });
+    if (!res.ok) return;
+    const data = await res.json();
+    UI.backupStatus = data.backup || null;
+    UI.backupError = null;
+    if (renderAfter) render();
+  } catch (e) { /* status is non-critical */ }
+}
+
+async function runBackupNow(){
+  if (!apiAvailable() || !canViewSettings() || UI.backingUp) return;
+  UI.backingUp = true;
+  UI.backupError = null;
+  render();
+  try {
+    const res = await fetch('/api/admin/backup', {
+      method: 'POST',
+      credentials: 'include'
+    });
+    const data = await res.json().catch(function(){ return {}; });
+    UI.backupStatus = data.backup || null;
+    UI.backupError = res.ok ? null : (data.error || (data.backup && data.backup.error) || 'Backup failed.');
+  } catch (e) {
+    UI.backupError = e.message || 'Backup failed.';
+  }
+  UI.backingUp = false;
   render();
 }
 
@@ -3373,6 +3407,28 @@ function renderClassSetup(){
   if (UI.commitStatus) html += '<div style="font-size:12px;color:var(--gold);margin-top:8px;">' + escapeHtml(UI.commitStatus) + '</div>';
   if (UI.commitError) html += '<div style="font-size:12px;color:var(--alert);margin-top:8px;">' + escapeHtml(UI.commitError) + '</div>';
   html += '</div>';
+
+  const backup = UI.backupStatus || {};
+  html += '<div class="rb-card" style="padding:20px 24px;max-width:640px;margin-top:14px;">';
+  html += '<div class="rb-h" style="font-size:16px;margin-bottom:8px;">Backup</div>';
+  html += '<div class="rb-mono" style="font-size:12px;color:var(--slate);margin-bottom:12px;">Overwrites one latest JSON snapshot and one latest offers CSV in GitHub.</div>';
+  if (!UI.backupStatus){
+    html += '<div style="font-size:13px;color:var(--slate);margin-bottom:12px;">Status not loaded yet.</div>';
+  } else if (!backup.configured){
+    html += '<div style="font-size:13px;color:var(--slate);margin-bottom:12px;">Not configured yet.</div>';
+  } else {
+    const statusText = backup.ok ? ('Last backup: ' + (backup.exportedAt ? new Date(backup.exportedAt).toLocaleString() : 'complete')) : (backup.error ? 'Last backup failed' : 'Configured');
+    html += '<div style="font-size:13px;color:' + (backup.ok ? 'var(--gold)' : 'var(--slate)') + ';margin-bottom:6px;">' + escapeHtml(statusText) + '</div>';
+    html += '<div class="rb-mono" style="font-size:11px;color:var(--slate);margin-bottom:12px;">' + escapeHtml((backup.repo || '') + (backup.csvPath ? ' / ' + backup.csvPath : '')) + '</div>';
+  }
+  html += '<div style="display:flex;gap:10px;flex-wrap:wrap;">';
+  html += '<button class="rb-btn rb-btn-gold" id="rb-run-backup" ' + (UI.backingUp ? 'disabled' : '') + '>' + (UI.backingUp ? 'Backing up...' : 'Run backup now') + '</button>';
+  html += '<button class="rb-btn" id="rb-refresh-backup">Refresh status</button>';
+  html += '</div>';
+  if (UI.backupError) html += '<div style="font-size:12px;color:var(--alert);margin-top:8px;">' + escapeHtml(UI.backupError) + '</div>';
+  if (backup.error && !UI.backupError) html += '<div style="font-size:12px;color:var(--alert);margin-top:8px;">' + escapeHtml(backup.error) + '</div>';
+  html += '</div>';
+
   html += '<div class="rb-card" style="padding:20px 24px;max-width:640px;margin-top:14px;">';
   html += '<div class="rb-h" style="font-size:16px;margin-bottom:12px;">Team Branding</div>';
   html += '<div class="rb-mono" style="font-size:12px;color:var(--slate);margin-bottom:12px;">' + escapeHtml((window.NZCFL_TEAM_BRANDS || []).length) + ' default teams loaded.</div>';
@@ -4066,6 +4122,10 @@ function bindEvents(){
   if (exportPromiseArchiveBtn) exportPromiseArchiveBtn.onclick = exportPromiseArchive;
   const updateCommitsBtn = document.getElementById('rb-update-commits');
   if (updateCommitsBtn) updateCommitsBtn.onclick = updateCommitsFromSheet;
+  const runBackupBtn = document.getElementById('rb-run-backup');
+  if (runBackupBtn) runBackupBtn.onclick = runBackupNow;
+  const refreshBackupBtn = document.getElementById('rb-refresh-backup');
+  if (refreshBackupBtn) refreshBackupBtn.onclick = function(){ loadBackupStatus(true); };
   const saveCommitSheetBtn = document.getElementById('rb-save-commit-sheet');
   if (saveCommitSheetBtn) saveCommitSheetBtn.onclick = saveCommitSheetUrl;
   const changeCommitSheetBtn = document.getElementById('rb-change-commit-sheet');
