@@ -464,7 +464,7 @@ let UI = { view: 'feed', threadId: null, showSubmitModal: false, submitting: fal
            massRescindError: null, massRescindStatus: null, pendingMassRescind: null,
            pendingMassRescindFinal: null, pendingSingleRescind: null,
            backupStatus: null, backupError: null, backingUp: false,
-           brandingFileName: '', adminActionStatus: null, adminActionError: null };
+           teamAdminModal: null, brandingFileName: '', adminActionStatus: null, adminActionError: null };
 let dbReady = false, sessionReady = false;
 let summaryTimer = null;
 let leagueSyncTimer = null;
@@ -480,13 +480,13 @@ function canManageAccess(){ return canUseDangerZone(); }
 function canViewSettings(){ return canUseAdminMode(); }
 function hasPendingTeamChanges(){
   const p = UI.teamPending || {};
-  const hasDraftSwitch = !!(UI.teamChangeDiscordId && String(UI.teamChangeTeam || '').trim());
-  return !!(hasDraftSwitch || Object.keys(p.unlinks || {}).length || Object.keys(p.switches || {}).length || Object.keys(p.roles || {}).length);
+  return !!(Object.keys(p.unlinks || {}).length || Object.keys(p.switches || {}).length || Object.keys(p.roles || {}).length);
 }
 function resetPendingTeamChanges(){
   UI.teamPending = { unlinks: {}, switches: {}, roles: {} };
   UI.teamChangeDiscordId = '';
   UI.teamChangeTeam = '';
+  UI.teamAdminModal = null;
 }
 
 function canLeaveTeamsPage(){
@@ -1752,8 +1752,31 @@ function stageTeamSwitch(discordId, team){
   UI.teamPending = pending;
   UI.teamChangeDiscordId = '';
   UI.teamChangeTeam = '';
+  UI.teamAdminModal = null;
   UI.adminActionStatus = 'Unsaved team changes.';
   UI.adminActionError = null;
+  render();
+}
+
+function openTeamAdminModal(team, discordId){
+  const link = discordId ? Object.keys(UI.teamLinks || {}).map(function(key){ return UI.teamLinks[key]; }).find(function(row){ return row && row.discordId === discordId; }) : null;
+  UI.teamAdminModal = {
+    team: team || (link && link.team) || '',
+    discordId: discordId || (link && link.discordId) || '',
+    displayName: (link && (link.displayName || link.username)) || '',
+    teamDraft: ''
+  };
+  UI.teamChangeDiscordId = UI.teamAdminModal.discordId;
+  UI.teamChangeTeam = '';
+  UI.adminActionError = null;
+  UI.adminActionStatus = null;
+  render();
+}
+
+function closeTeamAdminModal(){
+  UI.teamAdminModal = null;
+  UI.teamChangeDiscordId = '';
+  UI.teamChangeTeam = '';
   render();
 }
 
@@ -1772,10 +1795,6 @@ function stageAccessLevelChange(discordId, accessLevel){
 async function savePendingTeamChanges(){
   if (!hasPendingTeamChanges()) return;
   const pending = UI.teamPending || { unlinks: {}, switches: {}, roles: {} };
-  if (UI.teamChangeDiscordId && String(UI.teamChangeTeam || '').trim()){
-    pending.switches[UI.teamChangeDiscordId] = { discordId: UI.teamChangeDiscordId, team: String(UI.teamChangeTeam || '').trim() };
-    UI.teamPending = pending;
-  }
   UI.adminActionError = null;
   UI.adminActionStatus = 'Saving team changes...';
   render();
@@ -2560,6 +2579,7 @@ function render(){
   if (UI.pendingMassRescind) html += renderMassRescindModal();
   if (UI.pendingMassRescindFinal) html += renderMassRescindFinalModal();
   if (UI.pendingSingleRescind) html += renderSingleRescindConfirmModal();
+  if (UI.teamAdminModal) html += renderTeamAdminModal();
   if (UI.confirmReset) html += renderResetConfirmModal();
   root.innerHTML = html;
   bindEvents();
@@ -3208,8 +3228,7 @@ function renderTeamsPage(){
   const canAdmin = canUseAdminMode();
   const canCommission = canManageAccess();
   const pending = UI.teamPending || { unlinks: {}, switches: {}, roles: {} };
-  const hasDraftSwitch = !!(UI.teamChangeDiscordId && String(UI.teamChangeTeam || '').trim() && !(pending.switches || {})[UI.teamChangeDiscordId]);
-  const pendingCount = Object.keys(pending.unlinks || {}).length + Object.keys(pending.switches || {}).length + Object.keys(pending.roles || {}).length + (hasDraftSwitch ? 1 : 0);
+  const pendingCount = Object.keys(pending.unlinks || {}).length + Object.keys(pending.switches || {}).length + Object.keys(pending.roles || {}).length;
   const visible = teams.filter(function(brand){
     const link = UI.teamLinks[teamKey(brand.region)] || null;
     const haystack = [brand.region, brand.abbrev, brand.nickname, brand.displayName, link && link.displayName, link && link.username, canAdmin && link && link.discordId].join(' ').toLowerCase();
@@ -3239,7 +3258,7 @@ function renderTeamsPage(){
     html += '<div style="display:flex;align-items:center;gap:10px;justify-content:flex-end;flex-wrap:wrap;">';
     if (link){
       const level = String((pendingRole && pendingRole.accessLevel) || link.accessLevel || 'coach').toLowerCase();
-      html += '<span class="rb-tag rb-coach-pill">' + escapeHtml(link.displayName || link.username || 'Discord linked') + '</span>';
+      html += '<button class="rb-tag rb-coach-pill rb-mobile-coach-action" data-mobile-team-admin="1" data-mobile-team-admin-team="' + escapeHtml(brand.region) + '" data-mobile-team-admin-discord="' + escapeHtml(link.discordId) + '" style="border:0;cursor:pointer;">' + escapeHtml(link.displayName || link.username || 'Discord linked') + '</button>';
       if (pendingUnlink) html += '<span class="rb-mono rb-mobile-admin-control" style="font-size:11px;color:var(--alert);">pending remove</span>';
       if (pendingSwitch) html += '<span class="rb-mono rb-mobile-admin-control" style="font-size:11px;color:var(--gold);">pending move to ' + escapeHtml(pendingSwitch.team) + '</span>';
       if (pendingRole) html += '<span class="rb-mono rb-mobile-admin-control" style="font-size:11px;color:var(--gold);">pending access</span>';
@@ -3258,13 +3277,6 @@ function renderTeamsPage(){
       html += '<span class="rb-mono" style="font-size:12px;color:var(--slate);">No Discord linked</span>';
     }
     html += '</div></div>';
-    if (link && canAdmin && UI.teamChangeDiscordId === link.discordId){
-      html += '<div style="margin-top:12px;border-top:1px solid var(--hairline);padding-top:12px;display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:8px;align-items:center;">';
-      html += '<input class="rb-input" id="rb-team-change-input" placeholder="New team name" value="' + escapeHtml(UI.teamChangeTeam || '') + '" list="rb-team-change-options" />';
-      html += '<button class="rb-btn rb-btn-gold" id="rb-team-change-save">Stage</button>';
-      html += '<button class="rb-btn" id="rb-team-change-cancel">Cancel</button>';
-      html += '</div>';
-    }
     html += '</div>';
   });
   if (!visible.length) html += '<div class="rb-card" style="padding:28px;text-align:center;color:var(--slate);">No teams match that search.</div>';
@@ -3708,6 +3720,37 @@ function renderSingleRescindConfirmModal(){
   '</div>';
 }
 
+function renderTeamAdminModal(){
+  const modal = UI.teamAdminModal || {};
+  const team = modal.team || '';
+  const discordId = modal.discordId || '';
+  const name = modal.displayName || 'Linked coach';
+  const pending = UI.teamPending || { unlinks: {}, switches: {}, roles: {} };
+  const pendingSwitch = discordId && pending.switches && pending.switches[discordId];
+  const pendingUnlink = team && pending.unlinks && pending.unlinks[teamKey(team)];
+  let html = '<div style="position:fixed;inset:0;background:rgba(0,0,0,0.68);display:flex;align-items:center;justify-content:center;z-index:60;">';
+  html += '<div class="rb-card" style="padding:22px;width:460px;max-width:92vw;">';
+  html += '<div class="rb-h" style="font-size:18px;margin-bottom:6px;">Coach settings</div>';
+  html += '<div style="font-size:13px;color:var(--slate);margin-bottom:14px;">' + escapeHtml(name) + ' · ' + escapeHtml(team) + '</div>';
+  if (pendingUnlink) html += '<div class="rb-mono" style="font-size:12px;color:var(--alert);margin-bottom:10px;">Remove is waiting on Save changes.</div>';
+  if (pendingSwitch) html += '<div class="rb-mono" style="font-size:12px;color:var(--gold);margin-bottom:10px;">Move to ' + escapeHtml(pendingSwitch.team) + ' is waiting on Save changes.</div>';
+  if (canUseAdminMode()){
+    html += '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px;">';
+    html += '<button class="rb-btn rb-btn-danger" id="rb-modal-remove-team">Remove coach</button>';
+    html += '</div>';
+    html += '<label><span class="rb-mono" style="font-size:11px;color:var(--slate);">Move coach to</span><input class="rb-input" id="rb-team-change-input" placeholder="Type team name" value="' + escapeHtml(UI.teamChangeTeam || '') + '" list="rb-team-change-options" /></label>';
+    html += '<div style="display:flex;justify-content:flex-end;gap:8px;flex-wrap:wrap;margin-top:14px;">';
+    html += '<button class="rb-btn" id="rb-team-change-cancel">Cancel</button>';
+    html += '<button class="rb-btn rb-btn-gold" id="rb-team-change-save">Add move to unsaved changes</button>';
+    html += '</div>';
+  } else {
+    html += '<div style="font-size:13px;color:var(--slate);">No admin actions available.</div>';
+    html += '<div style="display:flex;justify-content:flex-end;margin-top:14px;"><button class="rb-btn" id="rb-team-change-cancel">Close</button></div>';
+  }
+  html += '</div></div>';
+  return html;
+}
+
 function renderResetConfirmModal(){
   const isClass = UI.confirmReset === 'class';
   const title = isClass ? 'Reset CSV file?' : 'Reset all offers?';
@@ -4051,11 +4094,17 @@ function bindEvents(){
   document.querySelectorAll('[data-admin-change-team]').forEach(function(el){
     el.onclick = function(e){
       if (e) e.stopPropagation();
-      UI.teamChangeDiscordId = el.getAttribute('data-admin-change-team') || '';
-      UI.teamChangeTeam = '';
-      UI.adminActionError = null;
-      UI.adminActionStatus = null;
-      render();
+      openTeamAdminModal('', el.getAttribute('data-admin-change-team') || '');
+    };
+  });
+  document.querySelectorAll('[data-mobile-team-admin]').forEach(function(el){
+    el.onclick = function(e){
+      if (e) {
+        e.preventDefault();
+        e.stopPropagation();
+      }
+      if (!window.matchMedia || !window.matchMedia('(max-width: 720px)').matches) return;
+      openTeamAdminModal(el.getAttribute('data-mobile-team-admin-team') || '', el.getAttribute('data-mobile-team-admin-discord') || '');
     };
   });
   document.querySelectorAll('[data-admin-access-level]').forEach(function(el){
@@ -4077,14 +4126,19 @@ function bindEvents(){
   const teamChangeSave = document.getElementById('rb-team-change-save');
   if (teamChangeSave) teamChangeSave.onclick = function(e){
     if (e) e.stopPropagation();
-    stageTeamSwitch(UI.teamChangeDiscordId, teamChangeInput ? teamChangeInput.value : UI.teamChangeTeam);
+    stageTeamSwitch((UI.teamAdminModal && UI.teamAdminModal.discordId) || UI.teamChangeDiscordId, teamChangeInput ? teamChangeInput.value : UI.teamChangeTeam);
   };
   const teamChangeCancel = document.getElementById('rb-team-change-cancel');
   if (teamChangeCancel) teamChangeCancel.onclick = function(e){
     if (e) e.stopPropagation();
-    UI.teamChangeDiscordId = '';
-    UI.teamChangeTeam = '';
-    render();
+    closeTeamAdminModal();
+  };
+  const modalRemoveTeam = document.getElementById('rb-modal-remove-team');
+  if (modalRemoveTeam) modalRemoveTeam.onclick = function(e){
+    if (e) e.stopPropagation();
+    const team = (UI.teamAdminModal && UI.teamAdminModal.team) || '';
+    UI.teamAdminModal = null;
+    stageTeamUnlink(team);
   };
   const saveTeamChanges = document.getElementById('rb-save-team-changes');
   if (saveTeamChanges) saveTeamChanges.onclick = function(e){
