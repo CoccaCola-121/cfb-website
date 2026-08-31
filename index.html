@@ -506,7 +506,7 @@ const DEFAULT_CLASS_FILE = 'recruiting-class-2062.csv';
 const DEFAULT_CLASS_NAME = 'Recruiting Classes - 2062.csv';
 const DEFAULT_COMMIT_SHEET_URL = 'https://docs.google.com/spreadsheets/d/1lJId_aHADTpoS03HcWbj2MZ_GNM_7syYJW_HKXHZlyg/edit?gid=874510495#gid=874510495';
 
-let DB = { fullRoster: [], released: {}, wave1Released: false, wave2Released: false,
+let DB = { fullRoster: [], recruitingStage: 'hs', released: {}, wave1Released: false, wave2Released: false,
            prospects: {}, threads: [], offersByProspect: {}, unmatched: [], teams: {},
            teamBranding: {}, users: {}, commitSheetUrl: DEFAULT_COMMIT_SHEET_URL, commitUpdatedAt: null,
            discordCommitUpdatedAt: null, discordCommitChannelId: '', defaultClassLoaded: false,
@@ -540,6 +540,18 @@ function canUseAdminMode(){ return !!(SESSION && (SESSION.accessLevel === 'commi
 function canUseDangerZone(){ return !!(SESSION && SESSION.accessLevel === 'commissioner'); }
 function canManageAccess(){ return canUseDangerZone(); }
 function canViewSettings(){ return canUseAdminMode(); }
+const RECRUITING_STAGES = {
+  hs: { label: 'High School', shortLabel: 'HS', setupLabel: 'Season class setup', boardTitle: 'Recruiting Board', usesDefaultClass: true, usesValues: true, usesWaves: true, pitchOnly: false },
+  transfer: { label: 'Transfers', shortLabel: 'Transfers', setupLabel: 'Transfer setup', boardTitle: 'Transfer Board', usesDefaultClass: false, usesValues: false, usesWaves: false, pitchOnly: true },
+  cpr: { label: 'CPR', shortLabel: 'CPR', setupLabel: 'CPR setup', boardTitle: 'CPR Board', usesDefaultClass: false, usesValues: true, usesWaves: false, pitchOnly: false }
+};
+function recruitingStage(){
+  const stage = String(DB.recruitingStage || 'hs').toLowerCase();
+  return RECRUITING_STAGES[stage] ? stage : 'hs';
+}
+function recruitingStageConfig(){
+  return RECRUITING_STAGES[recruitingStage()];
+}
 function hasPendingTeamChanges(){
   const p = UI.teamPending || {};
   return !!(Object.keys(p.unlinks || {}).length || Object.keys(p.switches || {}).length || Object.keys(p.roles || {}).length);
@@ -696,6 +708,7 @@ function formatOfferText(text, promises){
 }
 
 function starsOrLabel(stars){
+  if (stars == null) return '<span class="rb-tag" style="display:inline-block;margin:0;">' + escapeHtml(recruitingStageConfig().shortLabel) + '</span>';
   let out = '';
   for (let i = 0; i < 5; i++) out += i < stars ? '<span class="rb-star">&#9733;</span>' : '<span class="rb-star-empty">&#9733;</span>';
   return out;
@@ -725,6 +738,19 @@ function renderRecruitValues(values){
   });
   html += '</div>';
   return html;
+}
+
+function fixedCprValues(){
+  const values = {};
+  RECRUIT_VALUE_FIELDS.forEach(function(field){ values[field.key] = 0.100; });
+  values.playingTime = 1.000;
+  values.location = 0.500;
+  values.coach = 0.500;
+  return values;
+}
+
+function isPitchRecruit(p){
+  return !!(p && p.offerMode === 'pitch');
 }
 
 const TEAM_KEY_ALIASES = {
@@ -1025,6 +1051,7 @@ function saveDB(){
 function leagueStatePayload(){
   return {
     fullRoster: DB.fullRoster,
+    recruitingStage: recruitingStage(),
     released: DB.released,
     wave1Released: DB.wave1Released,
     wave2Released: DB.wave2Released,
@@ -1054,7 +1081,7 @@ function mergeLeagueState(state){
     commitUpdatedAt: DB.commitUpdatedAt,
     discordCommitUpdatedAt: DB.discordCommitUpdatedAt
   });
-  ['fullRoster','released','wave1Released','wave2Released','prospects','threads','offersByProspect','unmatched','teams','teamBranding','commitSheetUrl','commitUpdatedAt','discordCommitUpdatedAt','discordCommitChannelId','defaultClassLoaded','offersLocked','dangerApprovals','conditionalRescinds'].forEach(function(field){
+  ['fullRoster','recruitingStage','released','wave1Released','wave2Released','prospects','threads','offersByProspect','unmatched','teams','teamBranding','commitSheetUrl','commitUpdatedAt','discordCommitUpdatedAt','discordCommitChannelId','defaultClassLoaded','offersLocked','dangerApprovals','conditionalRescinds'].forEach(function(field){
     if (Object.prototype.hasOwnProperty.call(state, field)) DB[field] = state[field];
   });
   const after = JSON.stringify({
@@ -1116,9 +1143,10 @@ async function saveDBNow(){
 }
 
 function applyDefaultClassData(text){
-  const list = parseFullClass(text || '');
+  const list = parseFullClass(text || '', { stage: 'hs' });
   if (!list || !list.length) return false;
   DB.fullRoster = list;
+  DB.recruitingStage = 'hs';
   hydrateProspectValuesFromRoster();
   DB.defaultClassLoaded = true;
   UI.classFileName = DEFAULT_CLASS_NAME;
@@ -1160,7 +1188,7 @@ async function ensureDefaultSeasonData(){
     DB.commitSheetUrl = DEFAULT_COMMIT_SHEET_URL;
     changed = true;
   }
-  if (!DB.fullRoster.length){
+  if (recruitingStage() === 'hs' && !DB.fullRoster.length){
     try {
       let text = window.NZCFL_DEFAULT_CLASS_CSV || '';
       if (!text){
@@ -1173,18 +1201,18 @@ async function ensureDefaultSeasonData(){
       UI.classError = 'Default class could not load automatically. Use the CSV upload if you are viewing from a local file.';
     }
   }
-  if (DB.fullRoster.length && !rosterHasRecruitValues()){
+  if (recruitingStage() === 'hs' && DB.fullRoster.length && !rosterHasRecruitValues()){
     try {
-      const list = parseFullClass(window.NZCFL_DEFAULT_CLASS_CSV || '');
+      const list = parseFullClass(window.NZCFL_DEFAULT_CLASS_CSV || '', { stage: 'hs' });
       if (list && list.length){
         DB.fullRoster = list;
         changed = true;
       }
     } catch (e) { /* keep existing class data */ }
   }
-  if (DB.fullRoster.length && !rosterHasLegacySchools()){
+  if (recruitingStage() === 'hs' && DB.fullRoster.length && !rosterHasLegacySchools()){
     try {
-      const list = parseFullClass(window.NZCFL_DEFAULT_CLASS_CSV || '');
+      const list = parseFullClass(window.NZCFL_DEFAULT_CLASS_CSV || '', { stage: 'hs' });
       if (mergeRosterMetadata(list)) changed = true;
     } catch (e) { /* keep existing class data */ }
   }
@@ -1259,9 +1287,12 @@ function prospectFromRosterRow(p, id){
     name: p.name,
     position: p.position,
     rating: p.rating,
+    overall: p.overall || 0,
+    potential: p.potential || 0,
     hometown: p.hometown,
     legacySchool: p.legacySchool || '',
     storyline: p.storyline || '',
+    offerMode: p.offerMode || (recruitingStageConfig().pitchOnly ? 'pitch' : 'values'),
     values: p.values || {},
     stars: starsForRank(p.rank)
   };
@@ -1280,6 +1311,10 @@ function hydrateProspectValuesFromRoster(){
       prospect.values = roster.values;
       changed = true;
     }
+    if ((prospect.offerMode || '') !== (roster.offerMode || '')){
+      prospect.offerMode = roster.offerMode || '';
+      changed = true;
+    }
     if (Object.prototype.hasOwnProperty.call(roster, 'legacySchool') && (prospect.legacySchool || '') !== (roster.legacySchool || '')){
       prospect.legacySchool = roster.legacySchool || '';
       changed = true;
@@ -1292,7 +1327,35 @@ function hydrateProspectValuesFromRoster(){
   return changed;
 }
 
-function parseFullClass(text){
+function applyRecruitingStageProfile(list, stage){
+  stage = RECRUITING_STAGES[stage] ? stage : recruitingStage();
+  if (stage === 'transfer'){
+    list.forEach(function(p){
+      p.offerMode = 'pitch';
+      p.values = {};
+    });
+  } else if (stage === 'cpr'){
+    let pitchRecruit = null;
+    list.forEach(function(p){
+      if (!pitchRecruit || p.overall > pitchRecruit.overall || (p.overall === pitchRecruit.overall && p.potential > pitchRecruit.potential)){
+        pitchRecruit = p;
+      }
+    });
+    list.forEach(function(p){
+      p.offerMode = pitchRecruit && p.rank === pitchRecruit.rank ? 'pitch' : 'values';
+      p.values = isPitchRecruit(p) ? {} : fixedCprValues();
+    });
+  } else {
+    list.forEach(function(p){
+      p.offerMode = 'values';
+    });
+  }
+  return list;
+}
+
+function parseFullClass(text, options){
+  options = options || {};
+  const stage = RECRUITING_STAGES[options.stage] ? options.stage : recruitingStage();
   const rows = parseCsvRows(text);
   let headerIdx = -1;
   for (let i = 0; i < rows.length; i++){
@@ -1317,18 +1380,22 @@ function parseFullClass(text){
     if (!rank) continue;
     const name = cleanCsvCell(r[nameIdx]);
     if (!name) continue;
+    const overall = parseFloat(cleanCsvCell(r[ovrIdx]));
+    const potential = parseFloat(cleanCsvCell(r[potIdx]));
     list.push({
       rank: rank, name: name,
       position: cleanCsvCell(r[posIdx]).toUpperCase(),
       rating: cleanCsvCell(r[ovrIdx]) + '/' + cleanCsvCell(r[potIdx]),
+      overall: Number.isFinite(overall) ? overall : 0,
+      potential: Number.isFinite(potential) ? potential : 0,
       hometown: cleanCsvCell(r[hometownIdx]),
       legacySchool: cleanCsvCell(r[legacySchoolIdx]),
       storyline: cleanCsvCell(r[storylineIdx]),
-      values: parseRecruitValues(r, header)
+      values: stage === 'hs' ? parseRecruitValues(r, header) : {}
     });
   }
   list.sort(function(a,b){ return a.rank - b.rank; });
-  return list;
+  return applyRecruitingStageProfile(list, stage);
 }
 
 function starsForRank(rank){
@@ -1343,12 +1410,13 @@ function starsForRank(rank){
 // ---------- Class loading + wave release ----------
 
 function loadClassData(raw){
-  const list = parseFullClass(raw);
+  const list = parseFullClass(raw, { stage: recruitingStage() });
   if (!list || !list.length){
     UI.classError = 'Could not find a class in that CSV. Make sure it includes Name and Pos. columns.';
     render(); return;
   }
   DB.fullRoster = list;
+  DB.defaultClassLoaded = false;
   hydrateProspectValuesFromRoster();
   UI.classError = null;
   saveDB(); render();
@@ -1429,6 +1497,54 @@ async function loadTeamBrandingFile(file){
 
 function makeThread(title, prospectIds, stars){
   return { id: uid('t'), title: title, prospectIds: prospectIds, stars: stars, createdAt: Date.now() };
+}
+
+function clearRecruitingBoard(){
+  DB.fullRoster = [];
+  DB.released = {};
+  DB.wave1Released = false;
+  DB.wave2Released = false;
+  DB.prospects = {};
+  DB.threads = [];
+  DB.offersByProspect = {};
+  DB.unmatched = [];
+  DB.conditionalRescinds = [];
+  DB.commitUpdatedAt = null;
+  DB.discordCommitUpdatedAt = null;
+  DB.discordCommitChannelId = '';
+  DB.defaultClassLoaded = false;
+  UI.threadId = null;
+  UI.prospectId = null;
+  UI.classFileName = '';
+  UI.classError = null;
+  UI.commitStatus = null;
+  UI.commitError = null;
+  UI.lastSummary = null;
+}
+
+function setRecruitingStage(stage){
+  if (!RECRUITING_STAGES[stage] || stage === recruitingStage()) return;
+  const currentHasBoard = DB.fullRoster.length || Object.keys(DB.prospects || {}).length || DB.threads.length || Object.keys(DB.offersByProspect || {}).length;
+  if (currentHasBoard && !window.confirm('Switch recruiting stage? This clears the current board and offers because stages do not overlap.')) return;
+  clearRecruitingBoard();
+  DB.recruitingStage = stage;
+  saveDB(); render();
+}
+
+function releaseSingleStageBoard(){
+  if (!DB.fullRoster.length || DB.wave1Released) return;
+  const ids = [];
+  DB.fullRoster.forEach(function(p){
+    if (DB.released[p.rank]) return;
+    const id = 'r' + p.rank;
+    DB.prospects[id] = prospectFromRosterRow(p, id);
+    DB.released[p.rank] = true;
+    ids.push(id);
+  });
+  if (ids.length) DB.threads.push(makeThread(recruitingStageConfig().boardTitle, ids, null));
+  DB.wave1Released = true;
+  DB.wave2Released = true;
+  saveDB(); render();
 }
 
 function releaseWave1(){
@@ -2321,7 +2437,7 @@ function addOfferDirect(prospectId, team, coach, text, promises, visits){
   if (!DB.offersByProspect[prospectId]) DB.offersByProspect[prospectId] = [];
   DB.offersByProspect[prospectId].push({
     id: uid('o'), team: team, coach: coach || '', text: text || '',
-    promises: (promises || []).map(function(p){
+    promises: (promises || []).slice(0, 3).map(function(p){
       return { id: uid('pr'), text: p.text || '', title: p.title || p.category || 'other', category: p.category || p.title || 'other' };
     }),
     visits: visits,
@@ -3547,6 +3663,8 @@ function renderProspectBoardCard(pid, searchAttr){
 function renderClassSetup(){
   let html = '';
   if (!canViewSettings()) return renderAccessDenied();
+  const stage = recruitingStage();
+  const stageConfig = recruitingStageConfig();
 
   html += '<div class="rb-card" style="padding:18px 20px;max-width:640px;margin-bottom:14px;border-color:' + (DB.offersLocked ? '#6F1D1B' : 'var(--hairline)') + ';">';
   html += '<div class="rb-offer-window-row">';
@@ -3558,11 +3676,17 @@ function renderClassSetup(){
   html += '</div>';
 
   html += '<div class="rb-card" style="padding:24px;max-width:640px;">';
-  html += '<div class="rb-h" style="font-size:18px;margin-bottom:14px;">Season class setup</div>';
-  html += '<div class="rb-mono" style="font-size:12px;color:var(--slate);margin-bottom:12px;">Default: ' + escapeHtml(DEFAULT_CLASS_NAME) + '</div>';
+  html += '<div class="rb-h" style="font-size:18px;margin-bottom:10px;">Recruiting stage</div>';
+  html += '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px;">';
+  Object.keys(RECRUITING_STAGES).forEach(function(key){
+    html += '<button class="rb-btn ' + (stage === key ? 'rb-btn-gold' : '') + '" data-recruiting-stage="' + escapeHtml(key) + '">' + escapeHtml(RECRUITING_STAGES[key].label) + '</button>';
+  });
+  html += '</div>';
+  html += '<div class="rb-h" style="font-size:18px;margin-bottom:14px;">' + escapeHtml(stageConfig.setupLabel) + '</div>';
+  html += '<div class="rb-mono" style="font-size:12px;color:var(--slate);margin-bottom:12px;">' + (stageConfig.usesDefaultClass ? 'Default: ' + escapeHtml(DEFAULT_CLASS_NAME) : 'Upload this stage&apos;s player CSV before opening the board.') + '</div>';
   html += '<input class="rb-file-input" type="file" id="rb-class-file" accept=".csv,text/csv" />';
   html += '<label class="rb-file-label" for="rb-class-file">Replace CSV file</label>';
-  html += '<span class="rb-mono" style="font-size:12px;color:var(--slate);margin-left:10px;">' + escapeHtml(UI.classFileName || (DB.fullRoster.length ? DEFAULT_CLASS_NAME : 'No file selected')) + '</span>';
+  html += '<span class="rb-mono" style="font-size:12px;color:var(--slate);margin-left:10px;">' + escapeHtml(UI.classFileName || (DB.fullRoster.length ? (stageConfig.usesDefaultClass && DB.defaultClassLoaded ? DEFAULT_CLASS_NAME : stageConfig.label + ' CSV') : 'No file selected')) + '</span>';
   if (UI.classError) html += '<div style="font-size:12px;color:var(--alert);margin-top:8px;">' + escapeHtml(UI.classError) + '</div>';
   html += '</div>';
 
@@ -3571,8 +3695,12 @@ function renderClassSetup(){
     html += '<div class="rb-card" style="padding:20px 24px;max-width:640px;margin-top:14px;">';
     html += '<div class="rb-mono" style="font-size:12px;color:var(--slate);margin-bottom:12px;">' + DB.fullRoster.length + ' prospects loaded, ranked #1&ndash;#' + maxRank + '</div>';
     html += '<div style="display:flex;gap:10px;flex-wrap:wrap;">';
-    if (!DB.wave1Released) html += '<button class="rb-btn rb-btn-gold" id="rb-release-1">Open class (#1&ndash;500)</button>';
-    if (!DB.wave2Released) html += '<button class="rb-btn" id="rb-release-2">Open the rest (#501&ndash;' + maxRank + ')</button>';
+    if (stageConfig.usesWaves){
+      if (!DB.wave1Released) html += '<button class="rb-btn rb-btn-gold" id="rb-release-1">Open class (#1&ndash;500)</button>';
+      if (!DB.wave2Released) html += '<button class="rb-btn" id="rb-release-2">Open the rest (#501&ndash;' + maxRank + ')</button>';
+    } else {
+      html += '<button class="rb-btn rb-btn-gold" id="rb-release-stage">Open ' + escapeHtml(stageConfig.label) + ' board</button>';
+    }
     html += '</div></div>';
   }
   html += '<div class="rb-card" style="padding:20px 24px;max-width:640px;margin-top:14px;">';
@@ -3691,7 +3819,11 @@ function renderProspectDetail(){
   html += '</div>';
   html += renderStorylineLine(p.storyline, 'margin-top:8px;');
   html += renderLegacySchoolLine(p.legacySchool, 'margin-top:8px;');
-  html += renderRecruitValues(p.values);
+  if (isPitchRecruit(p)){
+    html += '<div class="rb-mono" style="font-size:10px;color:var(--slate);margin-top:8px;line-height:1.2;"><span style="color:var(--gold);">Pitch recruit:</span> personalized offer, up to 3 promises.</div>';
+  } else {
+    html += renderRecruitValues(p.values);
+  }
   html += '</div>';
   if (!offers.length){
     html += '<div class="rb-card" style="padding:28px;text-align:center;color:var(--slate);">No offers yet.</div>';
@@ -3760,13 +3892,18 @@ function renderOfferBlock(o, opts){
 function renderSubmitModal(){
   const target = UI.submitTargetId && DB.prospects[UI.submitTargetId] ? DB.prospects[UI.submitTargetId] : null;
   const locked = !!DB.offersLocked;
+  const pitchOffer = recruitingStageConfig().pitchOnly || isPitchRecruit(target);
+  const submitHelp = locked ? 'Offers are currently locked. New offers cannot be posted.' :
+    (pitchOffer ? (target ? 'Write or paste a personalized pitch for #' + escapeHtml(target.rank) + ' ' + escapeHtml(target.name) + '. Include up to 3 promises; short pitch-only submissions are fine.' : 'Write or paste a personalized pitch. Include up to 3 promises; short pitch-only submissions are fine.') :
+      (target ? 'Paste one offer sheet as-is. This will post directly to #' + escapeHtml(target.rank) + ' ' + escapeHtml(target.name) + ', detect visits, and file your team name automatically.' : 'Paste one offer sheet as-is. We\'ll match it to the right prospect, detect visits, and file your team name automatically.'));
+  const placeholder = pitchOffer ? 'Write or paste your pitch here' : 'Paste your auto-offer sheet output here';
   return '<div style="position:fixed;inset:0;background:rgba(0,0,0,0.6);display:flex;align-items:center;justify-content:center;z-index:50;" data-close-modal="1">' +
     '<div class="rb-card" style="padding:24px;width:520px;max-width:90vw;" onclick="event.stopPropagation()">' +
       '<div class="rb-h" style="font-size:16px;margin-bottom:4px;">Submit offer</div>' +
       '<div style="font-size:12px;color:var(--slate);margin-bottom:12px;">' +
-        (locked ? 'Offers are currently locked. New offers cannot be posted.' : (target ? 'Paste one offer sheet as-is. This will post directly to #' + escapeHtml(target.rank) + ' ' + escapeHtml(target.name) + ', detect visits, and file your team name automatically.' : 'Paste one offer sheet as-is. We\'ll match it to the right prospect, detect visits, and file your team name automatically.')) +
+        submitHelp +
       '</div>' +
-      '<textarea class="rb-textarea rb-scrollbar" id="rb-sheet-text" rows="10" placeholder="Paste your auto-offer sheet output here" ' + (locked ? 'disabled' : '') + '></textarea>' +
+      '<textarea class="rb-textarea rb-scrollbar" id="rb-sheet-text" rows="10" placeholder="' + escapeHtml(placeholder) + '" ' + (locked ? 'disabled' : '') + '></textarea>' +
       '<div style="display:flex;justify-content:flex-end;gap:8px;margin-top:14px;">' +
         '<button class="rb-btn" data-close-modal="1">Cancel</button>' +
         '<button class="rb-btn rb-btn-gold" id="rb-submit-sheet-btn" ' + (UI.submitting || locked ? 'disabled' : '') + '>' + (locked ? 'Offers locked' : (UI.submitting ? 'Posting...' : 'Post offer')) + '</button>' +
@@ -4353,6 +4490,9 @@ function bindEvents(){
   if (brandingFile) brandingFile.onchange = function(){ loadTeamBrandingFile(brandingFile.files && brandingFile.files[0]); };
   const offersLockToggle = document.getElementById('rb-offers-lock-toggle');
   if (offersLockToggle) offersLockToggle.onchange = function(){ setOffersLocked(offersLockToggle.checked); };
+  document.querySelectorAll('[data-recruiting-stage]').forEach(function(el){
+    el.onclick = function(){ setRecruitingStage(el.getAttribute('data-recruiting-stage') || 'hs'); };
+  });
   const exportPromiseArchiveBtn = document.getElementById('rb-export-promise-archive');
   if (exportPromiseArchiveBtn) exportPromiseArchiveBtn.onclick = exportPromiseArchive;
   const updateCommitsBtn = document.getElementById('rb-update-commits');
@@ -4371,6 +4511,8 @@ function bindEvents(){
   if (release1) release1.onclick = releaseWave1;
   const release2 = document.getElementById('rb-release-2');
   if (release2) release2.onclick = releaseWave2;
+  const releaseStage = document.getElementById('rb-release-stage');
+  if (releaseStage) releaseStage.onclick = releaseSingleStageBoard;
 }
 
 applyRoute(routeFromPath(window.location.pathname));
