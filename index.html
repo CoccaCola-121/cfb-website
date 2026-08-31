@@ -789,6 +789,16 @@ function renderTeamLogo(brand){
   return '<span style="width:' + size + 'px;height:' + size + 'px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;background:rgba(226,230,239,0.18);border:1px solid rgba(226,230,239,0.24);flex:0 0 auto;"><img src="' + escapeHtml(brand.logoUrl) + '" alt="" style="width:' + imgSize + 'px;height:' + imgSize + 'px;object-fit:contain;display:block;" /></span>';
 }
 
+function renderLegacySchoolLine(legacySchool, extraStyle){
+  const text = String(legacySchool || '').trim();
+  if (!text) return '';
+  const brand = getTeamBranding(text);
+  return '<div class="rb-mono" title="Legacy school: ' + escapeHtml(text) + '" style="font-size:10px;color:var(--slate);margin-top:5px;line-height:1.2;display:flex;align-items:center;gap:7px;white-space:normal;overflow-wrap:anywhere;max-width:100%;min-width:0;' + (extraStyle || '') + '">' +
+    (brand ? renderTeamLogo(brand, 24) : '') +
+    '<span><span style="color:var(--gold);">Legacy school:</span> ' + escapeHtml(brand && brand.region ? brand.region : text) + '</span>' +
+  '</div>';
+}
+
 function renderCommittedTag(teamName, clickable, returnContext){
   const brand = getTeamBranding(teamName);
   returnContext = returnContext || {};
@@ -1057,6 +1067,30 @@ function rosterHasRecruitValues(){
   return DB.fullRoster.some(function(p){ return p && p.values && Object.keys(p.values).length; });
 }
 
+function rosterHasLegacySchools(){
+  return DB.fullRoster.some(function(p){ return p && Object.prototype.hasOwnProperty.call(p, 'legacySchool'); });
+}
+
+function mergeRosterMetadata(list){
+  if (!Array.isArray(list) || !list.length || !DB.fullRoster.length) return false;
+  const sourceByRank = {};
+  list.forEach(function(p){ if (p && p.rank) sourceByRank[p.rank] = p; });
+  let changed = false;
+  DB.fullRoster.forEach(function(p){
+    const source = p && sourceByRank[p.rank];
+    if (!p || !source) return;
+    if (Object.prototype.hasOwnProperty.call(source, 'legacySchool') && (p.legacySchool || '') !== (source.legacySchool || '')){
+      p.legacySchool = source.legacySchool || '';
+      changed = true;
+    }
+    if (source.storyline && !p.storyline){
+      p.storyline = source.storyline;
+      changed = true;
+    }
+  });
+  return changed;
+}
+
 async function ensureDefaultSeasonData(){
   let changed = false;
   if (!DB.commitSheetUrl){
@@ -1083,6 +1117,12 @@ async function ensureDefaultSeasonData(){
         DB.fullRoster = list;
         changed = true;
       }
+    } catch (e) { /* keep existing class data */ }
+  }
+  if (DB.fullRoster.length && !rosterHasLegacySchools()){
+    try {
+      const list = parseFullClass(window.NZCFL_DEFAULT_CLASS_CSV || '');
+      if (mergeRosterMetadata(list)) changed = true;
     } catch (e) { /* keep existing class data */ }
   }
   if (hydrateProspectValuesFromRoster()) changed = true;
@@ -1157,6 +1197,7 @@ function prospectFromRosterRow(p, id){
     position: p.position,
     rating: p.rating,
     hometown: p.hometown,
+    legacySchool: p.legacySchool || '',
     storyline: p.storyline || '',
     values: p.values || {},
     stars: starsForRank(p.rank)
@@ -1174,6 +1215,14 @@ function hydrateProspectValuesFromRoster(){
     if (!prospect || !roster) return;
     if (roster.values && JSON.stringify(prospect.values || {}) !== JSON.stringify(roster.values)){
       prospect.values = roster.values;
+      changed = true;
+    }
+    if (Object.prototype.hasOwnProperty.call(roster, 'legacySchool') && (prospect.legacySchool || '') !== (roster.legacySchool || '')){
+      prospect.legacySchool = roster.legacySchool || '';
+      changed = true;
+    }
+    if (roster.storyline && !prospect.storyline){
+      prospect.storyline = roster.storyline;
       changed = true;
     }
   });
@@ -1194,6 +1243,8 @@ function parseFullClass(text){
   const ovrIdx = headerIndex(header, ['Ovr', 'Overall']);
   const potIdx = headerIndex(header, ['Pot', 'Potential']);
   const hometownIdx = headerIndex(header, ['Hometown', 'Home Town']);
+  let legacySchoolIdx = headerIndex(header, ['Legacy School', 'Legacy']);
+  if (legacySchoolIdx === -1) legacySchoolIdx = 16;
   let storylineIdx = headerIndex(header, ['Storyline', 'Storylines']);
   if (storylineIdx === -1) storylineIdx = 18;
   const list = [];
@@ -1208,6 +1259,7 @@ function parseFullClass(text){
       position: cleanCsvCell(r[posIdx]).toUpperCase(),
       rating: cleanCsvCell(r[ovrIdx]) + '/' + cleanCsvCell(r[potIdx]),
       hometown: cleanCsvCell(r[hometownIdx]),
+      legacySchool: cleanCsvCell(r[legacySchoolIdx]),
       storyline: cleanCsvCell(r[storylineIdx]),
       values: parseRecruitValues(r, header)
     });
@@ -1507,19 +1559,27 @@ function applyStorylineRows(rows){
   const start = headerIdx === -1 ? 0 : headerIdx + 1;
   const rankIdx = headerIndex(header, ['Rank', '#']);
   const nameIdx = headerIndex(header, ['Name']);
+  let legacySchoolIdx = headerIndex(header, ['Legacy School', 'Legacy']);
+  if (legacySchoolIdx === -1) legacySchoolIdx = 16;
   let storylineIdx = headerIndex(header, ['Storyline', 'Storylines']);
   if (storylineIdx === -1) storylineIdx = 18;
-  let count = 0;
+  let storylineCount = 0;
+  let legacySchoolCount = 0;
   for (let i = start; i < rows.length; i++){
     const storyline = cleanCsvCell(rows[i][storylineIdx]);
-    if (!storyline) continue;
+    const legacySchool = cleanCsvCell(rows[i][legacySchoolIdx]);
     const prospect = findProspectFromSheetRow(rows[i], rankIdx, nameIdx);
-    if (prospect && !prospect.storyline){
+    if (!prospect) continue;
+    if (storyline && !prospect.storyline){
       prospect.storyline = storyline;
-      count++;
+      storylineCount++;
+    }
+    if (legacySchool && (prospect.legacySchool || '') !== legacySchool){
+      prospect.legacySchool = legacySchool;
+      legacySchoolCount++;
     }
   }
-  return count;
+  return { storylineCount: storylineCount, legacySchoolCount: legacySchoolCount };
 }
 
 function applyCommitRows(rows){
@@ -1594,10 +1654,15 @@ async function updateCommitsFromSheet(){
   try {
     const rows = await fetchCommitRows(rawUrl);
     const count = applyCommitRows(rows);
-    const storylineCount = applyStorylineRows(rows);
+    const metadata = applyStorylineRows(rows);
+    const storylineCount = metadata.storylineCount || 0;
+    const legacySchoolCount = metadata.legacySchoolCount || 0;
+    const importParts = [];
+    if (storylineCount) importParts.push(storylineCount + ' storyline' + (storylineCount === 1 ? '' : 's'));
+    if (legacySchoolCount) importParts.push(legacySchoolCount + ' legacy school' + (legacySchoolCount === 1 ? '' : 's'));
     DB.commitSheetUrl = rawUrl;
     UI.commitEditing = false;
-    UI.commitStatus = 'Sheet fallback updated ' + count + ' commit' + (count === 1 ? '' : 's') + (storylineCount ? ' and imported ' + storylineCount + ' storyline' + (storylineCount === 1 ? '' : 's') : '') + '.';
+    UI.commitStatus = 'Sheet fallback updated ' + count + ' commit' + (count === 1 ? '' : 's') + (importParts.length ? ' and imported ' + importParts.join(' and ') : '') + '.';
     await saveDBNow();
   } catch (e) {
     UI.commitError = UI.commitError || 'Could not update commits from Discord or read the sheet fallback.';
@@ -3557,6 +3622,7 @@ function renderProspectDetail(){
     '<span>' + starsOrLabel(p.stars) + '</span></div>';
   html += '</div>';
   html += renderStorylineLine(p.storyline, 'margin-top:8px;');
+  html += renderLegacySchoolLine(p.legacySchool, 'margin-top:8px;');
   html += renderRecruitValues(p.values);
   html += '</div>';
   if (!offers.length){
