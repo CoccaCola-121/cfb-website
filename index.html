@@ -1006,9 +1006,10 @@ function mergeLeagueState(state){
   return before !== after;
 }
 
-async function syncLeagueState(renderAfter){
+async function syncLeagueState(renderAfter, options){
   if (!apiAvailable()) return false;
-  if (Date.now() - lastLocalChangeAt < 2500) return false;
+  options = options || {};
+  if (!options.force && Date.now() - lastLocalChangeAt < 2500) return false;
   try {
     const res = await fetch('/api/league/state', { credentials: 'include' });
     if (!res.ok) return false;
@@ -1742,6 +1743,7 @@ async function linkLoginTeam(team){
     });
     const data = await res.json();
     if (!res.ok || !data.ok) throw new Error(data.error || 'Could not link team.');
+    if (data.purgedOffers) await syncLeagueState(false, { force: true });
     UI.pendingDiscordUser = Object.assign({}, UI.pendingDiscordUser, { team: canonicalTeam });
     SESSION = {
       discordId: UI.pendingDiscordUser.discordId,
@@ -1805,6 +1807,7 @@ async function runAdminAccountAction(kind, overrides){
     });
     const data = await res.json();
     if (!res.ok || !data.ok) throw new Error(data.error || 'Admin action failed.');
+    if (data.purgedOffers) await syncLeagueState(false, { force: true });
     if (!overrides.silent) UI.adminActionStatus = kind === 'switch' ? 'Account team updated.' : 'Account unlinked.';
     UI.teamChangeDiscordId = '';
     UI.teamChangeTeam = '';

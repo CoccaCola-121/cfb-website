@@ -1,7 +1,9 @@
 import { getCurrentUser, json } from '../../_lib/auth.js';
+import { queueLeagueBackup } from '../../_lib/backup.js';
+import { purgeOffersForTeam } from '../../_lib/league-state.js';
 import { findTeam, readTeamClaim, writeTeamClaim } from '../../_lib/teams-util.js';
 
-export async function onRequestPost({ request, env }) {
+export async function onRequestPost({ request, env, waitUntil }) {
   const user = await getCurrentUser(request, env);
   if (!user) return json({ ok: false, error: 'Discord login required.' }, { status: 401 });
   const body = await request.json().catch(() => ({}));
@@ -15,10 +17,13 @@ export async function onRequestPost({ request, env }) {
   if (claim && claim.discordId !== user.discordId) {
     return json({ ok: false, error: `${team.region} is already linked to another Discord account.` }, { status: 409 });
   }
+  const takeover = !claim;
+  const purge = takeover ? await purgeOffersForTeam(env, team.region) : { purgedOffers: 0 };
 
   user.team = team.region;
   user.updatedAt = Date.now();
   await env.AUTH_KV.put(`discord:user:${user.discordId}`, JSON.stringify(user));
   await writeTeamClaim(env, team.region, user.discordId);
-  return json({ ok: true, user });
+  if (purge.purgedOffers) queueLeagueBackup(env, purge.state, waitUntil, { source: 'team-takeover-purge' });
+  return json({ ok: true, user, purgedOffers: purge.purgedOffers });
 }

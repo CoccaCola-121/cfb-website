@@ -1,7 +1,9 @@
 import { canModerate, getCurrentUser, json } from '../../_lib/auth.js';
+import { queueLeagueBackup } from '../../_lib/backup.js';
+import { purgeOffersForTeam } from '../../_lib/league-state.js';
 import { deleteTeamClaim, findTeam, readTeamClaim, writeTeamClaim } from '../../_lib/teams-util.js';
 
-export async function onRequestPost({ request, env }) {
+export async function onRequestPost({ request, env, waitUntil }) {
   const admin = await getCurrentUser(request, env);
   if (!admin || !canModerate(env, admin)) {
     return json({ ok: false, error: 'Moderator access required.' }, { status: 403 });
@@ -20,11 +22,14 @@ export async function onRequestPost({ request, env }) {
   if (claim && claim.discordId !== discordId) {
     return json({ ok: false, error: `${team.region} is already linked to another Discord account.` }, { status: 409 });
   }
+  const takeover = !claim;
+  const purge = takeover ? await purgeOffersForTeam(env, team.region) : { purgedOffers: 0 };
 
   if (user.team && user.team !== team.region) await deleteTeamClaim(env, user.team);
   user.team = team.region;
   user.updatedAt = Date.now();
   await env.AUTH_KV.put(userKey, JSON.stringify(user));
   await writeTeamClaim(env, team.region, discordId);
-  return json({ ok: true, user });
+  if (purge.purgedOffers) queueLeagueBackup(env, purge.state, waitUntil, { source: 'team-takeover-purge' });
+  return json({ ok: true, user, purgedOffers: purge.purgedOffers });
 }
