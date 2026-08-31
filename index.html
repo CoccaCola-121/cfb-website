@@ -109,6 +109,45 @@ body { margin: 0; background: #0F1420; }
 }
 .rb-toggle input:checked + .rb-switch-track { background: #58BF72; border-color: #43995B; }
 .rb-toggle input:checked + .rb-switch-track .rb-switch-thumb { transform: translateX(20px); }
+.rb-offer-window-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+.rb-offer-window-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.rb-offer-status {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 12px;
+  color: var(--gold);
+  border: 1px solid rgba(201,162,39,0.38);
+  background: rgba(201,162,39,0.10);
+  border-radius: 999px;
+  padding: 6px 10px;
+  line-height: 1;
+}
+.rb-offer-status-closed {
+  color: #FFF2F1;
+  border-color: rgba(210,86,76,0.54);
+  background: rgba(111,29,27,0.42);
+}
+.rb-offer-lock-toggle {
+  color: var(--chalk);
+  font-size: 13px;
+  font-weight: 600;
+  border: 1px solid var(--hairline);
+  border-radius: 8px;
+  background: var(--panel-alt);
+  padding: 8px 10px;
+}
+.rb-offer-lock-toggle input:checked + .rb-switch-track { background: #6F1D1B; border-color: #B33A32; }
 .rb-mobile-only { display: none; }
 .rb-my-offer-summary-grid {
   display: grid;
@@ -3487,12 +3526,12 @@ function renderClassSetup(){
   if (!canViewSettings()) return renderAccessDenied();
 
   html += '<div class="rb-card" style="padding:18px 20px;max-width:640px;margin-bottom:14px;border-color:' + (DB.offersLocked ? '#6F1D1B' : 'var(--hairline)') + ';">';
-  html += '<div style="display:flex;justify-content:space-between;align-items:center;gap:14px;flex-wrap:wrap;">';
+  html += '<div class="rb-offer-window-row">';
   html += '<div><div class="rb-h" style="font-size:16px;">Offer Window</div><div class="rb-mono" style="font-size:12px;color:var(--slate);margin-top:4px;">' + (DB.offersLocked ? 'Closed to new offers' : 'Open for new offers') + '</div></div>';
-  html += '<label style="display:inline-flex;align-items:center;gap:10px;cursor:pointer;user-select:none;">';
-  html += '<span class="rb-mono" style="font-size:12px;color:' + (DB.offersLocked ? 'var(--alert)' : 'var(--gold)') + ';">' + (DB.offersLocked ? 'LOCKED' : 'OPEN') + '</span>';
-  html += '<input type="checkbox" id="rb-offers-lock-toggle" ' + (DB.offersLocked ? 'checked' : '') + ' style="width:20px;height:20px;accent-color:var(--gold);" /> Lock offers';
-  html += '</label></div>';
+  html += '<div class="rb-offer-window-actions">';
+  html += '<span class="rb-offer-status ' + (DB.offersLocked ? 'rb-offer-status-closed' : '') + '">' + (DB.offersLocked ? 'LOCKED' : 'OPEN') + '</span>';
+  html += '<label class="rb-toggle rb-offer-lock-toggle"><span>Lock offers</span><input type="checkbox" id="rb-offers-lock-toggle" ' + (DB.offersLocked ? 'checked' : '') + ' /><span class="rb-switch-track"><span class="rb-switch-thumb"></span></span></label>';
+  html += '</div></div>';
   html += '</div>';
 
   html += '<div class="rb-card" style="padding:24px;max-width:640px;">';
