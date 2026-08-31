@@ -3595,6 +3595,9 @@ function renderFeed(){
       (canViewSettings() ? '<button class="rb-btn rb-btn-gold" data-nav="setup">Settings</button>' : '') +
     '</div>';
   }
+  if (!recruitingStageConfig().usesWaves && DB.threads.length === 1){
+    return renderThreadProspectList(DB.threads[0]);
+  }
   let html = '<input class="rb-input" id="rb-board-search" placeholder="Search offers by recruit name, rank, position, or hometown" style="margin-bottom:14px;" />';
   html += '<div id="rb-board-cards" class="rb-board-list">';
   DB.threads.forEach(function(t){
@@ -3629,6 +3632,28 @@ function renderFeed(){
       html += renderProspectBoardCard(pid, searchText);
     });
   });
+  html += '</div>';
+  return html;
+}
+
+function renderThreadProspectList(t){
+  if (!t) return '<div style="color:var(--slate);">Thread not found.</div>';
+  let html = '<div class="rb-h" style="font-size:20px;margin-bottom:4px;">' + escapeHtml(t.title) + '</div>';
+  html += '<div style="font-size:13px;color:var(--slate);margin-bottom:18px;">' + rankRangeForThread(t) + ' on the board. Offers from every team stay visible here.</div>';
+  html += '<div class="rb-card" style="padding:14px 16px;margin-bottom:14px;">';
+  html += '<input class="rb-input" data-thread-search="' + t.id + '" placeholder="Search offers by recruit name, rank, position, or hometown" />';
+  html += '<div class="rb-filter-row"><label class="rb-toggle"><span>Hide committed players</span><input type="checkbox" id="rb-hide-committed-boards" ' + (UI.hideCommittedBoards ? 'checked' : '') + ' /><span class="rb-switch-track"><span class="rb-switch-thumb"></span></span></label></div>';
+  html += '</div>';
+
+  html += '<div style="display:flex;flex-direction:column;gap:10px;">';
+  const visibleIds = visibleBoardProspectIds(t);
+  visibleIds.forEach(function(pid){
+    const p = DB.prospects[pid];
+    if (!p) return;
+    const searchText = [p.rank, '#' + p.rank, p.name, p.position, p.hometown].join(' ').toLowerCase();
+    html += renderProspectBoardCard(pid, searchText);
+  });
+  if (!visibleIds.length) html += '<div class="rb-card" style="padding:28px;text-align:center;color:var(--slate);">No uncommitted prospects on this board.</div>';
   html += '</div>';
   return html;
 }
@@ -3779,24 +3804,7 @@ function renderThread(){
   const t = DB.threads.find(function(x){ return x.id === UI.threadId; });
   if (!t) return '<div style="color:var(--slate);">Thread not found.</div>';
   let html = '<div style="margin-bottom:16px;"><button class="rb-btn" data-nav="feed">&larr; Back to board</button></div>';
-  html += '<div class="rb-h" style="font-size:20px;margin-bottom:4px;">' + escapeHtml(t.title) + '</div>';
-  html += '<div style="font-size:13px;color:var(--slate);margin-bottom:18px;">' + rankRangeForThread(t) + ' on the board. Offers from every team stay visible here.</div>';
-  html += '<div class="rb-card" style="padding:14px 16px;margin-bottom:14px;">';
-  html += '<input class="rb-input" data-thread-search="' + t.id + '" placeholder="Search offers by recruit name, rank, position, or hometown" />';
-  html += '<div class="rb-filter-row"><label class="rb-toggle"><span>Hide committed players</span><input type="checkbox" id="rb-hide-committed-boards" ' + (UI.hideCommittedBoards ? 'checked' : '') + ' /><span class="rb-switch-track"><span class="rb-switch-thumb"></span></span></label></div>';
-  html += '</div>';
-
-  html += '<div style="display:flex;flex-direction:column;gap:10px;">';
-  const visibleIds = visibleBoardProspectIds(t);
-  visibleIds.forEach(function(pid){
-    const p = DB.prospects[pid];
-    if (!p) return;
-    const searchText = [p.rank, '#' + p.rank, p.name, p.position, p.hometown].join(' ').toLowerCase();
-    html += renderProspectBoardCard(pid, searchText);
-  });
-  if (!visibleIds.length) html += '<div class="rb-card" style="padding:28px;text-align:center;color:var(--slate);">No uncommitted prospects on this board.</div>';
-  html += '</div>';
-  return html;
+  return html + renderThreadProspectList(t);
 }
 
 function renderProspectDetail(){
