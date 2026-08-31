@@ -723,6 +723,49 @@ function activeTeamBrands(){
   return brands.sort(function(a,b){ return a.region.localeCompare(b.region); });
 }
 
+function fallbackTeamBrand(teamName){
+  const region = canonicalTeamName(teamName);
+  return {
+    region: region,
+    nickname: '',
+    abbrev: '',
+    displayName: region,
+    primary: '',
+    secondary: '',
+    logoUrl: ''
+  };
+}
+
+function teamLinkForBrand(brand){
+  const links = UI.teamLinks || {};
+  const keys = teamBrandKeys(brand || {});
+  for (let i = 0; i < keys.length; i++){
+    if (links[keys[i]]) return links[keys[i]];
+  }
+  const regionKey = teamKey(brand && brand.region);
+  return Object.keys(links).map(function(key){ return links[key]; }).find(function(link){
+    return link && teamKey(link.team) === regionKey;
+  }) || null;
+}
+
+function teamsPageBrands(){
+  const seen = {};
+  const brands = activeTeamBrands().slice();
+  brands.forEach(function(brand){
+    if (brand && brand.region) seen[teamKey(brand.region)] = true;
+  });
+  Object.keys(UI.teamLinks || {}).forEach(function(key){
+    const link = UI.teamLinks[key];
+    if (!link || !link.team) return;
+    const brand = getTeamBranding(link.team) || fallbackTeamBrand(link.team);
+    const brandKey = teamKey(brand.region || link.team);
+    if (!brandKey || seen[brandKey]) return;
+    seen[brandKey] = true;
+    brands.push(brand);
+  });
+  return brands.sort(function(a,b){ return a.region.localeCompare(b.region); });
+}
+
 function isTeamAvailable(teamName){
   const brand = getTeamBranding(teamName);
   if (!brand) return false;
@@ -1803,13 +1846,13 @@ async function savePendingTeamChanges(){
     for (let i = 0; i < roleChanges.length; i++){
       await runAdminAccessLevelChange(roleChanges[i].discordId, roleChanges[i].accessLevel, { silent: true });
     }
-    const switchChanges = Object.keys(pending.switches || {}).map(function(key){ return pending.switches[key]; });
-    for (let i = 0; i < switchChanges.length; i++){
-      await runAdminAccountAction('switch', { discordId: switchChanges[i].discordId, team: switchChanges[i].team, silent: true });
-    }
     const unlinkChanges = Object.keys(pending.unlinks || {}).map(function(key){ return pending.unlinks[key]; });
     for (let i = 0; i < unlinkChanges.length; i++){
       await runAdminAccountAction('unlink', { team: unlinkChanges[i].team, silent: true });
+    }
+    const switchChanges = Object.keys(pending.switches || {}).map(function(key){ return pending.switches[key]; });
+    for (let i = 0; i < switchChanges.length; i++){
+      await runAdminAccountAction('switch', { discordId: switchChanges[i].discordId, team: switchChanges[i].team, silent: true });
     }
     resetPendingTeamChanges();
     UI.adminActionStatus = 'Team changes saved.';
@@ -2586,6 +2629,10 @@ function render(){
   scheduleSummaryCountdown();
 }
 
+function uncommittedStatusLabel(count){
+  return Number(count) > 0 ? count + ' uncommitted' : 'All committed';
+}
+
 function renderTeamAutocomplete(query){
   const matches = teamMatchesForQuery(query);
   if (!String(query || '').trim()) return '';
@@ -3223,14 +3270,14 @@ function renderTeamOffers(){
 }
 
 function renderTeamsPage(){
-  const teams = activeTeamBrands();
+  const teams = teamsPageBrands();
   const q = (UI.teamSearch || '').toLowerCase().trim();
   const canAdmin = canUseAdminMode();
   const canCommission = canManageAccess();
   const pending = UI.teamPending || { unlinks: {}, switches: {}, roles: {} };
   const pendingCount = Object.keys(pending.unlinks || {}).length + Object.keys(pending.switches || {}).length + Object.keys(pending.roles || {}).length;
   const visible = teams.filter(function(brand){
-    const link = UI.teamLinks[teamKey(brand.region)] || null;
+    const link = teamLinkForBrand(brand);
     const haystack = [brand.region, brand.abbrev, brand.nickname, brand.displayName, link && link.displayName, link && link.username, canAdmin && link && link.discordId].join(' ').toLowerCase();
     if (UI.teamFilterCoached && !link) return false;
     return !q || haystack.indexOf(q) !== -1;
@@ -3246,7 +3293,7 @@ function renderTeamsPage(){
   html += '</div>';
   html += '<div style="display:flex;flex-direction:column;gap:10px;">';
   visible.forEach(function(brand){
-    const link = UI.teamLinks[teamKey(brand.region)] || null;
+    const link = teamLinkForBrand(brand);
     const pendingUnlink = pending.unlinks && pending.unlinks[teamKey(brand.region)];
     const pendingSwitch = link && pending.switches && pending.switches[link.discordId];
     const pendingRole = link && pending.roles && pending.roles[link.discordId];
@@ -3312,7 +3359,7 @@ function renderFeed(){
       const p = DB.prospects[pid];
       return sum + (p && !p.commitTeam ? 1 : 0);
     }, 0);
-    const uncommittedLabel = uncommittedCount + ' uncommitted';
+    const uncommittedLabel = uncommittedStatusLabel(uncommittedCount);
     const threadSearch = visibleIds.map(function(pid){
       const p = DB.prospects[pid] || {};
       return [p.rank, '#' + p.rank, p.name, p.position, p.hometown].join(' ');
