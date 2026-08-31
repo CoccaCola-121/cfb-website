@@ -138,6 +138,29 @@ body { margin: 0; background: #0F1420; }
   border-color: rgba(210,86,76,0.54);
   background: rgba(111,29,27,0.42);
 }
+.rb-settings-status {
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 12px;
+  color: var(--slate);
+  border: 1px solid var(--hairline);
+  background: var(--panel-alt);
+  border-radius: 999px;
+  padding: 6px 10px;
+  line-height: 1;
+}
+.rb-settings-status-ready {
+  color: var(--gold);
+  border-color: rgba(201,162,39,0.38);
+  background: rgba(201,162,39,0.10);
+}
+.rb-settings-status-error {
+  color: #FFF2F1;
+  border-color: rgba(210,86,76,0.54);
+  background: rgba(111,29,27,0.42);
+}
 .rb-offer-lock-toggle {
   color: var(--chalk);
   font-size: 13px;
@@ -3575,24 +3598,27 @@ function renderClassSetup(){
   html += '</div>';
 
   const backup = UI.backupStatus || {};
+  const backupConfigured = !!(UI.backupStatus && backup.configured);
   html += '<div class="rb-card" style="padding:20px 24px;max-width:640px;margin-top:14px;">';
   html += '<div class="rb-h" style="font-size:16px;margin-bottom:8px;">Backup</div>';
   html += '<div class="rb-mono" style="font-size:12px;color:var(--slate);margin-bottom:12px;">Overwrites one latest JSON snapshot and one latest offers CSV in GitHub.</div>';
   if (!UI.backupStatus){
-    html += '<div style="font-size:13px;color:var(--slate);margin-bottom:12px;">Status not loaded yet.</div>';
+    html += '<div class="rb-settings-status" style="margin-bottom:12px;">CHECKING</div>';
   } else if (!backup.configured){
-    html += '<div style="font-size:13px;color:var(--slate);margin-bottom:12px;">Not configured yet.</div>';
+    html += '<div class="rb-settings-status" style="margin-bottom:10px;">NOT CONFIGURED</div>';
+    html += '<div style="font-size:13px;color:var(--slate);line-height:1.4;margin-bottom:12px;">Manual backups are unavailable until GitHub backup settings are connected.</div>';
   } else {
     const statusText = backup.ok ? ('Last backup: ' + (backup.exportedAt ? new Date(backup.exportedAt).toLocaleString() : 'complete')) : (backup.error ? 'Last backup failed' : 'Configured');
+    html += '<div class="rb-settings-status ' + (backup.ok ? 'rb-settings-status-ready' : (backup.error ? 'rb-settings-status-error' : '')) + '" style="margin-bottom:8px;">' + escapeHtml(backup.ok ? 'READY' : (backup.error ? 'NEEDS ATTENTION' : 'CONFIGURED')) + '</div>';
     html += '<div style="font-size:13px;color:' + (backup.ok ? 'var(--gold)' : 'var(--slate)') + ';margin-bottom:6px;">' + escapeHtml(statusText) + '</div>';
     html += '<div class="rb-mono" style="font-size:11px;color:var(--slate);margin-bottom:12px;">' + escapeHtml((backup.repo || '') + (backup.csvPath ? ' / ' + backup.csvPath : '')) + '</div>';
   }
   html += '<div style="display:flex;gap:10px;flex-wrap:wrap;">';
-  html += '<button class="rb-btn rb-btn-gold" id="rb-run-backup" ' + (UI.backingUp ? 'disabled' : '') + '>' + (UI.backingUp ? 'Backing up...' : 'Run backup now') + '</button>';
+  html += '<button class="rb-btn ' + (backupConfigured ? 'rb-btn-gold' : '') + '" id="rb-run-backup" ' + (UI.backingUp || !backupConfigured ? 'disabled' : '') + '>' + (UI.backingUp ? 'Backing up...' : 'Run backup now') + '</button>';
   html += '<button class="rb-btn" id="rb-refresh-backup">Refresh status</button>';
   html += '</div>';
   if (UI.backupError) html += '<div style="font-size:12px;color:var(--alert);margin-top:8px;">' + escapeHtml(UI.backupError) + '</div>';
-  if (backup.error && !UI.backupError) html += '<div style="font-size:12px;color:var(--alert);margin-top:8px;">' + escapeHtml(backup.error) + '</div>';
+  if (backup.configured && backup.error && !UI.backupError) html += '<div style="font-size:12px;color:var(--alert);margin-top:8px;">' + escapeHtml(backup.error) + '</div>';
   html += '</div>';
 
   html += '<div class="rb-card" style="padding:20px 24px;max-width:640px;margin-top:14px;">';
