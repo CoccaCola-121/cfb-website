@@ -22,6 +22,7 @@ const STATE_FIELDS = [
   'offersLocked',
   'dangerApprovals',
   'conditionalRescinds',
+  'manualCommitOverrides',
 ];
 
 export function sanitizeState(input) {

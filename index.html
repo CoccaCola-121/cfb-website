@@ -422,6 +422,12 @@ body { margin: 0; background: #0F1420; }
   cursor: pointer;
 }
 .rb-team-option:hover { background: var(--panel-alt); }
+.rb-commit-override-grid {
+  display: grid;
+  grid-template-columns: minmax(90px, 120px) minmax(180px, 1fr) auto auto;
+  gap: 10px;
+  align-items: center;
+}
 .rb-auth-step {
   display: inline-flex;
   align-items: center;
@@ -449,6 +455,7 @@ body { margin: 0; background: #0F1420; }
   .rb-mobile-admin-control { display: none !important; }
   .rb-team-card-mobile { padding: 10px 12px !important; }
   .rb-team-card-row { grid-template-columns: minmax(0, 1fr); gap: 6px; }
+  .rb-commit-override-grid { grid-template-columns: minmax(0, 1fr); }
   .rb-coach-pill { min-width: 0; max-width: 100%; min-height: 28px; padding: 6px 10px; font-size: 12px; justify-content: flex-start; }
   .rb-nav-brand { gap: 9px; }
   .rb-nav-logo { width: 38px; height: 38px; border-radius: 9px; }
@@ -510,7 +517,7 @@ let DB = { fullRoster: [], recruitingStage: 'hs', released: {}, wave1Released: f
            prospects: {}, threads: [], offersByProspect: {}, unmatched: [], teams: {},
            teamBranding: {}, users: {}, commitSheetUrl: DEFAULT_COMMIT_SHEET_URL, commitUpdatedAt: null,
            discordCommitUpdatedAt: null, discordCommitChannelId: '', defaultClassLoaded: false,
-           offersLocked: false, dangerApprovals: {}, conditionalRescinds: [] };
+           offersLocked: false, dangerApprovals: {}, conditionalRescinds: [], manualCommitOverrides: {} };
 let SESSION = null;
 let UI = { view: 'feed', threadId: null, showSubmitModal: false, submitting: false,
            lastSummary: null, loginError: null, classError: null, classDraft: '', assignError: {},
@@ -526,7 +533,8 @@ let UI = { view: 'feed', threadId: null, showSubmitModal: false, submitting: fal
            massRescindError: null, massRescindStatus: null, pendingMassRescind: null,
            pendingMassRescindFinal: null, pendingSingleRescind: null,
            backupStatus: null, backupError: null, backingUp: false,
-           teamAdminModal: null, brandingFileName: '', adminActionStatus: null, adminActionError: null };
+           teamAdminModal: null, brandingFileName: '', adminActionStatus: null, adminActionError: null,
+           commitOverrideRank: '', commitOverrideTeam: '', commitOverrideStatus: null, commitOverrideError: null };
 let dbReady = false, sessionReady = false;
 let summaryTimer = null;
 let leagueSyncTimer = null;
@@ -1068,7 +1076,8 @@ function leagueStatePayload(){
     defaultClassLoaded: DB.defaultClassLoaded,
     offersLocked: !!DB.offersLocked,
     dangerApprovals: DB.dangerApprovals || {},
-    conditionalRescinds: DB.conditionalRescinds || []
+    conditionalRescinds: DB.conditionalRescinds || [],
+    manualCommitOverrides: DB.manualCommitOverrides || {}
   };
 }
 
@@ -1081,9 +1090,10 @@ function mergeLeagueState(state){
     commitUpdatedAt: DB.commitUpdatedAt,
     discordCommitUpdatedAt: DB.discordCommitUpdatedAt
   });
-  ['fullRoster','recruitingStage','released','wave1Released','wave2Released','prospects','threads','offersByProspect','unmatched','teams','teamBranding','commitSheetUrl','commitUpdatedAt','discordCommitUpdatedAt','discordCommitChannelId','defaultClassLoaded','offersLocked','dangerApprovals','conditionalRescinds'].forEach(function(field){
+  ['fullRoster','recruitingStage','released','wave1Released','wave2Released','prospects','threads','offersByProspect','unmatched','teams','teamBranding','commitSheetUrl','commitUpdatedAt','discordCommitUpdatedAt','discordCommitChannelId','defaultClassLoaded','offersLocked','dangerApprovals','conditionalRescinds','manualCommitOverrides'].forEach(function(field){
     if (Object.prototype.hasOwnProperty.call(state, field)) DB[field] = state[field];
   });
+  applyManualCommitOverrides();
   const after = JSON.stringify({
     offersByProspect: DB.offersByProspect,
     prospects: DB.prospects,
@@ -1788,9 +1798,79 @@ function applyCommitRows(rows){
       count++;
     }
   }
+  applyManualCommitOverrides();
   applyConditionalRescinds();
   DB.commitUpdatedAt = Date.now();
   return count;
+}
+
+function applyManualCommitOverrides(){
+  const overrides = DB.manualCommitOverrides || {};
+  Object.keys(overrides).forEach(function(pid){
+    const prospect = DB.prospects && DB.prospects[pid];
+    const team = canonicalTeamName(overrides[pid] && overrides[pid].team);
+    if (prospect && team) prospect.commitTeam = team;
+  });
+}
+
+async function applyManualCommitOverride(){
+  const rankInput = document.getElementById('rb-commit-override-rank');
+  const teamInput = document.getElementById('rb-commit-override-team');
+  const rank = parseInt(rankInput ? rankInput.value : UI.commitOverrideRank, 10);
+  const rawTeam = teamInput ? teamInput.value.trim() : UI.commitOverrideTeam;
+  UI.commitOverrideRank = rankInput ? rankInput.value.trim() : UI.commitOverrideRank;
+  UI.commitOverrideTeam = rawTeam;
+  UI.commitOverrideError = null;
+  UI.commitOverrideStatus = null;
+  if (!rank){
+    UI.commitOverrideError = 'Enter the player rank to override.';
+    render(); return;
+  }
+  const pid = 'r' + rank;
+  const prospect = DB.prospects && DB.prospects[pid];
+  if (!prospect){
+    UI.commitOverrideError = 'No opened prospect exists for rank #' + rank + '.';
+    render(); return;
+  }
+  const team = canonicalTeamName(rawTeam);
+  if (!team){
+    UI.commitOverrideError = 'Enter the team that won the commit.';
+    render(); return;
+  }
+  if (!DB.manualCommitOverrides) DB.manualCommitOverrides = {};
+  DB.manualCommitOverrides[pid] = { team: team, updatedAt: Date.now() };
+  prospect.commitTeam = team;
+  applyConditionalRescinds();
+  DB.commitUpdatedAt = Date.now();
+  UI.commitOverrideStatus = '#' + rank + ' ' + prospect.name + ' manually committed to ' + team + '.';
+  await saveDBNow();
+  render();
+}
+
+async function clearManualCommitOverride(){
+  const rankInput = document.getElementById('rb-commit-override-rank');
+  const rank = parseInt(rankInput ? rankInput.value : UI.commitOverrideRank, 10);
+  UI.commitOverrideRank = rankInput ? rankInput.value.trim() : UI.commitOverrideRank;
+  UI.commitOverrideError = null;
+  UI.commitOverrideStatus = null;
+  if (!rank){
+    UI.commitOverrideError = 'Enter the player rank to clear.';
+    render(); return;
+  }
+  const pid = 'r' + rank;
+  const prospect = DB.prospects && DB.prospects[pid];
+  if (!prospect){
+    UI.commitOverrideError = 'No opened prospect exists for rank #' + rank + '.';
+    render(); return;
+  }
+  if (DB.manualCommitOverrides) delete DB.manualCommitOverrides[pid];
+  prospect.commitTeam = '';
+  applyConditionalRescinds();
+  DB.commitUpdatedAt = Date.now();
+  UI.commitOverrideTeam = '';
+  UI.commitOverrideStatus = 'Manual override cleared for #' + rank + ' ' + prospect.name + '.';
+  await saveDBNow();
+  render();
 }
 
 async function updateCommitsFromSheet(){
@@ -3746,8 +3826,22 @@ function renderClassSetup(){
   html += '<button class="rb-btn rb-btn-gold" id="rb-update-commits" ' + (UI.updatingCommits || (!apiAvailable() && !DB.commitSheetUrl) ? 'disabled' : '') + '>' + (UI.updatingCommits ? 'Updating...' : 'Manual push') + '</button>';
   if (DB.commitUpdatedAt) html += '<span class="rb-mono" style="font-size:12px;color:var(--slate);">Last update: ' + escapeHtml(new Date(DB.commitUpdatedAt).toLocaleString()) + '</span>';
   html += '</div>';
+  html += '<div style="border-top:1px solid var(--hairline);margin-top:14px;padding-top:14px;">';
+  html += '<div class="rb-mono" style="font-size:12px;color:var(--slate);margin-bottom:10px;">Manual commit override</div>';
+  html += '<div class="rb-commit-override-grid">';
+  html += '<input class="rb-input" id="rb-commit-override-rank" inputmode="numeric" placeholder="Rank" value="' + escapeHtml(UI.commitOverrideRank || '') + '" />';
+  html += '<input class="rb-input" id="rb-commit-override-team" placeholder="Committed team" value="' + escapeHtml(UI.commitOverrideTeam || '') + '" list="rb-commit-override-team-options" />';
+  html += '<button class="rb-btn rb-btn-gold" id="rb-apply-commit-override">Apply</button>';
+  html += '<button class="rb-btn" id="rb-clear-commit-override">Clear</button>';
+  html += '</div>';
+  html += '<datalist id="rb-commit-override-team-options">';
+  activeTeamBrands().forEach(function(brand){ html += '<option value="' + escapeHtml(brand.region) + '"></option>'; });
+  html += '</datalist>';
+  html += '</div>';
   if (UI.commitStatus) html += '<div style="font-size:12px;color:var(--gold);margin-top:8px;">' + escapeHtml(UI.commitStatus) + '</div>';
   if (UI.commitError) html += '<div style="font-size:12px;color:var(--alert);margin-top:8px;">' + escapeHtml(UI.commitError) + '</div>';
+  if (UI.commitOverrideStatus) html += '<div style="font-size:12px;color:var(--gold);margin-top:8px;">' + escapeHtml(UI.commitOverrideStatus) + '</div>';
+  if (UI.commitOverrideError) html += '<div style="font-size:12px;color:var(--alert);margin-top:8px;">' + escapeHtml(UI.commitOverrideError) + '</div>';
   html += '</div>';
 
   const backup = UI.backupStatus || {};
@@ -4505,6 +4599,10 @@ function bindEvents(){
   if (exportPromiseArchiveBtn) exportPromiseArchiveBtn.onclick = exportPromiseArchive;
   const updateCommitsBtn = document.getElementById('rb-update-commits');
   if (updateCommitsBtn) updateCommitsBtn.onclick = updateCommitsFromSheet;
+  const applyCommitOverrideBtn = document.getElementById('rb-apply-commit-override');
+  if (applyCommitOverrideBtn) applyCommitOverrideBtn.onclick = applyManualCommitOverride;
+  const clearCommitOverrideBtn = document.getElementById('rb-clear-commit-override');
+  if (clearCommitOverrideBtn) clearCommitOverrideBtn.onclick = clearManualCommitOverride;
   const runBackupBtn = document.getElementById('rb-run-backup');
   if (runBackupBtn) runBackupBtn.onclick = runBackupNow;
   const refreshBackupBtn = document.getElementById('rb-refresh-backup');

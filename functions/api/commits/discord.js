@@ -129,6 +129,12 @@ export function applyDiscordCommits(state, commits) {
     updated++;
   });
 
+  Object.keys(state.manualCommitOverrides || {}).forEach((pid) => {
+    const prospect = prospects[pid];
+    const team = String(state.manualCommitOverrides[pid]?.team || '').trim();
+    if (prospect && team) prospect.commitTeam = team;
+  });
+
   const conditionalRescinds = applyConditionalRescinds(state);
   state.prospects = prospects;
   state.commitUpdatedAt = Date.now();
