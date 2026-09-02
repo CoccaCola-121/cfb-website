@@ -428,6 +428,10 @@ body { margin: 0; background: #0F1420; }
   gap: 6px;
   margin: 0 0 12px 0;
 }
+.rb-position-count-actions {
+  display: inline-flex;
+  gap: 5px;
+}
 .rb-position-count {
   display: inline-flex;
   align-items: baseline;
@@ -444,6 +448,11 @@ body { margin: 0; background: #0F1420; }
 }
 .rb-position-count:hover { border-color: var(--gold-dim); }
 .rb-position-count-muted { opacity: 0.38; background: var(--ink); }
+.rb-position-count-action {
+  color: var(--slate);
+  font-size: 11px;
+  padding: 5px 7px;
+}
 .rb-position-count strong {
   color: var(--chalk);
   font-size: 12px;
@@ -683,6 +692,11 @@ function escapeHtml(s){
   return String(s == null ? '' : s).replace(/[&<>"']/g, function(c){
     return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c];
   });
+}
+
+function cssEscape(value){
+  if (window.CSS && typeof window.CSS.escape === 'function') return window.CSS.escape(String(value || ''));
+  return String(value || '').replace(/["\\]/g, '\\$&');
 }
 
 function shortText(value, max){
@@ -3499,7 +3513,12 @@ function renderPositionCounts(items, getPosition, filterKey){
     return a.localeCompare(b);
   });
   if (!positions.length) return '';
-  return '<div class="rb-position-counts" aria-label="Position counts">' + positions.map(function(pos){
+  return '<div class="rb-position-counts" aria-label="Position counts">' +
+    '<span class="rb-position-count-actions">' +
+      '<button type="button" class="rb-position-count rb-position-count-action" data-position-set="' + escapeHtml(filterKey) + '" data-position-set-mode="all">Select all</button>' +
+      '<button type="button" class="rb-position-count rb-position-count-action" data-position-set="' + escapeHtml(filterKey) + '" data-position-set-mode="none">Select none</button>' +
+    '</span>' +
+    positions.map(function(pos){
     const muted = !!hidden[pos];
     return '<button type="button" class="rb-position-count' + (muted ? ' rb-position-count-muted' : '') + '" data-position-filter="' + escapeHtml(filterKey) + '" data-position-bucket="' + escapeHtml(pos) + '" aria-pressed="' + (muted ? 'true' : 'false') + '"><strong>' + escapeHtml(pos) + '</strong><span>' + counts[pos] + '</span></button>';
   }).join('') + '</div>';
@@ -3536,7 +3555,7 @@ function renderMyOffers(){
   html += '<div style="font-size:13px;color:var(--slate);margin-bottom:12px;">' + rows.length + ' offer' + (rows.length === 1 ? '' : 's') + ' from ' + escapeHtml(SESSION.team) + '.</div>';
   html += renderPositionCounts(rows, function(row){ return row.prospect && row.prospect.position; }, filterKey);
   html += '<div style="margin-bottom:12px;"><button class="rb-btn rb-btn-gold" id="rb-open-submit" ' + (DB.offersLocked ? 'disabled title="Offers are locked"' : '') + '>' + (DB.offersLocked ? 'Offers locked' : 'Submit offer') + '</button></div>';
-  html += '<input class="rb-input" id="rb-my-offer-search" placeholder="Search your offers by recruit name, rank, position, or hometown" />';
+  html += '<input class="rb-input" id="rb-my-offer-search" placeholder="Search your offers by recruit name, rank, or hometown" />';
   if (UI.rescindError) html += '<div style="font-size:12px;color:var(--alert);margin-top:8px;">' + escapeHtml(UI.rescindError) + '</div>';
   html += '</div>';
 
@@ -3548,7 +3567,7 @@ function renderMyOffers(){
       const p = row.prospect || {};
       const o = row.offer;
       const bucket = positionBucket(p.position);
-      const searchText = [p.rank, '#' + p.rank, p.name, p.position, p.hometown, p.storyline].join(' ').toLowerCase();
+      const searchText = [p.rank, '#' + p.rank, p.name, p.hometown, p.storyline].join(' ').toLowerCase();
       html += '<div class="rb-card rb-mobile-tight" data-my-offer-card="1" data-position-bucket="' + escapeHtml(bucket) + '" data-search="' + escapeHtml(searchText) + '" style="padding:14px 18px;">';
       html += '<details>';
       html += '<summary class="rb-offer-summary rb-my-offer-summary-grid" style="list-style:none;cursor:pointer;">';
@@ -3599,7 +3618,7 @@ function renderCommitsForTeam(team, title){
   html += '<div class="rb-h" style="font-size:18px;margin-bottom:6px;">' + escapeHtml(title) + '</div>';
   html += '<div style="font-size:13px;color:var(--slate);margin-bottom:12px;">' + commits.length + ' commit' + (commits.length === 1 ? '' : 's') + ' for ' + escapeHtml(team) + '.</div>';
   html += renderPositionCounts(commits, function(p){ return p && p.position; }, filterKey);
-  html += '<input class="rb-input" id="rb-my-commit-search" placeholder="Search commits by recruit name, rank, position, hometown, or promise" />';
+  html += '<input class="rb-input" id="rb-my-commit-search" placeholder="Search commits by recruit name, rank, hometown, or promise" />';
   html += '</div>';
   if (!commits.length){
     html += '<div class="rb-card" style="padding:28px;text-align:center;color:var(--slate);">No commits yet.</div>';
@@ -3610,7 +3629,7 @@ function renderCommitsForTeam(team, title){
     const offers = (DB.offersByProspect[p.id] || []).filter(function(o){ return o.team === team; });
     const promiseSearch = offers.map(function(o){ return (o.promises || []).map(function(pr){ return pr.text || ''; }).join(' '); }).join(' ');
     const bucket = positionBucket(p.position);
-    const searchText = [p.rank, '#' + p.rank, p.name, p.position, p.hometown, promiseSearch].join(' ').toLowerCase();
+    const searchText = [p.rank, '#' + p.rank, p.name, p.hometown, promiseSearch].join(' ').toLowerCase();
     html += '<div class="rb-card" data-my-commit-card="1" data-position-bucket="' + escapeHtml(bucket) + '" data-search="' + escapeHtml(searchText) + '" style="padding:14px 18px;">';
     html += '<details>';
     html += '<summary class="rb-offer-summary" style="list-style:none;cursor:pointer;">';
@@ -3658,7 +3677,7 @@ function renderTeamOffers(){
   html += '<div class="rb-h" style="font-size:18px;margin-bottom:6px;">' + escapeHtml(team) + ' Offers</div>';
   html += '<div style="font-size:13px;color:var(--slate);margin-bottom:12px;">' + rows.length + ' offer' + (rows.length === 1 ? '' : 's') + ' from ' + escapeHtml(team) + '.</div>';
   html += renderPositionCounts(rows, function(row){ return row.prospect && row.prospect.position; }, filterKey);
-  html += '<input class="rb-input" id="rb-my-offer-search" placeholder="Search offers by recruit name, rank, position, or hometown" />';
+  html += '<input class="rb-input" id="rb-my-offer-search" placeholder="Search offers by recruit name, rank, or hometown" />';
   html += '</div>';
   if (!rows.length) return html + '<div class="rb-card" style="padding:28px;text-align:center;color:var(--slate);">No offers yet.</div>';
   html += '<div style="display:flex;flex-direction:column;gap:10px;">';
@@ -3666,7 +3685,7 @@ function renderTeamOffers(){
     const p = row.prospect || {};
     const o = row.offer;
     const bucket = positionBucket(p.position);
-    const searchText = [p.rank, '#' + p.rank, p.name, p.position, p.hometown, p.storyline].join(' ').toLowerCase();
+    const searchText = [p.rank, '#' + p.rank, p.name, p.hometown, p.storyline].join(' ').toLowerCase();
     html += '<div class="rb-card" data-my-offer-card="1" data-position-bucket="' + escapeHtml(bucket) + '" data-search="' + escapeHtml(searchText) + '" style="padding:12px 16px;">';
     html += '<details>';
     html += '<summary class="rb-offer-summary" style="list-style:none;cursor:pointer;display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:14px;">';
@@ -3768,7 +3787,7 @@ function renderFeed(){
   if (!recruitingStageConfig().usesWaves && DB.threads.length === 1){
     return renderThreadProspectList(DB.threads[0]);
   }
-  let html = '<input class="rb-input" id="rb-board-search" placeholder="Search offers by recruit name, rank, position, or hometown" style="margin-bottom:14px;" />';
+  let html = '<input class="rb-input" id="rb-board-search" placeholder="Search offers by recruit name, rank, or hometown" style="margin-bottom:14px;" />';
   html += '<div id="rb-board-cards" class="rb-board-list">';
   DB.threads.forEach(function(t){
     const visibleIds = visibleBoardProspectIds(t);
@@ -3781,7 +3800,7 @@ function renderFeed(){
     const uncommittedLabel = uncommittedStatusLabel(uncommittedCount);
     const threadSearch = visibleIds.map(function(pid){
       const p = DB.prospects[pid] || {};
-      return [p.rank, '#' + p.rank, p.name, p.position, p.hometown].join(' ');
+      return [p.rank, '#' + p.rank, p.name, p.hometown].join(' ');
     }).join(' ').toLowerCase();
     html += '<div class="rb-card rb-board-tile" data-board-card="1" data-search="' + escapeHtml(threadSearch) + '" data-open-thread="' + t.id + '">' +
       '<div class="rb-board-tile-inner">' +
@@ -3798,7 +3817,7 @@ function renderFeed(){
   DB.threads.forEach(function(t){
     visibleBoardProspectIds(t).forEach(function(pid){
       const p = DB.prospects[pid] || {};
-      const searchText = [p.rank, '#' + p.rank, p.name, p.position, p.hometown].join(' ').toLowerCase();
+      const searchText = [p.rank, '#' + p.rank, p.name, p.hometown].join(' ').toLowerCase();
       html += renderProspectBoardCard(pid, searchText);
     });
   });
@@ -3808,19 +3827,21 @@ function renderFeed(){
 
 function renderThreadProspectList(t){
   if (!t) return '<div style="color:var(--slate);">Thread not found.</div>';
+  const filterKey = positionFilterKey('board', t.id);
   let html = '<div class="rb-h" style="font-size:20px;margin-bottom:4px;">' + escapeHtml(t.title) + '</div>';
   html += '<div style="font-size:13px;color:var(--slate);margin-bottom:18px;">' + rankRangeForThread(t) + ' on the board. Offers from every team stay visible here.</div>';
   html += '<div class="rb-card" style="padding:14px 16px;margin-bottom:14px;">';
-  html += '<input class="rb-input" data-thread-search="' + t.id + '" placeholder="Search offers by recruit name, rank, position, or hometown" />';
+  const visibleIds = visibleBoardProspectIds(t);
+  html += renderPositionCounts(visibleIds, function(pid){ return DB.prospects[pid] && DB.prospects[pid].position; }, filterKey);
+  html += '<input class="rb-input" data-thread-search="' + t.id + '" placeholder="Search offers by recruit name, rank, or hometown" />';
   html += '<div class="rb-filter-row"><label class="rb-toggle"><span>Hide committed players</span><input type="checkbox" id="rb-hide-committed-boards" ' + (UI.hideCommittedBoards ? 'checked' : '') + ' /><span class="rb-switch-track"><span class="rb-switch-thumb"></span></span></label></div>';
   html += '</div>';
 
   html += '<div style="display:flex;flex-direction:column;gap:10px;">';
-  const visibleIds = visibleBoardProspectIds(t);
   visibleIds.forEach(function(pid){
     const p = DB.prospects[pid];
     if (!p) return;
-    const searchText = [p.rank, '#' + p.rank, p.name, p.position, p.hometown].join(' ').toLowerCase();
+    const searchText = [p.rank, '#' + p.rank, p.name, p.hometown].join(' ').toLowerCase();
     html += renderProspectBoardCard(pid, searchText);
   });
   if (!visibleIds.length) html += '<div class="rb-card" style="padding:28px;text-align:center;color:var(--slate);">No uncommitted prospects on this board.</div>';
@@ -3832,10 +3853,11 @@ function renderProspectBoardCard(pid, searchAttr){
   const p = DB.prospects[pid];
   if (!p) return '';
   const offers = DB.offersByProspect[pid] || [];
-  const searchText = searchAttr || [p.rank, '#' + p.rank, p.name, p.position, p.hometown].join(' ').toLowerCase();
+  const searchText = searchAttr || [p.rank, '#' + p.rank, p.name, p.hometown].join(' ').toLowerCase();
+  const bucket = positionBucket(p.position);
   const currentThread = UI.view === 'thread' ? DB.threads.find(function(t){ return t.id === UI.threadId; }) : null;
   const commitReturn = currentThread ? { view: 'thread', threadId: currentThread.id, label: currentThread.title } : { view: 'feed', label: 'Prospect Board' };
-  let html = '<div class="rb-card rb-mobile-tight" data-prospect-card="1" data-search="' + escapeHtml(searchText) + '" data-open-prospect="' + pid + '" style="padding:14px 18px;cursor:pointer;' + (p.commitTeam ? committedCardStyle(p.commitTeam) : '') + '">';
+  let html = '<div class="rb-card rb-mobile-tight" data-prospect-card="1" data-position-bucket="' + escapeHtml(bucket) + '" data-search="' + escapeHtml(searchText) + '" data-open-prospect="' + pid + '" style="padding:14px 18px;cursor:pointer;' + (p.commitTeam ? committedCardStyle(p.commitTeam) : '') + '">';
   html += '<div style="display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:10px;">';
   html += '<div style="min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' +
     '<span class="rb-mono" style="color:var(--slate);">#' + p.rank + '</span> ' +
@@ -4432,16 +4454,6 @@ function bindEvents(){
     saveOfferEdit(pending.form, { coach: !!pending.coach, campus: !!pending.campus });
   };
 
-  document.querySelectorAll('[data-thread-search]').forEach(function(el){
-    el.oninput = function(){
-      const q = el.value.toLowerCase().trim();
-      document.querySelectorAll('[data-prospect-card]').forEach(function(card){
-        const haystack = card.getAttribute('data-search') || '';
-        card.style.display = !q || haystack.indexOf(q) !== -1 ? '' : 'none';
-      });
-    };
-  });
-
   const boardSearch = document.getElementById('rb-board-search');
   if (boardSearch) boardSearch.oninput = function(){
     const q = boardSearch.value.toLowerCase().trim();
@@ -4464,13 +4476,14 @@ function bindEvents(){
     render();
   };
 
-  function applyPositionListFilters(kind){
-    const search = kind === 'commits' ? document.getElementById('rb-my-commit-search') : document.getElementById('rb-my-offer-search');
+  function applyPositionListFilters(kind, filterKey){
+    const search = kind === 'commits' ? document.getElementById('rb-my-commit-search') : (kind === 'board' ? document.querySelector('[data-thread-search]') : document.getElementById('rb-my-offer-search'));
     const q = search ? search.value.toLowerCase().trim() : '';
-    const selector = kind === 'commits' ? '[data-my-commit-card]' : '[data-my-offer-card]';
+    const selector = kind === 'commits' ? '[data-my-commit-card]' : (kind === 'board' ? '[data-prospect-card]' : '[data-my-offer-card]');
     const activeKeys = {};
     document.querySelectorAll('[data-position-filter]').forEach(function(el){
       const key = el.getAttribute('data-position-filter') || '';
+      if (filterKey && key !== filterKey) return;
       if (key.indexOf(kind + ':') === 0) activeKeys[key] = true;
     });
     document.querySelectorAll(selector).forEach(function(card){
@@ -4495,7 +4508,37 @@ function bindEvents(){
       UI.positionFilters[key][bucket] = !UI.positionFilters[key][bucket];
       el.classList.toggle('rb-position-count-muted', !!UI.positionFilters[key][bucket]);
       el.setAttribute('aria-pressed', UI.positionFilters[key][bucket] ? 'true' : 'false');
-      applyPositionListFilters(key.indexOf('commits:') === 0 ? 'commits' : 'offers');
+      applyPositionListFilters(key.split(':')[0] || 'offers', key);
+    };
+  });
+
+  document.querySelectorAll('[data-position-set]').forEach(function(el){
+    el.onclick = function(){
+      const key = el.getAttribute('data-position-set') || '';
+      const mode = el.getAttribute('data-position-set-mode') || 'all';
+      if (!key) return;
+      if (!UI.positionFilters) UI.positionFilters = {};
+      UI.positionFilters[key] = {};
+      if (mode === 'none'){
+        document.querySelectorAll('[data-position-filter="' + cssEscape(key) + '"]').forEach(function(chip){
+          const bucket = chip.getAttribute('data-position-bucket') || '';
+          if (bucket) UI.positionFilters[key][bucket] = true;
+        });
+      }
+      document.querySelectorAll('[data-position-filter="' + cssEscape(key) + '"]').forEach(function(chip){
+        const bucket = chip.getAttribute('data-position-bucket') || '';
+        const muted = !!(bucket && UI.positionFilters[key][bucket]);
+        chip.classList.toggle('rb-position-count-muted', muted);
+        chip.setAttribute('aria-pressed', muted ? 'true' : 'false');
+      });
+      applyPositionListFilters(key.split(':')[0] || 'offers', key);
+    };
+  });
+
+  document.querySelectorAll('[data-thread-search]').forEach(function(el){
+    el.oninput = function(){
+      const key = document.querySelector('[data-position-filter]') ? document.querySelector('[data-position-filter]').getAttribute('data-position-filter') : '';
+      applyPositionListFilters('board', key);
     };
   });
 
@@ -4510,6 +4553,7 @@ function bindEvents(){
   };
   applyPositionListFilters('offers');
   applyPositionListFilters('commits');
+  applyPositionListFilters('board');
 
   const discordLoginBtn = document.getElementById('rb-discord-login-btn');
   if (discordLoginBtn) discordLoginBtn.onclick = beginDiscordLogin;
