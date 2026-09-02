@@ -432,12 +432,18 @@ body { margin: 0; background: #0F1420; }
   display: inline-flex;
   align-items: baseline;
   gap: 5px;
+  font-family: 'Inter', sans-serif;
   border: 1px solid var(--hairline);
   border-radius: 6px;
   background: var(--panel-alt);
+  color: inherit;
   padding: 5px 8px;
   line-height: 1;
+  cursor: pointer;
+  transition: opacity .15s, border-color .15s, background .15s;
 }
+.rb-position-count:hover { border-color: var(--gold-dim); }
+.rb-position-count-muted { opacity: 0.38; background: var(--ink); }
 .rb-position-count strong {
   color: var(--chalk);
   font-size: 12px;
@@ -559,7 +565,8 @@ let UI = { view: 'feed', threadId: null, showSubmitModal: false, submitting: fal
            pendingMassRescindFinal: null, pendingSingleRescind: null,
            backupStatus: null, backupError: null, backingUp: false,
            teamAdminModal: null, brandingFileName: '', adminActionStatus: null, adminActionError: null,
-           commitOverrideRank: '', commitOverrideTeam: '', commitOverrideStatus: null, commitOverrideError: null };
+           commitOverrideRank: '', commitOverrideTeam: '', commitOverrideStatus: null, commitOverrideError: null,
+           positionFilters: {} };
 let dbReady = false, sessionReady = false;
 let summaryTimer = null;
 let leagueSyncTimer = null;
@@ -3449,8 +3456,7 @@ function getOfferRowsForTeam(team){
   return rows;
 }
 
-function renderPositionCounts(items, getPosition){
-  const order = ['QB','RB','WR','TE','OL','DL','LB','CB','S','K','P'];
+function positionBucket(position){
   const positionGroups = {
     HB: 'RB',
     FB: 'RB',
@@ -3465,13 +3471,27 @@ function renderPositionCounts(items, getPosition){
     FS: 'S',
     SS: 'S'
   };
+  const rawPos = String(position || '').trim().toUpperCase();
+  return positionGroups[rawPos] || rawPos;
+}
+
+function positionFilterKey(kind, team){
+  return kind + ':' + teamKey(team || '');
+}
+
+function hiddenPositionBuckets(filterKey){
+  return (UI.positionFilters && UI.positionFilters[filterKey]) || {};
+}
+
+function renderPositionCounts(items, getPosition, filterKey){
+  const order = ['QB','RB','WR','TE','OL','DL','LB','CB','S','K','P'];
   const counts = {};
   (items || []).forEach(function(item){
-    const rawPos = String(getPosition(item) || '').trim().toUpperCase();
-    const pos = positionGroups[rawPos] || rawPos;
+    const pos = positionBucket(getPosition(item));
     if (!pos) return;
     counts[pos] = (counts[pos] || 0) + 1;
   });
+  const hidden = hiddenPositionBuckets(filterKey);
   const positions = Object.keys(counts).sort(function(a,b){
     const ai = order.indexOf(a);
     const bi = order.indexOf(b);
@@ -3480,7 +3500,8 @@ function renderPositionCounts(items, getPosition){
   });
   if (!positions.length) return '';
   return '<div class="rb-position-counts" aria-label="Position counts">' + positions.map(function(pos){
-    return '<span class="rb-position-count"><strong>' + escapeHtml(pos) + '</strong><span>' + counts[pos] + '</span></span>';
+    const muted = !!hidden[pos];
+    return '<button type="button" class="rb-position-count' + (muted ? ' rb-position-count-muted' : '') + '" data-position-filter="' + escapeHtml(filterKey) + '" data-position-bucket="' + escapeHtml(pos) + '" aria-pressed="' + (muted ? 'true' : 'false') + '"><strong>' + escapeHtml(pos) + '</strong><span>' + counts[pos] + '</span></button>';
   }).join('') + '</div>';
 }
 
@@ -3508,11 +3529,12 @@ function renderMyOffers(){
     return '<div class="rb-card" style="padding:32px;text-align:center;color:var(--slate);">Log in to view your offers.</div>';
   }
   const rows = getOfferRowsForTeam(SESSION.team);
+  const filterKey = positionFilterKey('offers', SESSION.team);
   let html = renderVisitLedger();
   html += '<div class="rb-card" style="padding:18px 20px;margin-bottom:14px;">';
   html += '<div class="rb-h" style="font-size:18px;margin-bottom:6px;">My Offers</div>';
   html += '<div style="font-size:13px;color:var(--slate);margin-bottom:12px;">' + rows.length + ' offer' + (rows.length === 1 ? '' : 's') + ' from ' + escapeHtml(SESSION.team) + '.</div>';
-  html += renderPositionCounts(rows, function(row){ return row.prospect && row.prospect.position; });
+  html += renderPositionCounts(rows, function(row){ return row.prospect && row.prospect.position; }, filterKey);
   html += '<div style="margin-bottom:12px;"><button class="rb-btn rb-btn-gold" id="rb-open-submit" ' + (DB.offersLocked ? 'disabled title="Offers are locked"' : '') + '>' + (DB.offersLocked ? 'Offers locked' : 'Submit offer') + '</button></div>';
   html += '<input class="rb-input" id="rb-my-offer-search" placeholder="Search your offers by recruit name, rank, position, or hometown" />';
   if (UI.rescindError) html += '<div style="font-size:12px;color:var(--alert);margin-top:8px;">' + escapeHtml(UI.rescindError) + '</div>';
@@ -3525,8 +3547,9 @@ function renderMyOffers(){
     rows.forEach(function(row){
       const p = row.prospect || {};
       const o = row.offer;
+      const bucket = positionBucket(p.position);
       const searchText = [p.rank, '#' + p.rank, p.name, p.position, p.hometown, p.storyline].join(' ').toLowerCase();
-      html += '<div class="rb-card rb-mobile-tight" data-my-offer-card="1" data-search="' + escapeHtml(searchText) + '" style="padding:14px 18px;">';
+      html += '<div class="rb-card rb-mobile-tight" data-my-offer-card="1" data-position-bucket="' + escapeHtml(bucket) + '" data-search="' + escapeHtml(searchText) + '" style="padding:14px 18px;">';
       html += '<details>';
       html += '<summary class="rb-offer-summary rb-my-offer-summary-grid" style="list-style:none;cursor:pointer;">';
       html += '<span style="min-width:0;display:flex;flex-direction:column;gap:10px;">';
@@ -3571,10 +3594,11 @@ function renderPromiseChips(offers){
 
 function renderCommitsForTeam(team, title){
   const commits = getCommitRowsForTeam(team);
+  const filterKey = positionFilterKey('commits', team);
   let html = '<div class="rb-card" style="padding:18px 20px;margin-bottom:14px;">';
   html += '<div class="rb-h" style="font-size:18px;margin-bottom:6px;">' + escapeHtml(title) + '</div>';
   html += '<div style="font-size:13px;color:var(--slate);margin-bottom:12px;">' + commits.length + ' commit' + (commits.length === 1 ? '' : 's') + ' for ' + escapeHtml(team) + '.</div>';
-  html += renderPositionCounts(commits, function(p){ return p && p.position; });
+  html += renderPositionCounts(commits, function(p){ return p && p.position; }, filterKey);
   html += '<input class="rb-input" id="rb-my-commit-search" placeholder="Search commits by recruit name, rank, position, hometown, or promise" />';
   html += '</div>';
   if (!commits.length){
@@ -3585,8 +3609,9 @@ function renderCommitsForTeam(team, title){
   commits.forEach(function(p){
     const offers = (DB.offersByProspect[p.id] || []).filter(function(o){ return o.team === team; });
     const promiseSearch = offers.map(function(o){ return (o.promises || []).map(function(pr){ return pr.text || ''; }).join(' '); }).join(' ');
+    const bucket = positionBucket(p.position);
     const searchText = [p.rank, '#' + p.rank, p.name, p.position, p.hometown, promiseSearch].join(' ').toLowerCase();
-    html += '<div class="rb-card" data-my-commit-card="1" data-search="' + escapeHtml(searchText) + '" style="padding:14px 18px;">';
+    html += '<div class="rb-card" data-my-commit-card="1" data-position-bucket="' + escapeHtml(bucket) + '" data-search="' + escapeHtml(searchText) + '" style="padding:14px 18px;">';
     html += '<details>';
     html += '<summary class="rb-offer-summary" style="list-style:none;cursor:pointer;">';
     html += '<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;">';
@@ -3627,11 +3652,12 @@ function renderTeamOffers(){
   const team = UI.teamOffersTeam || UI.teamCommitsTeam || '';
   if (!team) return '<div class="rb-card" style="padding:28px;text-align:center;color:var(--slate);">No team selected.</div>';
   const rows = getOfferRowsForTeam(team);
+  const filterKey = positionFilterKey('offers', team);
   let html = '<div style="margin-bottom:16px;display:flex;gap:10px;align-items:center;flex-wrap:wrap;"><button class="rb-btn" data-nav="teams">&larr; Back to Teams</button><button class="rb-btn" data-open-team-commits-button="' + escapeHtml(team) + '">View Commits</button></div>';
   html += '<div class="rb-card" style="padding:18px 20px;margin-bottom:14px;">';
   html += '<div class="rb-h" style="font-size:18px;margin-bottom:6px;">' + escapeHtml(team) + ' Offers</div>';
   html += '<div style="font-size:13px;color:var(--slate);margin-bottom:12px;">' + rows.length + ' offer' + (rows.length === 1 ? '' : 's') + ' from ' + escapeHtml(team) + '.</div>';
-  html += renderPositionCounts(rows, function(row){ return row.prospect && row.prospect.position; });
+  html += renderPositionCounts(rows, function(row){ return row.prospect && row.prospect.position; }, filterKey);
   html += '<input class="rb-input" id="rb-my-offer-search" placeholder="Search offers by recruit name, rank, position, or hometown" />';
   html += '</div>';
   if (!rows.length) return html + '<div class="rb-card" style="padding:28px;text-align:center;color:var(--slate);">No offers yet.</div>';
@@ -3639,8 +3665,9 @@ function renderTeamOffers(){
   rows.forEach(function(row){
     const p = row.prospect || {};
     const o = row.offer;
+    const bucket = positionBucket(p.position);
     const searchText = [p.rank, '#' + p.rank, p.name, p.position, p.hometown, p.storyline].join(' ').toLowerCase();
-    html += '<div class="rb-card" data-my-offer-card="1" data-search="' + escapeHtml(searchText) + '" style="padding:12px 16px;">';
+    html += '<div class="rb-card" data-my-offer-card="1" data-position-bucket="' + escapeHtml(bucket) + '" data-search="' + escapeHtml(searchText) + '" style="padding:12px 16px;">';
     html += '<details>';
     html += '<summary class="rb-offer-summary" style="list-style:none;cursor:pointer;display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:14px;">';
     html += '<span style="min-width:0;display:flex;align-items:baseline;gap:10px;white-space:nowrap;overflow:hidden;">' +
@@ -4437,23 +4464,52 @@ function bindEvents(){
     render();
   };
 
+  function applyPositionListFilters(kind){
+    const search = kind === 'commits' ? document.getElementById('rb-my-commit-search') : document.getElementById('rb-my-offer-search');
+    const q = search ? search.value.toLowerCase().trim() : '';
+    const selector = kind === 'commits' ? '[data-my-commit-card]' : '[data-my-offer-card]';
+    const activeKeys = {};
+    document.querySelectorAll('[data-position-filter]').forEach(function(el){
+      const key = el.getAttribute('data-position-filter') || '';
+      if (key.indexOf(kind + ':') === 0) activeKeys[key] = true;
+    });
+    document.querySelectorAll(selector).forEach(function(card){
+      const haystack = card.getAttribute('data-search') || '';
+      const bucket = card.getAttribute('data-position-bucket') || '';
+      let hiddenByPosition = false;
+      Object.keys(UI.positionFilters || {}).forEach(function(key){
+        if (!activeKeys[key]) return;
+        if ((UI.positionFilters[key] || {})[bucket]) hiddenByPosition = true;
+      });
+      card.style.display = (!q || haystack.indexOf(q) !== -1) && !hiddenByPosition ? '' : 'none';
+    });
+  }
+
+  document.querySelectorAll('[data-position-filter]').forEach(function(el){
+    el.onclick = function(){
+      const key = el.getAttribute('data-position-filter') || '';
+      const bucket = el.getAttribute('data-position-bucket') || '';
+      if (!key || !bucket) return;
+      if (!UI.positionFilters) UI.positionFilters = {};
+      if (!UI.positionFilters[key]) UI.positionFilters[key] = {};
+      UI.positionFilters[key][bucket] = !UI.positionFilters[key][bucket];
+      el.classList.toggle('rb-position-count-muted', !!UI.positionFilters[key][bucket]);
+      el.setAttribute('aria-pressed', UI.positionFilters[key][bucket] ? 'true' : 'false');
+      applyPositionListFilters(key.indexOf('commits:') === 0 ? 'commits' : 'offers');
+    };
+  });
+
   const myOfferSearch = document.getElementById('rb-my-offer-search');
   if (myOfferSearch) myOfferSearch.oninput = function(){
-    const q = myOfferSearch.value.toLowerCase().trim();
-    document.querySelectorAll('[data-my-offer-card]').forEach(function(card){
-      const haystack = card.getAttribute('data-search') || '';
-      card.style.display = !q || haystack.indexOf(q) !== -1 ? '' : 'none';
-    });
+    applyPositionListFilters('offers');
   };
 
   const myCommitSearch = document.getElementById('rb-my-commit-search');
   if (myCommitSearch) myCommitSearch.oninput = function(){
-    const q = myCommitSearch.value.toLowerCase().trim();
-    document.querySelectorAll('[data-my-commit-card]').forEach(function(card){
-      const haystack = card.getAttribute('data-search') || '';
-      card.style.display = !q || haystack.indexOf(q) !== -1 ? '' : 'none';
-    });
+    applyPositionListFilters('commits');
   };
+  applyPositionListFilters('offers');
+  applyPositionListFilters('commits');
 
   const discordLoginBtn = document.getElementById('rb-discord-login-btn');
   if (discordLoginBtn) discordLoginBtn.onclick = beginDiscordLogin;
