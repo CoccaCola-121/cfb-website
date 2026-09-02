@@ -78,6 +78,30 @@ body { margin: 0; background: #0F1420; }
 .rb-scrollbar::-webkit-scrollbar-thumb { background: var(--hairline); border-radius: 4px; }
 .rb-tag { font-size: 11px; background: var(--panel-alt); border: 1px solid var(--hairline); border-radius: 6px; padding: 6px 10px; margin-top: 4px; display: block; }
 .rb-filter-row { display: flex; gap: 10px; align-items: center; justify-content: flex-end; flex-wrap: wrap; margin-top: 10px; }
+.rb-segmented {
+  display: inline-flex;
+  gap: 2px;
+  padding: 3px;
+  border: 1px solid var(--hairline);
+  border-radius: 8px;
+  background: var(--ink);
+}
+.rb-segmented button {
+  font-family: 'Inter', sans-serif;
+  font-weight: 700;
+  font-size: 11px;
+  color: var(--slate);
+  background: transparent;
+  border: 0;
+  border-radius: 6px;
+  padding: 7px 10px;
+  cursor: pointer;
+}
+.rb-segmented button:hover { color: var(--chalk); }
+.rb-segmented button[aria-pressed="true"] {
+  color: #1A1508;
+  background: var(--gold);
+}
 .rb-toggle {
   display: inline-flex;
   align-items: center;
@@ -568,7 +592,7 @@ let UI = { view: 'feed', threadId: null, showSubmitModal: false, submitting: fal
            submitTargetId: null, editOfferTarget: null, editError: null, prospectReturnView: 'feed',
            pendingVisitEdit: null, loginStep: 'account', pendingDiscordUser: null,
            teamLinkQuery: '', unavailableTeamKeys: [], teamLinks: {}, teamSearch: '',
-           teamFilterCoached: false, hideCommittedBoards: false,
+           teamFilterCoached: false, hideCommittedBoards: false, boardCommitFilter: 'all',
            teamChangeDiscordId: '', teamChangeTeam: '', teamPending: { unlinks: {}, switches: {}, roles: {} },
            teamCommitsTeam: '', teamOffersTeam: '', teamCommitsReturn: null,
            brandingStatus: null, brandingError: null, conditionalError: null, conditionalStatus: null,
@@ -988,7 +1012,11 @@ function offerCountTag(pid){
 function visibleBoardProspectIds(t){
   return (t.prospectIds || []).filter(function(pid){
     const p = DB.prospects[pid];
-    return p && (!UI.hideCommittedBoards || !p.commitTeam);
+    const filter = UI.boardCommitFilter || (UI.hideCommittedBoards ? 'uncommitted' : 'all');
+    if (!p) return false;
+    if (filter === 'committed') return !!p.commitTeam;
+    if (filter === 'uncommitted') return !p.commitTeam;
+    return true;
   });
 }
 
@@ -3837,7 +3865,12 @@ function renderThreadProspectList(t){
   const visibleIds = visibleBoardProspectIds(t);
   html += renderPositionCounts(visibleIds, function(pid){ return DB.prospects[pid] && DB.prospects[pid].position; }, filterKey);
   html += '<input class="rb-input" data-thread-search="' + t.id + '" placeholder="search recruits by name, rank or hometown" />';
-  html += '<div class="rb-filter-row"><label class="rb-toggle"><span>Hide committed players</span><input type="checkbox" id="rb-hide-committed-boards" ' + (UI.hideCommittedBoards ? 'checked' : '') + ' /><span class="rb-switch-track"><span class="rb-switch-thumb"></span></span></label></div>';
+  const commitFilter = UI.boardCommitFilter || (UI.hideCommittedBoards ? 'uncommitted' : 'all');
+  html += '<div class="rb-filter-row"><div class="rb-segmented" aria-label="Commit status filter">';
+  [['committed','Committed'], ['all','All'], ['uncommitted','Uncommitted']].forEach(function(option){
+    html += '<button type="button" data-board-commit-filter="' + option[0] + '" aria-pressed="' + (commitFilter === option[0] ? 'true' : 'false') + '">' + option[1] + '</button>';
+  });
+  html += '</div></div>';
   html += '</div>';
 
   html += '<div style="display:flex;flex-direction:column;gap:10px;">';
@@ -4473,11 +4506,13 @@ function bindEvents(){
       card.style.display = !q || haystack.indexOf(q) !== -1 ? '' : 'none';
     });
   };
-  const hideCommittedBoards = document.getElementById('rb-hide-committed-boards');
-  if (hideCommittedBoards) hideCommittedBoards.onchange = function(){
-    UI.hideCommittedBoards = !!hideCommittedBoards.checked;
-    render();
-  };
+  document.querySelectorAll('[data-board-commit-filter]').forEach(function(el){
+    el.onclick = function(){
+      UI.boardCommitFilter = el.getAttribute('data-board-commit-filter') || 'all';
+      UI.hideCommittedBoards = UI.boardCommitFilter === 'uncommitted';
+      render();
+    };
+  });
 
   function applyPositionListFilters(kind, filterKey){
     const search = kind === 'commits' ? document.getElementById('rb-my-commit-search') : (kind === 'board' ? document.querySelector('[data-thread-search]') : document.getElementById('rb-my-offer-search'));
