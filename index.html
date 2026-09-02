@@ -422,6 +422,31 @@ body { margin: 0; background: #0F1420; }
   cursor: pointer;
 }
 .rb-team-option:hover { background: var(--panel-alt); }
+.rb-position-counts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0 0 12px 0;
+}
+.rb-position-count {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 5px;
+  border: 1px solid var(--hairline);
+  border-radius: 6px;
+  background: var(--panel-alt);
+  padding: 5px 8px;
+  line-height: 1;
+}
+.rb-position-count strong {
+  color: var(--chalk);
+  font-size: 12px;
+}
+.rb-position-count span {
+  color: var(--gold);
+  font-size: 12px;
+  font-weight: 700;
+}
 .rb-commit-override-grid {
   display: grid;
   grid-template-columns: minmax(90px, 120px) minmax(180px, 1fr) auto auto;
@@ -3424,6 +3449,26 @@ function getOfferRowsForTeam(team){
   return rows;
 }
 
+function renderPositionCounts(items, getPosition){
+  const order = ['QB','HB','FB','WR','TE','OT','OG','C','DE','DT','OLB','MLB','CB','FS','SS','K','P'];
+  const counts = {};
+  (items || []).forEach(function(item){
+    const pos = String(getPosition(item) || '').trim().toUpperCase();
+    if (!pos) return;
+    counts[pos] = (counts[pos] || 0) + 1;
+  });
+  const positions = Object.keys(counts).sort(function(a,b){
+    const ai = order.indexOf(a);
+    const bi = order.indexOf(b);
+    if (ai !== -1 || bi !== -1) return (ai === -1 ? 999 : ai) - (bi === -1 ? 999 : bi);
+    return a.localeCompare(b);
+  });
+  if (!positions.length) return '';
+  return '<div class="rb-position-counts" aria-label="Position counts">' + positions.map(function(pos){
+    return '<span class="rb-position-count"><strong>' + escapeHtml(pos) + '</strong><span>' + counts[pos] + '</span></span>';
+  }).join('') + '</div>';
+}
+
 function getVisitOfferRowsForTeam(team){
   return getOfferRowsForTeam(team).filter(function(row){
     const visits = normalizeVisits(row.offer.visits);
@@ -3452,6 +3497,7 @@ function renderMyOffers(){
   html += '<div class="rb-card" style="padding:18px 20px;margin-bottom:14px;">';
   html += '<div class="rb-h" style="font-size:18px;margin-bottom:6px;">My Offers</div>';
   html += '<div style="font-size:13px;color:var(--slate);margin-bottom:12px;">' + rows.length + ' offer' + (rows.length === 1 ? '' : 's') + ' from ' + escapeHtml(SESSION.team) + '.</div>';
+  html += renderPositionCounts(rows, function(row){ return row.prospect && row.prospect.position; });
   html += '<div style="margin-bottom:12px;"><button class="rb-btn rb-btn-gold" id="rb-open-submit" ' + (DB.offersLocked ? 'disabled title="Offers are locked"' : '') + '>' + (DB.offersLocked ? 'Offers locked' : 'Submit offer') + '</button></div>';
   html += '<input class="rb-input" id="rb-my-offer-search" placeholder="Search your offers by recruit name, rank, position, or hometown" />';
   if (UI.rescindError) html += '<div style="font-size:12px;color:var(--alert);margin-top:8px;">' + escapeHtml(UI.rescindError) + '</div>';
@@ -3513,6 +3559,7 @@ function renderCommitsForTeam(team, title){
   let html = '<div class="rb-card" style="padding:18px 20px;margin-bottom:14px;">';
   html += '<div class="rb-h" style="font-size:18px;margin-bottom:6px;">' + escapeHtml(title) + '</div>';
   html += '<div style="font-size:13px;color:var(--slate);margin-bottom:12px;">' + commits.length + ' commit' + (commits.length === 1 ? '' : 's') + ' for ' + escapeHtml(team) + '.</div>';
+  html += renderPositionCounts(commits, function(p){ return p && p.position; });
   html += '<input class="rb-input" id="rb-my-commit-search" placeholder="Search commits by recruit name, rank, position, hometown, or promise" />';
   html += '</div>';
   if (!commits.length){
@@ -3569,6 +3616,7 @@ function renderTeamOffers(){
   html += '<div class="rb-card" style="padding:18px 20px;margin-bottom:14px;">';
   html += '<div class="rb-h" style="font-size:18px;margin-bottom:6px;">' + escapeHtml(team) + ' Offers</div>';
   html += '<div style="font-size:13px;color:var(--slate);margin-bottom:12px;">' + rows.length + ' offer' + (rows.length === 1 ? '' : 's') + ' from ' + escapeHtml(team) + '.</div>';
+  html += renderPositionCounts(rows, function(row){ return row.prospect && row.prospect.position; });
   html += '<input class="rb-input" id="rb-my-offer-search" placeholder="Search offers by recruit name, rank, position, or hometown" />';
   html += '</div>';
   if (!rows.length) return html + '<div class="rb-card" style="padding:28px;text-align:center;color:var(--slate);">No offers yet.</div>';
