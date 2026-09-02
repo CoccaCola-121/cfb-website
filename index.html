@@ -642,6 +642,16 @@ function canLeaveTeamsPage(){
   return window.confirm('You have unsaved team changes. Leave without saving?');
 }
 
+function resetBoardFilters(){
+  if (UI.positionFilters){
+    Object.keys(UI.positionFilters).forEach(function(key){
+      if (key.indexOf('board:') === 0) delete UI.positionFilters[key];
+    });
+  }
+  UI.boardCommitFilter = 'all';
+  UI.hideCommittedBoards = false;
+}
+
 const VIEW_ROUTES = {
   feed: '/prospectboard',
   myoffers: '/myoffers',
@@ -683,8 +693,13 @@ function pathForView(view){
 
 function applyRoute(route){
   route = route || routeFromPath(window.location.pathname);
-  UI.view = route.view || 'feed';
-  UI.threadId = route.threadId || null;
+  const nextView = route.view || 'feed';
+  const nextThreadId = route.threadId || null;
+  const boardRouteInvolved = UI.view === 'thread' || UI.view === 'feed' || nextView === 'thread' || nextView === 'feed';
+  const changingBoard = nextView === 'thread' && nextThreadId !== UI.threadId;
+  if (boardRouteInvolved && (UI.view !== nextView || changingBoard)) resetBoardFilters();
+  UI.view = nextView;
+  UI.threadId = nextThreadId;
   UI.prospectId = route.prospectId || null;
   UI.teamCommitsTeam = route.teamCommitsTeam || '';
   UI.teamOffersTeam = route.teamOffersTeam || '';
@@ -701,6 +716,9 @@ function syncBrowserRoute(replace){
 function navigateTo(view, options){
   options = options || {};
   if (!canLeaveTeamsPage()) return;
+  const boardRouteInvolved = UI.view === 'thread' || UI.view === 'feed' || view === 'thread' || view === 'feed';
+  const changingBoard = view === 'thread' && options.threadId !== UI.threadId;
+  if (boardRouteInvolved && (UI.view !== view || changingBoard)) resetBoardFilters();
   UI.view = view;
   if (options.threadId != null) UI.threadId = options.threadId;
   if (options.prospectId != null) UI.prospectId = options.prospectId;
