@@ -3450,10 +3450,25 @@ function getOfferRowsForTeam(team){
 }
 
 function renderPositionCounts(items, getPosition){
-  const order = ['QB','HB','FB','WR','TE','OT','OG','C','DE','DT','OLB','MLB','CB','FS','SS','K','P'];
+  const order = ['QB','RB','WR','TE','OL','DL','LB','CB','S','K','P'];
+  const positionGroups = {
+    HB: 'RB',
+    FB: 'RB',
+    OT: 'OL',
+    OG: 'OL',
+    C: 'OL',
+    DE: 'DL',
+    DT: 'DL',
+    OLB: 'LB',
+    MLB: 'LB',
+    ILB: 'LB',
+    FS: 'S',
+    SS: 'S'
+  };
   const counts = {};
   (items || []).forEach(function(item){
-    const pos = String(getPosition(item) || '').trim().toUpperCase();
+    const rawPos = String(getPosition(item) || '').trim().toUpperCase();
+    const pos = positionGroups[rawPos] || rawPos;
     if (!pos) return;
     counts[pos] = (counts[pos] || 0) + 1;
   });
