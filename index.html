@@ -431,6 +431,7 @@ body { margin: 0; background: #0F1420; }
 .rb-position-count-actions {
   display: inline-flex;
   gap: 5px;
+  margin-left: auto;
 }
 .rb-position-count {
   display: inline-flex;
@@ -449,8 +450,9 @@ body { margin: 0; background: #0F1420; }
 .rb-position-count:hover { border-color: var(--gold-dim); }
 .rb-position-count-muted { opacity: 0.38; background: var(--ink); }
 .rb-position-count-action {
-  color: var(--slate);
-  font-size: 11px;
+  color: var(--chalk);
+  font-size: 12px;
+  font-weight: 600;
   padding: 5px 7px;
 }
 .rb-position-count strong {
@@ -3514,14 +3516,15 @@ function renderPositionCounts(items, getPosition, filterKey){
   });
   if (!positions.length) return '';
   return '<div class="rb-position-counts" aria-label="Position counts">' +
+    positions.map(function(pos){
+    const muted = !!hidden[pos];
+    return '<button type="button" class="rb-position-count' + (muted ? ' rb-position-count-muted' : '') + '" data-position-filter="' + escapeHtml(filterKey) + '" data-position-bucket="' + escapeHtml(pos) + '" aria-pressed="' + (muted ? 'true' : 'false') + '"><strong>' + escapeHtml(pos) + '</strong><span>' + counts[pos] + '</span></button>';
+  }).join('') +
     '<span class="rb-position-count-actions">' +
       '<button type="button" class="rb-position-count rb-position-count-action" data-position-set="' + escapeHtml(filterKey) + '" data-position-set-mode="all">Select all</button>' +
       '<button type="button" class="rb-position-count rb-position-count-action" data-position-set="' + escapeHtml(filterKey) + '" data-position-set-mode="none">Select none</button>' +
     '</span>' +
-    positions.map(function(pos){
-    const muted = !!hidden[pos];
-    return '<button type="button" class="rb-position-count' + (muted ? ' rb-position-count-muted' : '') + '" data-position-filter="' + escapeHtml(filterKey) + '" data-position-bucket="' + escapeHtml(pos) + '" aria-pressed="' + (muted ? 'true' : 'false') + '"><strong>' + escapeHtml(pos) + '</strong><span>' + counts[pos] + '</span></button>';
-  }).join('') + '</div>';
+  '</div>';
 }
 
 function getVisitOfferRowsForTeam(team){
@@ -3787,7 +3790,7 @@ function renderFeed(){
   if (!recruitingStageConfig().usesWaves && DB.threads.length === 1){
     return renderThreadProspectList(DB.threads[0]);
   }
-  let html = '<input class="rb-input" id="rb-board-search" placeholder="Search offers by recruit name, rank, or hometown" style="margin-bottom:14px;" />';
+  let html = '<input class="rb-input" id="rb-board-search" placeholder="search recruits by name, rank or hometown" style="margin-bottom:14px;" />';
   html += '<div id="rb-board-cards" class="rb-board-list">';
   DB.threads.forEach(function(t){
     const visibleIds = visibleBoardProspectIds(t);
@@ -3833,7 +3836,7 @@ function renderThreadProspectList(t){
   html += '<div class="rb-card" style="padding:14px 16px;margin-bottom:14px;">';
   const visibleIds = visibleBoardProspectIds(t);
   html += renderPositionCounts(visibleIds, function(pid){ return DB.prospects[pid] && DB.prospects[pid].position; }, filterKey);
-  html += '<input class="rb-input" data-thread-search="' + t.id + '" placeholder="Search offers by recruit name, rank, or hometown" />';
+  html += '<input class="rb-input" data-thread-search="' + t.id + '" placeholder="search recruits by name, rank or hometown" />';
   html += '<div class="rb-filter-row"><label class="rb-toggle"><span>Hide committed players</span><input type="checkbox" id="rb-hide-committed-boards" ' + (UI.hideCommittedBoards ? 'checked' : '') + ' /><span class="rb-switch-track"><span class="rb-switch-thumb"></span></span></label></div>';
   html += '</div>';
 
