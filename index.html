@@ -4379,7 +4379,10 @@ function bindEvents(){
     };
   });
   document.querySelectorAll('[data-open-thread]').forEach(function(el){
-    el.onclick = function(){ navigateTo('thread', { threadId: el.getAttribute('data-open-thread') }); };
+    el.onclick = function(){
+      navigateTo('thread', { threadId: el.getAttribute('data-open-thread') });
+      scrollPageTop();
+    };
   });
   document.querySelectorAll('[data-open-prospect]').forEach(function(el){
     el.onclick = function(e){
