@@ -2780,6 +2780,24 @@ function visitSummary(visits){
   return parts.length ? parts.join(' + ') : 'none';
 }
 
+function visitChangeLine(kind, oldVisits, newVisits){
+  oldVisits = normalizeVisits(oldVisits);
+  newVisits = normalizeVisits(newVisits);
+  if (kind === 'coach'){
+    if (!oldVisits.coach && newVisits.coach) return 'Added coach visit';
+    if (oldVisits.coach && !newVisits.coach) return 'Removed coach visit';
+    return '';
+  }
+  if (!oldVisits.campus && newVisits.campus){
+    return 'Added campus visit' + (newVisits.campusLabel ? ': ' + newVisits.campusLabel : '');
+  }
+  if (oldVisits.campus && !newVisits.campus) return 'Removed campus visit';
+  if (oldVisits.campusLabel !== newVisits.campusLabel){
+    return 'Updated campus visit: ' + (oldVisits.campusLabel || 'no label') + ' -> ' + (newVisits.campusLabel || 'no label');
+  }
+  return '';
+}
+
 function findOfferById(prospectId, offerId){
   const offer = (DB.offersByProspect[prospectId] || []).find(function(o){ return o.id === offerId; });
   return offer || null;
@@ -2839,16 +2857,17 @@ function saveOfferEdit(form, confirmedVisits){
   nextText = syncCampusVisitText(nextText, newVisits);
   nextText = syncCoachVisitText(nextText, newVisits);
   const changes = [];
-  if (oldVisits.coach !== newVisits.coach) changes.push('Coach visit: ' + (oldVisits.coach ? 'yes' : 'no') + ' -> ' + (newVisits.coach ? 'yes' : 'no'));
+  if (oldVisits.coach !== newVisits.coach) changes.push(visitChangeLine('coach', oldVisits, newVisits));
   if (oldVisits.campus !== newVisits.campus || oldVisits.campusLabel !== newVisits.campusLabel){
-    changes.push('Campus visit: ' + visitSummary({ campus: oldVisits.campus, campusLabel: oldVisits.campusLabel }) + ' -> ' + visitSummary({ campus: newVisits.campus, campusLabel: newVisits.campusLabel }));
+    changes.push(visitChangeLine('campus', oldVisits, newVisits));
   }
-  if (!changes.length){
+  const cleanChanges = changes.filter(Boolean);
+  if (!cleanChanges.length){
     closeEditOffer();
     return;
   }
   offer.editHistory = offer.editHistory || [];
-  offer.editHistory.push({ id: uid('eh'), editedAt: Date.now(), editor: SESSION.team, changes: changes.slice(0, 8) });
+  offer.editHistory.push({ id: uid('eh'), editedAt: Date.now(), editor: SESSION.team, changes: cleanChanges.slice(0, 8) });
   if (offer.editHistory.length > 20) offer.editHistory = offer.editHistory.slice(-20);
   offer.text = nextText;
   offer.visits = newVisits;
