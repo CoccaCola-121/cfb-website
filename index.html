@@ -652,6 +652,18 @@ function resetBoardFilters(){
   UI.hideCommittedBoards = false;
 }
 
+function shouldResetBoardFilters(nextView, nextThreadId){
+  const currentBoardThread = UI.view === 'thread' ? UI.threadId : (UI.view === 'prospect' ? UI.threadId : null);
+  const nextBoardThread = nextView === 'thread' ? (nextThreadId || UI.threadId) : null;
+  if (UI.view === 'thread' && nextView === 'prospect') return false;
+  if (UI.view === 'prospect' && nextView === 'thread' && currentBoardThread && nextBoardThread === currentBoardThread) return false;
+  if (UI.view === 'thread' && nextView === 'thread') return nextBoardThread !== UI.threadId;
+  if (UI.view === 'thread') return true;
+  if (UI.view === 'prospect' && currentBoardThread && nextView !== 'thread') return true;
+  if (nextView === 'thread') return true;
+  return false;
+}
+
 const VIEW_ROUTES = {
   feed: '/prospectboard',
   myoffers: '/myoffers',
@@ -695,9 +707,7 @@ function applyRoute(route){
   route = route || routeFromPath(window.location.pathname);
   const nextView = route.view || 'feed';
   const nextThreadId = route.threadId || null;
-  const boardRouteInvolved = UI.view === 'thread' || UI.view === 'feed' || nextView === 'thread' || nextView === 'feed';
-  const changingBoard = nextView === 'thread' && nextThreadId !== UI.threadId;
-  if (boardRouteInvolved && (UI.view !== nextView || changingBoard)) resetBoardFilters();
+  if (shouldResetBoardFilters(nextView, nextThreadId)) resetBoardFilters();
   UI.view = nextView;
   UI.threadId = nextThreadId;
   UI.prospectId = route.prospectId || null;
@@ -716,9 +726,8 @@ function syncBrowserRoute(replace){
 function navigateTo(view, options){
   options = options || {};
   if (!canLeaveTeamsPage()) return;
-  const boardRouteInvolved = UI.view === 'thread' || UI.view === 'feed' || view === 'thread' || view === 'feed';
-  const changingBoard = view === 'thread' && options.threadId !== UI.threadId;
-  if (boardRouteInvolved && (UI.view !== view || changingBoard)) resetBoardFilters();
+  const nextThreadId = options.threadId != null ? options.threadId : (view === 'thread' ? UI.threadId : null);
+  if (shouldResetBoardFilters(view, nextThreadId)) resetBoardFilters();
   UI.view = view;
   if (options.threadId != null) UI.threadId = options.threadId;
   if (options.prospectId != null) UI.prospectId = options.prospectId;
