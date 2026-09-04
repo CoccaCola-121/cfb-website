@@ -1,7 +1,7 @@
 import { json, requireEnv } from '../../_lib/auth.js';
 import { queueLeagueBackup } from '../../_lib/backup.js';
 import { readLeagueState, writeLeagueState } from '../../_lib/league-state.js';
-import { applyDiscordCommits, parseDiscordCommits } from './discord.js';
+import { applyDiscordCommits, applyDiscordSeasonEnd, parseDiscordCommits, parseDiscordSeasonEnd } from './discord.js';
 
 function hasValidSecret(request, env) {
   const secret = String(env.COMMIT_SYNC_SECRET || '').trim();
@@ -48,14 +48,15 @@ export async function onRequestPost({ request, env, waitUntil }) {
   }
 
   const commits = await parseDiscordCommits(env, [message]);
-  if (!commits.length) {
+  const seasonEnd = applyDiscordSeasonEnd(state, parseDiscordSeasonEnd([message]));
+  if (!commits.length && !seasonEnd) {
     return json({ ok: true, commitsFound: 0, updated: 0, unchanged: 0, unmatchedCount: 0 });
   }
 
-  const result = applyDiscordCommits(state, commits);
+  const result = commits.length ? applyDiscordCommits(state, commits) : { updated: 0, unchanged: 0, unmatched: [], conditionalRescinds: [] };
   state.discordCommitChannelId = env.DISCORD_COMMIT_CHANNEL_ID || message.channel_id || '';
   await writeLeagueState(env, state);
-  queueLeagueBackup(env, state, waitUntil, { source: 'live-discord-commit' });
+  queueLeagueBackup(env, state, waitUntil, { source: seasonEnd && !commits.length ? 'live-discord-season-end' : 'live-discord-commit' });
 
   return json({
     ok: true,
@@ -64,6 +65,7 @@ export async function onRequestPost({ request, env, waitUntil }) {
     unchanged: result.unchanged,
     unmatched: result.unmatched.slice(0, 20),
     unmatchedCount: result.unmatched.length,
+    seasonEnded: seasonEnd,
     conditionalRescinds: result.conditionalRescinds || [],
   });
 }

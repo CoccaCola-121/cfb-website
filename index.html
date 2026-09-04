@@ -605,7 +605,7 @@ let DB = { fullRoster: [], recruitingStage: 'hs', released: {}, wave1Released: f
            prospects: {}, threads: [], offersByProspect: {}, unmatched: [], teams: {},
            teamBranding: {}, users: {}, commitSheetUrl: DEFAULT_COMMIT_SHEET_URL, commitUpdatedAt: null,
            discordCommitUpdatedAt: null, discordCommitChannelId: '', defaultClassLoaded: false,
-           offersLocked: false, dangerApprovals: {}, conditionalRescinds: [], manualCommitOverrides: {} };
+           commitSeasonEnded: null, offersLocked: false, dangerApprovals: {}, conditionalRescinds: [], manualCommitOverrides: {} };
 let SESSION = null;
 let UI = { view: 'feed', threadId: null, showSubmitModal: false, submitting: false,
            lastSummary: null, loginError: null, classError: null, classDraft: '', assignError: {},
@@ -623,7 +623,7 @@ let UI = { view: 'feed', threadId: null, showSubmitModal: false, submitting: fal
            backupStatus: null, backupError: null, backingUp: false,
            teamAdminModal: null, brandingFileName: '', adminActionStatus: null, adminActionError: null,
            commitOverrideRank: '', commitOverrideTeam: '', commitOverrideStatus: null, commitOverrideError: null,
-           positionFilters: {} };
+           pendingCommitOverride: null, positionFilters: {} };
 let dbReady = false, sessionReady = false;
 let summaryTimer = null;
 let leagueSyncTimer = null;
@@ -648,6 +648,10 @@ function recruitingStage(){
 }
 function recruitingStageConfig(){
   return RECRUITING_STAGES[recruitingStage()];
+}
+function recruitingEndedForCurrentStage(){
+  const ended = DB.commitSeasonEnded || null;
+  return !!(ended && ended.stage === recruitingStage());
 }
 function hasPendingTeamChanges(){
   const p = UI.teamPending || {};
@@ -1058,6 +1062,10 @@ function offerCountTag(pid){
   return '<span class="rb-tag" style="display:inline-block;margin:0;white-space:nowrap;">' + count + ' offer' + (count === 1 ? '' : 's') + '</span>';
 }
 
+function freeAgentTag(){
+  return '<span class="rb-tag" style="display:inline-block;margin:0;white-space:nowrap;border-color:rgba(136,146,166,0.55);color:var(--slate);">Free agent</span>';
+}
+
 function visibleBoardProspectIds(t){
   return (t.prospectIds || []).filter(function(pid){
     const p = DB.prospects[pid];
@@ -1198,6 +1206,7 @@ function leagueStatePayload(){
     commitUpdatedAt: DB.commitUpdatedAt,
     discordCommitUpdatedAt: DB.discordCommitUpdatedAt,
     discordCommitChannelId: DB.discordCommitChannelId,
+    commitSeasonEnded: DB.commitSeasonEnded || null,
     defaultClassLoaded: DB.defaultClassLoaded,
     offersLocked: !!DB.offersLocked,
     dangerApprovals: DB.dangerApprovals || {},
@@ -1213,9 +1222,10 @@ function mergeLeagueState(state){
     prospects: DB.prospects,
     threads: DB.threads,
     commitUpdatedAt: DB.commitUpdatedAt,
-    discordCommitUpdatedAt: DB.discordCommitUpdatedAt
+    discordCommitUpdatedAt: DB.discordCommitUpdatedAt,
+    commitSeasonEnded: DB.commitSeasonEnded
   });
-  ['fullRoster','recruitingStage','released','wave1Released','wave2Released','prospects','threads','offersByProspect','unmatched','teams','teamBranding','commitSheetUrl','commitUpdatedAt','discordCommitUpdatedAt','discordCommitChannelId','defaultClassLoaded','offersLocked','dangerApprovals','conditionalRescinds','manualCommitOverrides'].forEach(function(field){
+  ['fullRoster','recruitingStage','released','wave1Released','wave2Released','prospects','threads','offersByProspect','unmatched','teams','teamBranding','commitSheetUrl','commitUpdatedAt','discordCommitUpdatedAt','discordCommitChannelId','commitSeasonEnded','defaultClassLoaded','offersLocked','dangerApprovals','conditionalRescinds','manualCommitOverrides'].forEach(function(field){
     if (Object.prototype.hasOwnProperty.call(state, field)) DB[field] = state[field];
   });
   applyManualCommitOverrides();
@@ -1224,7 +1234,8 @@ function mergeLeagueState(state){
     prospects: DB.prospects,
     threads: DB.threads,
     commitUpdatedAt: DB.commitUpdatedAt,
-    discordCommitUpdatedAt: DB.discordCommitUpdatedAt
+    discordCommitUpdatedAt: DB.discordCommitUpdatedAt,
+    commitSeasonEnded: DB.commitSeasonEnded
   });
   setStored(DB_KEY, JSON.stringify(DB), true);
   return before !== after;
@@ -1552,6 +1563,7 @@ function loadClassData(raw){
   }
   DB.fullRoster = list;
   DB.defaultClassLoaded = false;
+  DB.commitSeasonEnded = null;
   hydrateProspectValuesFromRoster();
   UI.classError = null;
   saveDB(); render();
@@ -1647,6 +1659,7 @@ function clearRecruitingBoard(){
   DB.commitUpdatedAt = null;
   DB.discordCommitUpdatedAt = null;
   DB.discordCommitChannelId = '';
+  DB.commitSeasonEnded = null;
   DB.defaultClassLoaded = false;
   UI.threadId = null;
   UI.prospectId = null;
@@ -1938,7 +1951,7 @@ function applyManualCommitOverrides(){
   });
 }
 
-async function applyManualCommitOverride(){
+function requestManualCommitOverride(){
   const rankInput = document.getElementById('rb-commit-override-rank');
   const teamInput = document.getElementById('rb-commit-override-team');
   const rank = parseInt(rankInput ? rankInput.value : UI.commitOverrideRank, 10);
@@ -1962,12 +1975,38 @@ async function applyManualCommitOverride(){
     UI.commitOverrideError = 'Enter the team that won the commit.';
     render(); return;
   }
+  UI.pendingCommitOverride = {
+    prospectId: pid,
+    rank: rank,
+    name: prospect.name || '',
+    fromTeam: prospect.commitTeam || '',
+    toTeam: team
+  };
+  render();
+}
+
+function cancelManualCommitOverride(){
+  UI.pendingCommitOverride = null;
+  render();
+}
+
+async function applyManualCommitOverride(){
+  const pending = UI.pendingCommitOverride || {};
+  const pid = pending.prospectId || '';
+  const prospect = DB.prospects && DB.prospects[pid];
+  const team = canonicalTeamName(pending.toTeam);
+  if (!prospect || !team){
+    UI.pendingCommitOverride = null;
+    UI.commitOverrideError = 'That manual commit could not be applied. Try entering it again.';
+    render(); return;
+  }
   if (!DB.manualCommitOverrides) DB.manualCommitOverrides = {};
   DB.manualCommitOverrides[pid] = { team: team, updatedAt: Date.now() };
   prospect.commitTeam = team;
   applyConditionalRescinds();
   DB.commitUpdatedAt = Date.now();
-  UI.commitOverrideStatus = '#' + rank + ' ' + prospect.name + ' manually committed to ' + team + '.';
+  UI.pendingCommitOverride = null;
+  UI.commitOverrideStatus = '#' + prospect.rank + ' ' + prospect.name + ' manually committed to ' + team + '.';
   await saveDBNow();
   render();
 }
@@ -2015,7 +2054,7 @@ async function updateCommitsFromSheet(){
       const data = await res.json().catch(function(){ return {}; });
       if (res.ok && data.ok){
         await syncLeagueState(false);
-        UI.commitStatus = 'Manual push updated: ' + data.updated + ' changed, ' + data.unchanged + ' already current, ' + data.commitsFound + ' found in ' + data.messagesRead + ' messages' + (data.unmatchedCount ? ', ' + data.unmatchedCount + ' unmatched' : '') + '.';
+        UI.commitStatus = 'Manual push updated: ' + data.updated + ' changed, ' + data.unchanged + ' already current, ' + data.commitsFound + ' found in ' + data.messagesRead + ' messages' + (data.unmatchedCount ? ', ' + data.unmatchedCount + ' unmatched' : '') + (data.seasonEnded ? ', recruiting end detected' : '') + '.';
         UI.updatingCommits = false;
         render();
         return;
@@ -3032,6 +3071,7 @@ async function confirmReset(){
     DB.conditionalRescinds = [];
     DB.commitSheetUrl = DEFAULT_COMMIT_SHEET_URL;
     DB.commitUpdatedAt = null;
+    DB.commitSeasonEnded = null;
     UI.lastSummary = null;
     UI.rescindError = null;
     UI.assignError = {};
@@ -3048,6 +3088,7 @@ async function confirmReset(){
     DB.defaultClassLoaded = false;
     applyDefaultClassData(window.NZCFL_DEFAULT_CLASS_CSV || '');
     DB.commitSheetUrl = DEFAULT_COMMIT_SHEET_URL;
+    DB.commitSeasonEnded = null;
     UI.threadId = null;
     UI.view = 'setup';
     UI.classFileName = '';
@@ -3090,6 +3131,7 @@ function render(){
   if (UI.showSubmitModal) html += renderSubmitModal();
   if (UI.editOfferTarget) html += renderEditOfferModal();
   if (UI.pendingVisitEdit) html += renderVisitConfirmModal();
+  if (UI.pendingCommitOverride) html += renderCommitOverrideConfirmModal();
   if (UI.pendingMassRescind) html += renderMassRescindModal();
   if (UI.pendingMassRescindFinal) html += renderMassRescindFinalModal();
   if (UI.pendingSingleRescind) html += renderSingleRescindConfirmModal();
@@ -3106,6 +3148,7 @@ function renderBackTopControl(){
 }
 
 function uncommittedStatusLabel(count){
+  if (recruitingEndedForCurrentStage()) return Number(count) > 0 ? count + ' free agents' : 'All committed';
   return Number(count) > 0 ? count + ' uncommitted' : 'All committed';
 }
 
@@ -3940,6 +3983,7 @@ function renderFeed(){
 function renderThreadProspectList(t){
   if (!t) return '<div style="color:var(--slate);">Thread not found.</div>';
   const filterKey = positionFilterKey('board', t.id);
+  const ended = recruitingEndedForCurrentStage();
   let html = '<div class="rb-h" style="font-size:20px;margin-bottom:4px;">' + escapeHtml(t.title) + '</div>';
   html += '<div style="font-size:13px;color:var(--slate);margin-bottom:18px;">' + rankRangeForThread(t) + ' on the board. Offers from every team stay visible here.</div>';
   html += '<div class="rb-card" style="padding:14px 16px;margin-bottom:14px;">';
@@ -3948,7 +3992,7 @@ function renderThreadProspectList(t){
   html += '<input class="rb-input" data-thread-search="' + t.id + '" placeholder="search recruits by name, rank or hometown" />';
   const commitFilter = UI.boardCommitFilter || (UI.hideCommittedBoards ? 'uncommitted' : 'all');
   html += '<div class="rb-filter-row"><div class="rb-segmented" aria-label="Commit status filter">';
-  [['committed','Committed'], ['all','All'], ['uncommitted','Uncommitted']].forEach(function(option){
+  [['committed','Committed'], ['all','All'], ['uncommitted', ended ? 'Free agents' : 'Uncommitted']].forEach(function(option){
     html += '<button type="button" data-board-commit-filter="' + option[0] + '" aria-pressed="' + (commitFilter === option[0] ? 'true' : 'false') + '">' + option[1] + '</button>';
   });
   html += '</div></div>';
@@ -3961,7 +4005,7 @@ function renderThreadProspectList(t){
     const searchText = [p.rank, '#' + p.rank, p.name, p.hometown].join(' ').toLowerCase();
     html += renderProspectBoardCard(pid, searchText);
   });
-  if (!visibleIds.length) html += '<div class="rb-card" style="padding:28px;text-align:center;color:var(--slate);">No uncommitted prospects on this board.</div>';
+  if (!visibleIds.length) html += '<div class="rb-card" style="padding:28px;text-align:center;color:var(--slate);">No ' + (ended ? 'free agents' : 'uncommitted prospects') + ' on this board.</div>';
   html += '</div>';
   return html;
 }
@@ -3982,7 +4026,7 @@ function renderProspectBoardCard(pid, searchAttr){
     '<span class="rb-mono" style="color:var(--slate);font-size:13px;">' + escapeHtml(p.position) + (p.rating ? ' &middot; ' + escapeHtml(p.rating) : '') + '</span>' +
     (p.hometown ? '<span style="color:var(--slate);font-size:13px;"> &middot; <span title="' + escapeHtml(p.hometown) + '">' + escapeHtml(shortText(p.hometown, 28)) + '</span></span>' : '') +
   '</div>';
-  html += '<div style="display:flex;align-items:center;gap:8px;white-space:nowrap;">' + (p.commitTeam ? '' : offerCountTag(pid)) + (p.commitTeam ? renderCommittedTag(p.commitTeam, true, commitReturn) : '') + '</div>';
+  html += '<div style="display:flex;align-items:center;gap:8px;white-space:nowrap;">' + (p.commitTeam ? '' : offerCountTag(pid)) + (p.commitTeam ? renderCommittedTag(p.commitTeam, true, commitReturn) : (recruitingEndedForCurrentStage() ? freeAgentTag() : '')) + '</div>';
   html += '</div>';
   if (!p.commitTeam) html += renderStorylineLine(p.storyline, 'margin-top:6px;');
   if (offers.length && !p.commitTeam){
@@ -4055,6 +4099,9 @@ function renderClassSetup(){
   html += '<button class="rb-btn rb-btn-gold" id="rb-update-commits" ' + (UI.updatingCommits || (!apiAvailable() && !DB.commitSheetUrl) ? 'disabled' : '') + '>' + (UI.updatingCommits ? 'Updating...' : 'Manual push') + '</button>';
   if (DB.commitUpdatedAt) html += '<span class="rb-mono" style="font-size:12px;color:var(--slate);">Last update: ' + escapeHtml(new Date(DB.commitUpdatedAt).toLocaleString()) + '</span>';
   html += '</div>';
+  if (DB.commitSeasonEnded && DB.commitSeasonEnded.stage === stage){
+    html += '<div class="rb-settings-status rb-settings-status-ready" style="margin-top:10px;">' + escapeHtml(stageConfig.shortLabel) + ' RECRUITING ENDED' + (DB.commitSeasonEnded.season ? ' ' + escapeHtml(DB.commitSeasonEnded.season) : '') + '</div>';
+  }
   html += '<div style="border-top:1px solid var(--hairline);margin-top:14px;padding-top:14px;">';
   html += '<div class="rb-mono" style="font-size:12px;color:var(--slate);margin-bottom:10px;">Manual commit override</div>';
   html += '<div class="rb-commit-override-grid">';
@@ -4288,6 +4335,27 @@ function renderVisitConfirmModal(){
       '<div style="display:flex;justify-content:flex-end;gap:8px;flex-wrap:wrap;">' +
         '<button class="rb-btn" id="rb-cancel-visit-confirm">Cancel</button>' +
         '<button class="rb-btn rb-btn-gold" id="rb-confirm-visit">Yes, add visit</button>' +
+      '</div>' +
+    '</div>' +
+  '</div>';
+}
+
+function renderCommitOverrideConfirmModal(){
+  const pending = UI.pendingCommitOverride || {};
+  const flip = !!pending.fromTeam && teamKey(pending.fromTeam) !== teamKey(pending.toTeam);
+  const sameTeam = !!pending.fromTeam && teamKey(pending.fromTeam) === teamKey(pending.toTeam);
+  const actionText = sameTeam
+    ? 'This player is already committed to ' + pending.toTeam + '.'
+    : (flip ? 'He will decommit from ' + pending.fromTeam + ' and commit to ' + pending.toTeam + '.' : 'He will commit to ' + pending.toTeam + '.');
+  return '<div style="position:fixed;inset:0;background:rgba(0,0,0,0.68);display:flex;align-items:center;justify-content:center;z-index:60;">' +
+    '<div class="rb-card" style="padding:24px;width:520px;max-width:90vw;border-color:var(--gold);">' +
+      '<div class="rb-h" style="font-size:18px;margin-bottom:8px;">Confirm manual commit</div>' +
+      '<div class="rb-mono" style="font-size:12px;color:var(--slate);margin-bottom:10px;">#' + escapeHtml(pending.rank || '?') + ' ' + escapeHtml(pending.name || 'Unknown prospect') + '</div>' +
+      '<div style="font-size:14px;color:var(--chalk);line-height:1.5;margin-bottom:10px;">' + escapeHtml(actionText) + '</div>' +
+      '<div style="font-size:12px;color:var(--slate);line-height:1.45;margin-bottom:18px;">This saves a manual override, so future commit syncs will keep this result until you clear it.</div>' +
+      '<div style="display:flex;justify-content:flex-end;gap:8px;flex-wrap:wrap;">' +
+        '<button class="rb-btn" id="rb-cancel-commit-override-confirm">Cancel</button>' +
+        '<button class="rb-btn rb-btn-gold" id="rb-confirm-commit-override">Confirm commit</button>' +
       '</div>' +
     '</div>' +
   '</div>';
@@ -4577,6 +4645,10 @@ function bindEvents(){
     UI.pendingVisitEdit = null;
     saveOfferEdit(pending.form, { coach: !!pending.coach, campus: !!pending.campus });
   };
+  const cancelCommitOverrideConfirm = document.getElementById('rb-cancel-commit-override-confirm');
+  if (cancelCommitOverrideConfirm) cancelCommitOverrideConfirm.onclick = cancelManualCommitOverride;
+  const confirmCommitOverride = document.getElementById('rb-confirm-commit-override');
+  if (confirmCommitOverride) confirmCommitOverride.onclick = applyManualCommitOverride;
 
   const boardSearch = document.getElementById('rb-board-search');
   if (boardSearch) boardSearch.oninput = function(){
@@ -4889,7 +4961,7 @@ function bindEvents(){
   const updateCommitsBtn = document.getElementById('rb-update-commits');
   if (updateCommitsBtn) updateCommitsBtn.onclick = updateCommitsFromSheet;
   const applyCommitOverrideBtn = document.getElementById('rb-apply-commit-override');
-  if (applyCommitOverrideBtn) applyCommitOverrideBtn.onclick = applyManualCommitOverride;
+  if (applyCommitOverrideBtn) applyCommitOverrideBtn.onclick = requestManualCommitOverride;
   const clearCommitOverrideBtn = document.getElementById('rb-clear-commit-override');
   if (clearCommitOverrideBtn) clearCommitOverrideBtn.onclick = clearManualCommitOverride;
   const runBackupBtn = document.getElementById('rb-run-backup');

@@ -18,6 +18,7 @@ const STATE_FIELDS = [
   'commitUpdatedAt',
   'discordCommitUpdatedAt',
   'discordCommitChannelId',
+  'commitSeasonEnded',
   'defaultClassLoaded',
   'offersLocked',
   'dangerApprovals',

@@ -55,6 +55,19 @@ async function parseCommitLine(env, line) {
   };
 }
 
+function parseSeasonEndLine(line) {
+  const text = String(line || '').replace(/\*/g, '').trim();
+  const match = text.match(/\bEnd of\s+(\d{4})\s+(HS|High School|Transfer|Transfers|CPR)\s+Recruiting\b/i);
+  if (!match) return null;
+  const rawStage = match[2].toLowerCase();
+  const stage = rawStage === 'hs' || rawStage === 'high school' ? 'hs' : (rawStage.indexOf('transfer') === 0 ? 'transfer' : 'cpr');
+  return {
+    season: match[1],
+    stage,
+    sourceLine: String(line || '').trim(),
+  };
+}
+
 export async function parseDiscordCommits(env, messages) {
   const commits = [];
   for (const message of messages) {
@@ -65,6 +78,24 @@ export async function parseDiscordCommits(env, messages) {
     }
   }
   return commits;
+}
+
+export function parseDiscordSeasonEnd(messages) {
+  let latest = null;
+  for (const message of messages) {
+    const lines = messageText(message).split(/\n+/);
+    for (const line of lines) {
+      const ended = parseSeasonEndLine(line);
+      if (!ended) continue;
+      const record = {
+        ...ended,
+        messageId: message.id,
+        timestamp: message.timestamp,
+      };
+      if (!latest || Date.parse(record.timestamp || '') > Date.parse(latest.timestamp || '')) latest = record;
+    }
+  }
+  return latest;
 }
 
 async function fetchDiscordMessages(env) {
@@ -143,6 +174,23 @@ export function applyDiscordCommits(state, commits) {
   return { updated, unchanged, unmatched, conditionalRescinds };
 }
 
+export function applyDiscordSeasonEnd(state, seasonEnd) {
+  if (!seasonEnd) return null;
+  const previous = state.commitSeasonEnded || null;
+  const sameMessage = previous && previous.messageId && previous.messageId === seasonEnd.messageId;
+  state.commitSeasonEnded = {
+    season: seasonEnd.season || '',
+    stage: seasonEnd.stage || 'hs',
+    messageId: seasonEnd.messageId || '',
+    timestamp: seasonEnd.timestamp || '',
+    sourceLine: seasonEnd.sourceLine || '',
+    recordedAt: Date.now(),
+  };
+  state.commitUpdatedAt = Date.now();
+  state.discordCommitUpdatedAt = state.commitUpdatedAt;
+  return sameMessage ? null : state.commitSeasonEnded;
+}
+
 async function canRunCommitSync(request, env) {
   const secret = String(env.COMMIT_SYNC_SECRET || '').trim();
   const provided = String(request.headers.get('x-commit-sync-secret') || '').trim();
@@ -171,6 +219,7 @@ export async function onRequestPost({ request, env, waitUntil }) {
   try {
     const messages = await fetchDiscordMessages(env);
     const commits = await parseDiscordCommits(env, messages);
+    const seasonEnd = applyDiscordSeasonEnd(state, parseDiscordSeasonEnd(messages));
     const result = applyDiscordCommits(state, commits);
     state.discordCommitChannelId = env.DISCORD_COMMIT_CHANNEL_ID || '';
     await writeLeagueState(env, state);
@@ -183,6 +232,7 @@ export async function onRequestPost({ request, env, waitUntil }) {
       unchanged: result.unchanged,
       unmatched: result.unmatched.slice(0, 20),
       unmatchedCount: result.unmatched.length,
+      seasonEnded: seasonEnd,
       conditionalRescinds: result.conditionalRescinds || [],
     });
   } catch (error) {
