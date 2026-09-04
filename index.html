@@ -3154,7 +3154,7 @@ function renderBackTopControl(){
 }
 
 function uncommittedStatusLabel(count){
-  if (recruitingEndedForCurrentStage()) return Number(count) > 0 ? count + ' free agents' : 'All committed';
+  if (recruitingEndedForCurrentStage()) return 'All committed';
   return Number(count) > 0 ? count + ' uncommitted' : 'All committed';
 }
 
@@ -4032,7 +4032,7 @@ function renderProspectBoardCard(pid, searchAttr){
     '<span class="rb-mono" style="color:var(--slate);font-size:13px;">' + escapeHtml(p.position) + (p.rating ? ' &middot; ' + escapeHtml(p.rating) : '') + '</span>' +
     (p.hometown ? '<span style="color:var(--slate);font-size:13px;"> &middot; <span title="' + escapeHtml(p.hometown) + '">' + escapeHtml(shortText(p.hometown, 28)) + '</span></span>' : '') +
   '</div>';
-  html += '<div style="display:flex;align-items:center;gap:8px;white-space:nowrap;">' + (p.commitTeam ? '' : offerCountTag(pid)) + (p.commitTeam ? renderCommittedTag(p.commitTeam, true, commitReturn) : (recruitingEndedForCurrentStage() ? freeAgentTag() : '')) + '</div>';
+  html += '<div style="display:flex;align-items:center;gap:8px;white-space:nowrap;">' + (p.commitTeam || recruitingEndedForCurrentStage() ? '' : offerCountTag(pid)) + (p.commitTeam ? renderCommittedTag(p.commitTeam, true, commitReturn) : (recruitingEndedForCurrentStage() ? freeAgentTag() : '')) + '</div>';
   html += '</div>';
   if (!p.commitTeam) html += renderStorylineLine(p.storyline, 'margin-top:6px;');
   if (offers.length && !p.commitTeam){
