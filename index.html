@@ -624,7 +624,7 @@ let UI = { view: 'feed', threadId: null, showSubmitModal: false, submitting: fal
            backupStatus: null, backupError: null, backingUp: false,
            teamAdminModal: null, brandingFileName: '', adminActionStatus: null, adminActionError: null,
            commitOverrideRank: '', commitOverrideTeam: '', commitOverrideStatus: null, commitOverrideError: null,
-           pendingCommitOverride: null, positionFilters: {} };
+           pendingCommitOverride: null, pendingClearCommit: null, positionFilters: {} };
 let dbReady = false, sessionReady = false;
 let summaryTimer = null;
 let leagueSyncTimer = null;
@@ -2017,7 +2017,7 @@ async function applyManualCommitOverride(){
   render();
 }
 
-async function clearManualCommitOverride(){
+function requestClearCommit(){
   const rankInput = document.getElementById('rb-commit-override-rank');
   const rank = parseInt(rankInput ? rankInput.value : UI.commitOverrideRank, 10);
   UI.commitOverrideRank = rankInput ? rankInput.value.trim() : UI.commitOverrideRank;
@@ -2033,12 +2033,40 @@ async function clearManualCommitOverride(){
     UI.commitOverrideError = 'No opened prospect exists for rank #' + rank + '.';
     render(); return;
   }
+  if (!prospect.commitTeam){
+    UI.commitOverrideError = '#' + rank + ' ' + prospect.name + ' is not committed.';
+    render(); return;
+  }
+  UI.pendingClearCommit = {
+    prospectId: pid,
+    rank: rank,
+    name: prospect.name || '',
+    team: prospect.commitTeam || ''
+  };
+  render();
+}
+
+function cancelClearCommit(){
+  UI.pendingClearCommit = null;
+  render();
+}
+
+async function clearManualCommitOverride(){
+  const pending = UI.pendingClearCommit || {};
+  const pid = pending.prospectId || '';
+  const prospect = DB.prospects && DB.prospects[pid];
+  if (!prospect){
+    UI.pendingClearCommit = null;
+    UI.commitOverrideError = 'That commitment could not be cleared. Try entering it again.';
+    render(); return;
+  }
   if (DB.manualCommitOverrides) delete DB.manualCommitOverrides[pid];
   prospect.commitTeam = '';
   applyConditionalRescinds();
   DB.commitUpdatedAt = Date.now();
+  UI.pendingClearCommit = null;
   UI.commitOverrideTeam = '';
-  UI.commitOverrideStatus = 'Manual override cleared for #' + rank + ' ' + prospect.name + '.';
+  UI.commitOverrideStatus = 'Commitment cleared for #' + prospect.rank + ' ' + prospect.name + '.';
   await saveDBNow();
   render();
 }
@@ -3138,6 +3166,7 @@ function render(){
   if (UI.editOfferTarget) html += renderEditOfferModal();
   if (UI.pendingVisitEdit) html += renderVisitConfirmModal();
   if (UI.pendingCommitOverride) html += renderCommitOverrideConfirmModal();
+  if (UI.pendingClearCommit) html += renderClearCommitConfirmModal();
   if (UI.pendingMassRescind) html += renderMassRescindModal();
   if (UI.pendingMassRescindFinal) html += renderMassRescindFinalModal();
   if (UI.pendingSingleRescind) html += renderSingleRescindConfirmModal();
@@ -4107,7 +4136,7 @@ function renderClassSetup(){
   if (DB.commitUpdatedAt) html += '<span class="rb-mono" style="font-size:12px;color:var(--slate);">Last update: ' + escapeHtml(new Date(DB.commitUpdatedAt).toLocaleString()) + '</span>';
   html += '</div>';
   if (seasonEnd){
-    html += '<div class="rb-settings-status rb-settings-status-ready" style="margin-top:10px;">' + escapeHtml(stageConfig.shortLabel) + ' RECRUITING ENDED' + (seasonEnd.season ? ' ' + escapeHtml(seasonEnd.season) : '') + '</div>';
+    html += '<div class="rb-mono" style="font-size:12px;color:var(--slate);margin-top:8px;">' + escapeHtml(stageConfig.shortLabel) + ' recruiting ended' + (seasonEnd.season ? ' for ' + escapeHtml(seasonEnd.season) : '') + '.</div>';
   }
   html += '<div style="border-top:1px solid var(--hairline);margin-top:14px;padding-top:14px;">';
   html += '<div class="rb-mono" style="font-size:12px;color:var(--slate);margin-bottom:10px;">Manual commit override</div>';
@@ -4115,7 +4144,7 @@ function renderClassSetup(){
   html += '<input class="rb-input" id="rb-commit-override-rank" inputmode="numeric" placeholder="Rank" value="' + escapeHtml(UI.commitOverrideRank || '') + '" />';
   html += '<input class="rb-input" id="rb-commit-override-team" placeholder="Committed team" value="' + escapeHtml(UI.commitOverrideTeam || '') + '" list="rb-commit-override-team-options" />';
   html += '<button class="rb-btn rb-btn-gold" id="rb-apply-commit-override">Apply</button>';
-  html += '<button class="rb-btn" id="rb-clear-commit-override">Clear</button>';
+  html += '<button class="rb-btn rb-btn-danger" id="rb-clear-commit-override">Clear commit</button>';
   html += '</div>';
   html += '<datalist id="rb-commit-override-team-options">';
   activeTeamBrands().forEach(function(brand){ html += '<option value="' + escapeHtml(brand.region) + '"></option>'; });
@@ -4362,6 +4391,21 @@ function renderCommitOverrideConfirmModal(){
       '<div style="display:flex;justify-content:flex-end;gap:8px;flex-wrap:wrap;">' +
         '<button class="rb-btn" id="rb-cancel-commit-override-confirm">Cancel</button>' +
         '<button class="rb-btn rb-btn-gold" id="rb-confirm-commit-override">Confirm</button>' +
+      '</div>' +
+    '</div>' +
+  '</div>';
+}
+
+function renderClearCommitConfirmModal(){
+  const pending = UI.pendingClearCommit || {};
+  return '<div style="position:fixed;inset:0;background:rgba(0,0,0,0.72);display:flex;align-items:center;justify-content:center;z-index:60;">' +
+    '<div class="rb-card" style="padding:24px;width:520px;max-width:90vw;border-color:#B33A32;">' +
+      '<div class="rb-h" style="font-size:18px;margin-bottom:8px;color:#FFF2F1;">Clear commitment?</div>' +
+      '<div class="rb-mono" style="font-size:12px;color:var(--slate);margin-bottom:10px;">#' + escapeHtml(pending.rank || '?') + ' ' + escapeHtml(pending.name || 'Unknown prospect') + '</div>' +
+      '<div style="font-size:14px;color:var(--chalk);line-height:1.5;margin-bottom:18px;">This will remove ' + escapeHtml(pending.team || 'the committed team') + ' from this player.</div>' +
+      '<div style="display:flex;justify-content:flex-end;gap:8px;flex-wrap:wrap;">' +
+        '<button class="rb-btn" id="rb-cancel-clear-commit">Cancel</button>' +
+        '<button class="rb-btn rb-btn-danger" id="rb-confirm-clear-commit">Clear commit</button>' +
       '</div>' +
     '</div>' +
   '</div>';
@@ -4655,6 +4699,10 @@ function bindEvents(){
   if (cancelCommitOverrideConfirm) cancelCommitOverrideConfirm.onclick = cancelManualCommitOverride;
   const confirmCommitOverride = document.getElementById('rb-confirm-commit-override');
   if (confirmCommitOverride) confirmCommitOverride.onclick = applyManualCommitOverride;
+  const cancelClearCommitBtn = document.getElementById('rb-cancel-clear-commit');
+  if (cancelClearCommitBtn) cancelClearCommitBtn.onclick = cancelClearCommit;
+  const confirmClearCommit = document.getElementById('rb-confirm-clear-commit');
+  if (confirmClearCommit) confirmClearCommit.onclick = clearManualCommitOverride;
 
   const boardSearch = document.getElementById('rb-board-search');
   if (boardSearch) boardSearch.oninput = function(){
@@ -4969,7 +5017,7 @@ function bindEvents(){
   const applyCommitOverrideBtn = document.getElementById('rb-apply-commit-override');
   if (applyCommitOverrideBtn) applyCommitOverrideBtn.onclick = requestManualCommitOverride;
   const clearCommitOverrideBtn = document.getElementById('rb-clear-commit-override');
-  if (clearCommitOverrideBtn) clearCommitOverrideBtn.onclick = clearManualCommitOverride;
+  if (clearCommitOverrideBtn) clearCommitOverrideBtn.onclick = requestClearCommit;
   const runBackupBtn = document.getElementById('rb-run-backup');
   if (runBackupBtn) runBackupBtn.onclick = runBackupNow;
   const refreshBackupBtn = document.getElementById('rb-refresh-backup');
