@@ -55,6 +55,28 @@ body { margin: 0; background: #0F1420; }
 .rb-btn:disabled { opacity: 0.45; cursor: default; }
 .rb-btn-gold { background: var(--gold); color: #1A1508; border: 1px solid var(--gold); }
 .rb-btn-gold:hover { background: #DBB233; border-color: #DBB233; }
+.rb-back-top {
+  position: fixed;
+  right: 22px;
+  bottom: 22px;
+  z-index: 100;
+  background: var(--gold);
+  color: #1A1508;
+  border-color: var(--gold);
+  box-shadow: 0 14px 32px rgba(0,0,0,0.34);
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(10px);
+  visibility: hidden;
+  transition: opacity .16s, transform .16s, visibility .16s, background .15s, border-color .15s;
+}
+.rb-back-top:hover { background: #DBB233; border-color: #DBB233; }
+.rb-back-top-visible {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateY(0);
+  visibility: visible;
+}
 .rb-card { background: var(--panel); border: 1px solid var(--hairline); border-radius: 10px; }
 .rb-input, .rb-textarea {
   font-family: 'Inter', sans-serif; background: var(--ink); color: var(--chalk);
@@ -514,6 +536,7 @@ body { margin: 0; background: #0F1420; }
 @media (max-width: 720px) {
   .rb-root { padding: 16px; border-radius: 0; }
   .rb-btn { padding: 8px 11px; font-size: 12px; }
+  .rb-back-top { right: 14px; bottom: 14px; }
   .rb-card { border-radius: 8px; }
   .rb-desktop-only { display: none !important; }
   .rb-mobile-only { display: inline !important; }
@@ -3043,11 +3066,12 @@ async function confirmReset(){
 function render(){
   const root = document.getElementById('rb-app');
   if (!dbReady || !sessionReady){
-    root.innerHTML = '<p class="rb-mono" style="color:var(--slate)">Loading league data...</p>';
+    root.innerHTML = '<p class="rb-mono" style="color:var(--slate)">Loading league data...</p>' + renderBackTopControl();
+    bindEvents();
     return;
   }
   if (!SESSION){
-    root.innerHTML = renderHomePage();
+    root.innerHTML = renderHomePage() + renderBackTopControl();
     bindEvents();
     return;
   }
@@ -3071,9 +3095,14 @@ function render(){
   if (UI.pendingSingleRescind) html += renderSingleRescindConfirmModal();
   if (UI.teamAdminModal) html += renderTeamAdminModal();
   if (UI.confirmReset) html += renderResetConfirmModal();
+  html += renderBackTopControl();
   root.innerHTML = html;
   bindEvents();
   scheduleSummaryCountdown();
+}
+
+function renderBackTopControl(){
+  return '<button class="rb-btn rb-back-top" id="rb-back-top" type="button">Back to top</button>';
 }
 
 function uncommittedStatusLabel(count){
@@ -3189,8 +3218,15 @@ function scheduleSummaryCountdown(){
   }, Math.min(1000, ms));
 }
 
-function scrollPageTop(){
-  if (typeof window !== 'undefined' && window.scrollTo) window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
+function scrollPageTop(smooth){
+  if (typeof window !== 'undefined' && window.scrollTo) window.scrollTo({ top: 0, left: 0, behavior: smooth ? 'smooth' : 'auto' });
+}
+
+function updateBackTopControl(){
+  const btn = document.getElementById('rb-back-top');
+  if (!btn) return;
+  const scrollY = window.scrollY || window.pageYOffset || 0;
+  btn.classList.toggle('rb-back-top-visible', scrollY > 650);
 }
 
 function renderUnmatchedReview(){
@@ -4392,6 +4428,10 @@ function renderResetConfirmModal(){
 // ---------- Events ----------
 
 function bindEvents(){
+  const backTopBtn = document.getElementById('rb-back-top');
+  if (backTopBtn) backTopBtn.onclick = function(){ scrollPageTop(true); };
+  updateBackTopControl();
+
   document.querySelectorAll('[data-nav]').forEach(function(el){
     el.onclick = function(){
       navigateTo(el.getAttribute('data-nav'));
@@ -4872,6 +4912,7 @@ function bindEvents(){
 
 applyRoute(routeFromPath(window.location.pathname));
 render();
+window.addEventListener('scroll', updateBackTopControl, { passive: true });
 window.addEventListener('popstate', function(){
   if (!canLeaveTeamsPage()){
     syncBrowserRoute(true);
