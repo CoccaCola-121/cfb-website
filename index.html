@@ -2012,7 +2012,7 @@ async function applyManualCommitOverride(){
   applyConditionalRescinds();
   DB.commitUpdatedAt = Date.now();
   UI.pendingCommitOverride = null;
-  UI.commitOverrideStatus = '#' + prospect.rank + ' ' + prospect.name + ' manually committed to ' + team + '.';
+  UI.commitOverrideStatus = '#' + prospect.rank + ' ' + prospect.name + ' committed to ' + team + '.';
   await saveDBNow();
   render();
 }
@@ -4356,13 +4356,12 @@ function renderCommitOverrideConfirmModal(){
     : (flip ? 'He will decommit from ' + pending.fromTeam + ' and commit to ' + pending.toTeam + '.' : 'He will commit to ' + pending.toTeam + '.');
   return '<div style="position:fixed;inset:0;background:rgba(0,0,0,0.68);display:flex;align-items:center;justify-content:center;z-index:60;">' +
     '<div class="rb-card" style="padding:24px;width:520px;max-width:90vw;border-color:var(--gold);">' +
-      '<div class="rb-h" style="font-size:18px;margin-bottom:8px;">Confirm manual commit</div>' +
+      '<div class="rb-h" style="font-size:18px;margin-bottom:8px;">Confirm commit</div>' +
       '<div class="rb-mono" style="font-size:12px;color:var(--slate);margin-bottom:10px;">#' + escapeHtml(pending.rank || '?') + ' ' + escapeHtml(pending.name || 'Unknown prospect') + '</div>' +
-      '<div style="font-size:14px;color:var(--chalk);line-height:1.5;margin-bottom:10px;">' + escapeHtml(actionText) + '</div>' +
-      '<div style="font-size:12px;color:var(--slate);line-height:1.45;margin-bottom:18px;">This saves a manual override, so future commit syncs will keep this result until you clear it.</div>' +
+      '<div style="font-size:14px;color:var(--chalk);line-height:1.5;margin-bottom:18px;">' + escapeHtml(actionText) + '</div>' +
       '<div style="display:flex;justify-content:flex-end;gap:8px;flex-wrap:wrap;">' +
         '<button class="rb-btn" id="rb-cancel-commit-override-confirm">Cancel</button>' +
-        '<button class="rb-btn rb-btn-gold" id="rb-confirm-commit-override">Confirm commit</button>' +
+        '<button class="rb-btn rb-btn-gold" id="rb-confirm-commit-override">Confirm</button>' +
       '</div>' +
     '</div>' +
   '</div>';
