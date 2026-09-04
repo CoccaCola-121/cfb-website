@@ -4079,7 +4079,7 @@ function renderThreadProspectList(t){
   html += '<input class="rb-input" data-thread-search="' + t.id + '" placeholder="Search recruits by name, rank or hometown" />';
   const commitFilter = UI.boardCommitFilter || (UI.hideCommittedBoards ? 'uncommitted' : 'all');
   html += '<div class="rb-filter-row"><div class="rb-segmented" aria-label="Commit status filter">';
-  [['committed','Committed'], ['all','All'], ['uncommitted', ended ? 'Free agents' : 'Uncommitted']].forEach(function(option){
+  [['committed','Committed'], ['all','All'], ['uncommitted','Uncommitted']].forEach(function(option){
     html += '<button type="button" data-board-commit-filter="' + option[0] + '" aria-pressed="' + (commitFilter === option[0] ? 'true' : 'false') + '">' + option[1] + '</button>';
   });
   html += '</div></div>';
