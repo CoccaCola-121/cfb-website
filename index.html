@@ -600,6 +600,7 @@ const SESSION_KEY = 'rb-session-v1';
 const DEFAULT_CLASS_FILE = 'recruiting-class-2062.csv';
 const DEFAULT_CLASS_NAME = 'Recruiting Classes - 2062.csv';
 const DEFAULT_COMMIT_SHEET_URL = 'https://docs.google.com/spreadsheets/d/1lJId_aHADTpoS03HcWbj2MZ_GNM_7syYJW_HKXHZlyg/edit?gid=874510495#gid=874510495';
+const CURRENT_HS_RECRUITING_END = { season: '2062', stage: 'hs', sourceLine: 'End of 2062 HS Recruiting' };
 
 let DB = { fullRoster: [], recruitingStage: 'hs', released: {}, wave1Released: false, wave2Released: false,
            prospects: {}, threads: [], offersByProspect: {}, unmatched: [], teams: {},
@@ -649,9 +650,14 @@ function recruitingStage(){
 function recruitingStageConfig(){
   return RECRUITING_STAGES[recruitingStage()];
 }
-function recruitingEndedForCurrentStage(){
+function activeCommitSeasonEnd(){
   const ended = DB.commitSeasonEnded || null;
-  return !!(ended && ended.stage === recruitingStage());
+  if (ended && ended.stage === recruitingStage()) return ended;
+  if (recruitingStage() === 'hs' && DB.defaultClassLoaded && Object.keys(DB.prospects || {}).length) return CURRENT_HS_RECRUITING_END;
+  return null;
+}
+function recruitingEndedForCurrentStage(){
+  return !!activeCommitSeasonEnd();
 }
 function hasPendingTeamChanges(){
   const p = UI.teamPending || {};
@@ -4043,6 +4049,7 @@ function renderClassSetup(){
   if (!canViewSettings()) return renderAccessDenied();
   const stage = recruitingStage();
   const stageConfig = recruitingStageConfig();
+  const seasonEnd = activeCommitSeasonEnd();
 
   html += '<div class="rb-card" style="padding:18px 20px;max-width:640px;margin-bottom:14px;border-color:' + (DB.offersLocked ? '#6F1D1B' : 'var(--hairline)') + ';">';
   html += '<div class="rb-offer-window-row">';
@@ -4099,8 +4106,8 @@ function renderClassSetup(){
   html += '<button class="rb-btn rb-btn-gold" id="rb-update-commits" ' + (UI.updatingCommits || (!apiAvailable() && !DB.commitSheetUrl) ? 'disabled' : '') + '>' + (UI.updatingCommits ? 'Updating...' : 'Manual push') + '</button>';
   if (DB.commitUpdatedAt) html += '<span class="rb-mono" style="font-size:12px;color:var(--slate);">Last update: ' + escapeHtml(new Date(DB.commitUpdatedAt).toLocaleString()) + '</span>';
   html += '</div>';
-  if (DB.commitSeasonEnded && DB.commitSeasonEnded.stage === stage){
-    html += '<div class="rb-settings-status rb-settings-status-ready" style="margin-top:10px;">' + escapeHtml(stageConfig.shortLabel) + ' RECRUITING ENDED' + (DB.commitSeasonEnded.season ? ' ' + escapeHtml(DB.commitSeasonEnded.season) : '') + '</div>';
+  if (seasonEnd){
+    html += '<div class="rb-settings-status rb-settings-status-ready" style="margin-top:10px;">' + escapeHtml(stageConfig.shortLabel) + ' RECRUITING ENDED' + (seasonEnd.season ? ' ' + escapeHtml(seasonEnd.season) : '') + '</div>';
   }
   html += '<div style="border-top:1px solid var(--hairline);margin-top:14px;padding-top:14px;">';
   html += '<div class="rb-mono" style="font-size:12px;color:var(--slate);margin-bottom:10px;">Manual commit override</div>';
