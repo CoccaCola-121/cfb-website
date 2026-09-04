@@ -57,8 +57,8 @@ body { margin: 0; background: #0F1420; }
 .rb-btn-gold:hover { background: #DBB233; border-color: #DBB233; }
 .rb-back-top {
   position: fixed;
-  right: 22px;
-  bottom: 22px;
+  top: 18px;
+  left: 50%;
   z-index: 100;
   background: var(--gold);
   color: #1A1508;
@@ -66,7 +66,7 @@ body { margin: 0; background: #0F1420; }
   box-shadow: 0 14px 32px rgba(0,0,0,0.34);
   opacity: 0;
   pointer-events: none;
-  transform: translateY(10px);
+  transform: translate(-50%, -12px);
   visibility: hidden;
   transition: opacity .16s, transform .16s, visibility .16s, background .15s, border-color .15s;
 }
@@ -74,7 +74,7 @@ body { margin: 0; background: #0F1420; }
 .rb-back-top-visible {
   opacity: 1;
   pointer-events: auto;
-  transform: translateY(0);
+  transform: translate(-50%, 0);
   visibility: visible;
 }
 .rb-card { background: var(--panel); border: 1px solid var(--hairline); border-radius: 10px; }
@@ -536,7 +536,7 @@ body { margin: 0; background: #0F1420; }
 @media (max-width: 720px) {
   .rb-root { padding: 16px; border-radius: 0; }
   .rb-btn { padding: 8px 11px; font-size: 12px; }
-  .rb-back-top { right: 14px; bottom: 14px; }
+  .rb-back-top { top: 12px; }
   .rb-card { border-radius: 8px; }
   .rb-desktop-only { display: none !important; }
   .rb-mobile-only { display: inline !important; }
