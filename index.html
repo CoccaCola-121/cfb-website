@@ -4029,7 +4029,7 @@ function renderFeed(){
   if (!recruitingStageConfig().usesWaves && DB.threads.length === 1){
     return renderThreadProspectList(DB.threads[0]);
   }
-  let html = '<input class="rb-input" id="rb-board-search" placeholder="search recruits by name, rank or hometown" style="margin-bottom:14px;" />';
+  let html = '<input class="rb-input" id="rb-board-search" placeholder="Search recruits by name, rank or hometown" style="margin-bottom:14px;" />';
   html += '<div id="rb-board-cards" class="rb-board-list">';
   DB.threads.forEach(function(t){
     const visibleIds = visibleBoardProspectIds(t);
@@ -4076,7 +4076,7 @@ function renderThreadProspectList(t){
   html += '<div class="rb-card" style="padding:14px 16px;margin-bottom:14px;">';
   const visibleIds = visibleBoardProspectIds(t);
   html += renderPositionCounts(visibleIds, function(pid){ return DB.prospects[pid] && DB.prospects[pid].position; }, filterKey);
-  html += '<input class="rb-input" data-thread-search="' + t.id + '" placeholder="search recruits by name, rank or hometown" />';
+  html += '<input class="rb-input" data-thread-search="' + t.id + '" placeholder="Search recruits by name, rank or hometown" />';
   const commitFilter = UI.boardCommitFilter || (UI.hideCommittedBoards ? 'uncommitted' : 'all');
   html += '<div class="rb-filter-row"><div class="rb-segmented" aria-label="Commit status filter">';
   [['committed','Committed'], ['all','All'], ['uncommitted', ended ? 'Free agents' : 'Uncommitted']].forEach(function(option){
