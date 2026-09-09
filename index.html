@@ -420,11 +420,17 @@ function teamBrandKeys(team){
   return keys;
 }
 
+let builtInBrandingSource = null;
+let builtInBrandingIndex = null;
 function builtInTeamBranding(){
+  const source = window.NZCFL_TEAM_BRANDS;
+  if (builtInBrandingIndex && builtInBrandingSource === source) return builtInBrandingIndex;
   const branding = {};
-  (window.NZCFL_TEAM_BRANDS || []).forEach(function(brand){
+  (source || []).forEach(function(brand){
     teamBrandKeys(brand).forEach(function(key){ branding[key] = brand; });
   });
+  builtInBrandingSource = source;
+  builtInBrandingIndex = branding;
   return branding;
 }
 
@@ -433,7 +439,10 @@ function allTeamBranding(){
 }
 
 function getTeamBranding(teamName){
-  return allTeamBranding()[teamKey(teamName)] || null;
+  const key = teamKey(teamName);
+  const overrides = DB.teamBranding || {};
+  if (Object.prototype.hasOwnProperty.call(overrides, key)) return overrides[key] || null;
+  return builtInTeamBranding()[key] || null;
 }
 
 function canonicalTeamName(teamName){
@@ -444,8 +453,9 @@ function canonicalTeamName(teamName){
 function activeTeamBrands(){
   const seen = {};
   const brands = [];
-  Object.keys(allTeamBranding()).forEach(function(key){
-    const brand = allTeamBranding()[key];
+  const branding = allTeamBranding();
+  Object.keys(branding).forEach(function(key){
+    const brand = branding[key];
     if (!brand || !brand.region || seen[teamKey(brand.region)]) return;
     seen[teamKey(brand.region)] = true;
     brands.push(brand);
@@ -558,6 +568,25 @@ function committedCardStyle(teamName){
   if (!brand || !brand.primary) return 'opacity:0.48;filter:grayscale(0.45);';
   const primary = brand.primary;
   return 'border-color:' + primary + '66;background:var(--panel);box-shadow:inset 3px 0 0 ' + primary + ';';
+}
+
+function teamBorderColor(brand){
+  let hex = String((brand && brand.primary) || '').trim().replace(/^#/, '');
+  if (/^[\da-f]{3}$/i.test(hex)) hex = hex.split('').map(function(c){ return c + c; }).join('');
+  if (!/^[\da-f]{6}$/i.test(hex)) return '#85888b';
+  let rgb = [0, 2, 4].map(function(offset){ return parseInt(hex.slice(offset, offset + 2), 16); });
+  function luminance(channels){
+    const linear = channels.map(function(channel){
+      const value = channel / 255;
+      return value <= 0.04045 ? value / 12.92 : Math.pow((value + 0.055) / 1.055, 2.4);
+    });
+    return linear[0] * 0.2126 + linear[1] * 0.7152 + linear[2] * 0.0722;
+  }
+  // Lift dark school colors enough to distinguish them from the charcoal panel.
+  while (luminance(rgb) < 0.15){
+    rgb = rgb.map(function(channel){ return Math.round(channel + (255 - channel) * 0.12); });
+  }
+  return '#' + rgb.map(function(channel){ return channel.toString(16).padStart(2, '0'); }).join('');
 }
 
 function offerCountForProspect(pid){
@@ -3448,11 +3477,11 @@ function renderTeamsPage(){
     const pendingSwitch = link && pending.switches && pending.switches[link.discordId];
     const pendingRole = link && pending.roles && pending.roles[link.discordId];
     const rowSearch = [brand.region, brand.abbrev, brand.nickname, brand.displayName, link && link.displayName, link && link.username, canAdmin && link && link.discordId].join(' ').toLowerCase();
-    html += '<div class="rb-card rb-team-card-mobile" data-team-card="1" data-open-team-commits="' + escapeHtml(brand.region) + '" data-search="' + escapeHtml(rowSearch) + '" style="padding:14px 18px;border-color:' + escapeHtml(brand.primary || 'var(--hairline)') + '66;cursor:pointer;">';
+    html += '<div class="rb-card rb-team-card" data-team-card="1" data-open-team-commits="' + escapeHtml(brand.region) + '" data-search="' + escapeHtml(rowSearch) + '" style="--team-border:' + teamBorderColor(brand) + ';">';
     html += '<div class="rb-team-card-row">';
     html += '<div style="min-width:0;display:flex;align-items:center;gap:12px;">' + renderTeamLogo(brand) +
       '<div style="min-width:0;"><div style="font-weight:700;color:var(--chalk);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' + escapeHtml(brand.region) + '</div></div></div>';
-    html += '<div style="display:flex;align-items:center;gap:10px;justify-content:flex-end;flex-wrap:wrap;">';
+    html += '<div class="rb-team-card-actions">';
     if (link){
       const level = String((pendingRole && pendingRole.accessLevel) || link.accessLevel || 'coach').toLowerCase();
       html += '<button class="rb-tag rb-coach-pill rb-mobile-coach-action" data-mobile-team-admin="1" data-mobile-team-admin-team="' + escapeHtml(brand.region) + '" data-mobile-team-admin-discord="' + escapeHtml(link.discordId) + '" style="border:0;cursor:pointer;">' + escapeHtml(link.displayName || link.username || 'Discord linked') + '</button>';
@@ -3471,7 +3500,7 @@ function renderTeamsPage(){
         html += '</select>';
       }
     } else {
-      html += '<span class="rb-mono" style="font-size:12px;color:var(--slate);">No Discord linked</span>';
+      html += '<span class="rb-mono rb-team-unlinked">No Discord linked</span>';
     }
     html += '</div></div>';
     html += '</div>';
@@ -3514,11 +3543,7 @@ function renderFeed(){
       return sum + (p && !p.commitTeam ? 1 : 0);
     }, 0);
     const uncommittedLabel = uncommittedStatusLabel(uncommittedCount);
-    const threadSearch = visibleIds.map(function(pid){
-      const p = DB.prospects[pid] || {};
-      return [p.rank, '#' + p.rank, p.name, p.hometown].join(' ');
-    }).join(' ').toLowerCase();
-    html += '<button type="button" class="rb-card rb-board-tile" data-board-card="1" data-search="' + escapeHtml(threadSearch) + '" data-open-thread="' + t.id + '">' +
+    html += '<button type="button" class="rb-card rb-board-tile" data-board-card="1" data-open-thread="' + t.id + '">' +
       '<span class="rb-board-tile-inner">' +
         '<span class="rb-board-info">' +
           '<span class="rb-h rb-board-title">' + escapeHtml(t.title) + '</span>' +
@@ -3529,22 +3554,32 @@ function renderFeed(){
     '</button>';
 	  });
   html += '</div>';
-  html += '<div id="rb-board-player-results" style="display:none;flex-direction:column;gap:10px;">';
+  // Search cards are expensive (offers, school logos, and commit details). Build
+  // only matching cards when a search is entered, not thousands of hidden cards.
+  html += '<div id="rb-board-player-results" style="display:none;flex-direction:column;gap:10px;"></div>';
+  return html;
+}
+
+function renderBoardSearchResults(query){
+  const q = String(query || '').toLowerCase().trim();
+  if (!q) return '';
+  const context = { ended: recruitingEndedForCurrentStage(), thread: null };
+  let html = '';
   DB.threads.forEach(function(t){
     visibleBoardProspectIds(t).forEach(function(pid){
-      const p = DB.prospects[pid] || {};
+      const p = DB.prospects[pid];
       const searchText = [p.rank, '#' + p.rank, p.name, p.hometown].join(' ').toLowerCase();
-      html += renderProspectBoardCard(pid, searchText);
+      if (searchText.indexOf(q) !== -1) html += renderProspectBoardCard(pid, searchText, context);
     });
   });
-  html += '</div>';
-  return html;
+  return html || '<div class="rb-card" style="padding:28px;text-align:center;color:var(--slate);" role="status">No recruits match that search.</div>';
 }
 
 function renderThreadProspectList(t){
   if (!t) return '<div style="color:var(--slate);">Thread not found.</div>';
   const filterKey = positionFilterKey('board', t.id);
   const ended = recruitingEndedForCurrentStage();
+  const cardContext = { ended: ended, thread: UI.view === 'thread' ? t : null };
   let html = '<div class="rb-h" style="font-size:20px;margin-bottom:4px;">' + escapeHtml(t.title) + '</div>';
   html += '<div style="font-size:13px;color:var(--slate);margin-bottom:18px;">' + rankRangeForThread(t) + ' on the board. Offers from every team stay visible here.</div>';
   html += '<div class="rb-card" style="padding:14px 16px;margin-bottom:14px;">';
@@ -3564,20 +3599,21 @@ function renderThreadProspectList(t){
     const p = DB.prospects[pid];
     if (!p) return;
     const searchText = [p.rank, '#' + p.rank, p.name, p.hometown].join(' ').toLowerCase();
-    html += renderProspectBoardCard(pid, searchText);
+    html += renderProspectBoardCard(pid, searchText, cardContext);
   });
   if (!visibleIds.length) html += '<div class="rb-card" style="padding:28px;text-align:center;color:var(--slate);">No ' + (ended ? 'free agents' : 'uncommitted prospects') + ' on this board.</div>';
   html += '</div>';
   return html;
 }
 
-function renderProspectBoardCard(pid, searchAttr){
+function renderProspectBoardCard(pid, searchAttr, context){
   const p = DB.prospects[pid];
   if (!p) return '';
   const offers = DB.offersByProspect[pid] || [];
   const searchText = searchAttr || [p.rank, '#' + p.rank, p.name, p.hometown].join(' ').toLowerCase();
   const bucket = positionBucket(p.position);
-  const currentThread = UI.view === 'thread' ? DB.threads.find(function(t){ return t.id === UI.threadId; }) : null;
+  const ended = context ? context.ended : recruitingEndedForCurrentStage();
+  const currentThread = context ? context.thread : (UI.view === 'thread' ? DB.threads.find(function(t){ return t.id === UI.threadId; }) : null);
   const commitReturn = currentThread ? { view: 'thread', threadId: currentThread.id, label: currentThread.title } : { view: 'feed', label: 'Prospect Board' };
   let html = '<div class="rb-card rb-mobile-tight" data-prospect-card="1" data-position-bucket="' + escapeHtml(bucket) + '" data-search="' + escapeHtml(searchText) + '" data-open-prospect="' + pid + '" style="padding:14px 18px;cursor:pointer;' + (p.commitTeam ? committedCardStyle(p.commitTeam) : '') + '">';
   html += '<div style="display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:10px;">';
@@ -3587,7 +3623,7 @@ function renderProspectBoardCard(pid, searchAttr){
     '<span class="rb-mono" style="color:var(--slate);font-size:13px;">' + escapeHtml(p.position) + (p.rating ? ' &middot; ' + escapeHtml(p.rating) : '') + '</span>' +
     (p.hometown ? '<span style="color:var(--slate);font-size:13px;"> &middot; <span title="' + escapeHtml(p.hometown) + '">' + escapeHtml(shortText(p.hometown, 28)) + '</span></span>' : '') +
   '</div>';
-  html += '<div style="display:flex;align-items:center;gap:8px;white-space:nowrap;">' + (p.commitTeam || recruitingEndedForCurrentStage() ? '' : offerCountTag(pid)) + (p.commitTeam ? renderCommittedTag(p.commitTeam, true, commitReturn) : (recruitingEndedForCurrentStage() ? freeAgentTag() : '')) + '</div>';
+  html += '<div style="display:flex;align-items:center;gap:8px;white-space:nowrap;">' + (p.commitTeam || ended ? '' : offerCountTag(pid)) + (p.commitTeam ? renderCommittedTag(p.commitTeam, true, commitReturn) : (ended ? freeAgentTag() : '')) + '</div>';
   html += '</div>';
   if (!p.commitTeam) html += renderStorylineLine(p.storyline, 'margin-top:6px;');
   if (offers.length && !p.commitTeam){
@@ -4236,15 +4272,11 @@ function bindEvents(){
     const boardCards = document.getElementById('rb-board-cards');
     const playerResults = document.getElementById('rb-board-player-results');
     if (boardCards) boardCards.style.display = q ? 'none' : 'flex';
-    if (playerResults) playerResults.style.display = q ? 'flex' : 'none';
-    document.querySelectorAll('[data-board-card]').forEach(function(card){
-      const haystack = card.getAttribute('data-search') || '';
-      card.style.display = !q || haystack.indexOf(q) !== -1 ? '' : 'none';
-    });
-    document.querySelectorAll('#rb-board-player-results [data-prospect-card]').forEach(function(card){
-      const haystack = card.getAttribute('data-search') || '';
-      card.style.display = !q || haystack.indexOf(q) !== -1 ? '' : 'none';
-    });
+    if (playerResults){
+      playerResults.style.display = q ? 'flex' : 'none';
+      playerResults.innerHTML = renderBoardSearchResults(q);
+      if (q) bindEvents();
+    }
   };
   document.querySelectorAll('[data-board-commit-filter]').forEach(function(el){
     el.onclick = function(){

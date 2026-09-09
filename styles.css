@@ -221,12 +221,23 @@ button, a, input, select, textarea, summary { -webkit-tap-highlight-color: trans
   overflow: hidden;
 }
 .rb-mobile-admin-control { display: inline-flex; }
+.rb-team-card {
+  padding: 12px 18px;
+  border-color: var(--team-border, var(--hairline));
+  border-left-width: 4px;
+  cursor: pointer;
+}
 .rb-team-card-row {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   gap: 14px;
   align-items: center;
+  min-height: 40px;
 }
+.rb-team-card-actions { display: flex; align-items: center; gap: 10px; justify-content: flex-end; flex-wrap: wrap; min-height: 40px; }
+.rb-team-card-actions .rb-btn { min-height: 36px; padding: 7px 12px; line-height: 1.4; }
+.rb-team-card-actions .rb-input { height: 36px; }
+.rb-team-unlinked { color: var(--slate); font-size: 12px; }
 .rb-coach-pill {
   display: inline-flex;
   align-items: center;
@@ -381,8 +392,9 @@ button, a, input, select, textarea, summary { -webkit-tap-highlight-color: trans
   .rb-desktop-only { display: none !important; }
   .rb-mobile-only { display: inline !important; }
   .rb-mobile-admin-control { display: none !important; }
-  .rb-team-card-mobile { padding: 10px 12px !important; }
+  .rb-team-card { padding: 10px 12px; }
   .rb-team-card-row { grid-template-columns: minmax(0, 1fr); gap: 6px; }
+  .rb-team-card-actions { min-height: 28px; justify-content: flex-start; }
   .rb-commit-override-grid { grid-template-columns: minmax(0, 1fr); }
   .rb-coach-pill { min-width: 0; max-width: 100%; min-height: 28px; padding: 6px 10px; font-size: 12px; justify-content: flex-start; }
   .rb-values-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
