@@ -372,9 +372,9 @@ function renderRecruitValues(values){
   rows.forEach(function(row, index){
     const value = Math.max(0, Math.min(1, Number(row.value)));
     html += '<div class="rb-value-chip ' + (index < 3 ? 'rb-value-chip-strong' : '') + '" style="--value-fill:' + Math.round(value * 100) + '%;">' +
-      '<span style="display:flex;justify-content:space-between;align-items:center;gap:8px;">' +
-        '<span class="rb-mono" style="font-size:10px;color:' + (index < 3 ? 'var(--gold)' : 'var(--slate)') + ';text-transform:uppercase;letter-spacing:0.04em;">' + escapeHtml(row.field.label) + '</span>' +
-        '<strong class="rb-mono" style="font-size:11px;color:var(--chalk);">' + escapeHtml(formatRecruitValue(value)) + '</strong>' +
+      '<span class="rb-value-chip-content">' +
+        '<span class="rb-mono rb-value-chip-label">' + escapeHtml(row.field.label) + '</span>' +
+        '<strong class="rb-mono rb-value-chip-score">' + escapeHtml(formatRecruitValue(value)) + '</strong>' +
       '</span>' +
     '</div>';
   });
