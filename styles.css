@@ -1,0 +1,536 @@
+.rb-root {
+  box-sizing: border-box;
+  --ink: #141516;
+  --panel: #1C1D1F;
+  --panel-alt: #252729;
+  --hairline: #393B3E;
+  --gold: #C9A227;
+  --gold-dim: #8A7222;
+  --turf: #4C8058;
+  --alert: #D2564C;
+  --chalk: #F2F2F0;
+  --slate: #A0A3A6;
+  --accent: #CF343D;
+  --accent-hover: #E44750;
+  font-family: 'Inter', sans-serif;
+  background: var(--ink);
+  color: var(--chalk);
+  font-size: 16px;
+  line-height: 1.5;
+  width: 100%;
+  max-width: 1424px;
+  margin: 0 auto;
+  padding: 32px 48px 64px;
+  min-height: 100vh;
+  min-height: 100svh;
+}
+body { margin: 0; background: #141516; }
+html { color-scheme: dark; }
+button, input, select, textarea { font: inherit; }
+button, a, input, select, textarea, summary { -webkit-tap-highlight-color: transparent; }
+::selection { background: #CF343D; color: #fff; }
+.rb-root * { box-sizing: border-box; }
+.rb-h { font-family: 'Oswald', sans-serif; text-transform: uppercase; letter-spacing: 0.04em; }
+.rb-mono { font-family: 'IBM Plex Mono', monospace; }
+.rb-btn {
+  font-family: 'Inter', sans-serif; font-weight: 600; font-size: 14px;
+  background: var(--panel-alt); color: var(--chalk); border: 1px solid var(--hairline);
+  border-radius: 4px; padding: 10px 16px; cursor: pointer; transition: border-color .15s, background .15s, color .15s;
+}
+.rb-btn:hover { border-color: #737679; background: #303235; }
+.rb-btn:disabled { opacity: 0.45; cursor: default; }
+.rb-btn-gold { background: var(--accent); color: #fff; border: 1px solid var(--accent); }
+.rb-btn-gold:hover { background: var(--accent-hover); border-color: var(--accent-hover); }
+.rb-back-top {
+  position: fixed;
+  top: 18px;
+  left: 50%;
+  z-index: 100;
+  background: #F2F2F0;
+  color: #202224;
+  border-color: #F2F2F0;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.24);
+  opacity: 0;
+  pointer-events: none;
+  transform: translate(-50%, -12px);
+  visibility: hidden;
+  transition: opacity .16s, transform .16s, visibility .16s, background .15s, border-color .15s;
+}
+.rb-back-top:hover { background: #fff; border-color: #fff; }
+.rb-back-top-visible {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translate(-50%, 0);
+  visibility: visible;
+}
+.rb-card { background: var(--panel); border: 1px solid var(--hairline); border-radius: 5px; }
+.rb-input, .rb-textarea {
+  font-family: 'Inter', sans-serif; background: var(--ink); color: var(--chalk);
+  border: 1px solid var(--hairline); border-radius: 4px; padding: 11px 13px; font-size: 16px; width: 100%;
+}
+.rb-input:focus, .rb-textarea:focus { outline: 2px solid var(--accent); outline-offset: 2px; border-color: var(--accent); }
+.rb-root :focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; }
+.rb-input::placeholder, .rb-textarea::placeholder { color: var(--slate); opacity: 1; }
+.rb-file-input { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
+.rb-file-label {
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  font-family: 'Inter', sans-serif; font-weight: 600; font-size: 14px;
+  background: var(--panel-alt); color: var(--chalk); border: 1px solid var(--hairline);
+  border-radius: 6px; padding: 10px 16px; cursor: pointer; transition: border-color .15s, background .15s;
+}
+.rb-file-label:hover { border-color: var(--gold-dim); background: #303235; }
+.rb-btn-danger { background: #6F1D1B; color: #FFF2F1; border-color: #B33A32; }
+.rb-btn-danger:hover { background: #8D2723; border-color: #D2564C; }
+.rb-offer-summary::-webkit-details-marker { display: none; }
+.rb-star { color: var(--gold); }
+.rb-star-empty { color: #53565A; }
+.rb-scrollbar::-webkit-scrollbar { width: 8px; }
+.rb-scrollbar::-webkit-scrollbar-thumb { background: var(--hairline); border-radius: 4px; }
+.rb-tag { font-size: 11px; background: var(--panel-alt); border: 1px solid var(--hairline); border-radius: 6px; padding: 6px 10px; margin-top: 4px; display: block; }
+.rb-filter-row { display: flex; gap: 10px; align-items: center; justify-content: flex-end; flex-wrap: wrap; margin-top: 10px; }
+.rb-segmented {
+  display: inline-flex;
+  gap: 2px;
+  padding: 3px;
+  border: 1px solid var(--hairline);
+  border-radius: 8px;
+  background: var(--ink);
+}
+.rb-segmented button {
+  font-family: 'Inter', sans-serif;
+  font-weight: 700;
+  font-size: 14px;
+  color: var(--slate);
+  background: transparent;
+  border: 0;
+  border-radius: 6px;
+  padding: 7px 10px;
+  cursor: pointer;
+}
+.rb-segmented button:hover { color: var(--chalk); }
+.rb-segmented button[aria-pressed="true"] {
+  color: var(--chalk);
+  background: #393C3F;
+}
+.rb-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--slate);
+  font-size: 12px;
+  cursor: pointer;
+  user-select: none;
+}
+.rb-toggle input { position: absolute; opacity: 0; pointer-events: none; }
+.rb-switch-track {
+  width: 44px;
+  height: 24px;
+  border-radius: 999px;
+  background: #393C3F;
+  border: 1px solid var(--hairline);
+  padding: 2px;
+  transition: background .15s, border-color .15s;
+  flex: 0 0 auto;
+}
+.rb-switch-thumb {
+  display: block;
+  width: 18px;
+  height: 18px;
+  border-radius: 7px;
+  background: #F3F4F6;
+  box-shadow: 0 2px 5px rgba(0,0,0,0.32);
+  transition: transform .15s;
+}
+.rb-toggle input:checked + .rb-switch-track { background: #58BF72; border-color: #43995B; }
+.rb-toggle input:checked + .rb-switch-track .rb-switch-thumb { transform: translateX(20px); }
+.rb-offer-window-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+.rb-offer-window-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.rb-offer-status {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 12px;
+  color: var(--gold);
+  border: 1px solid rgba(201,162,39,0.38);
+  background: rgba(201,162,39,0.10);
+  border-radius: 999px;
+  padding: 6px 10px;
+  line-height: 1;
+}
+.rb-offer-status-closed {
+  color: #FFF2F1;
+  border-color: rgba(210,86,76,0.54);
+  background: rgba(111,29,27,0.42);
+}
+.rb-settings-status {
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 12px;
+  color: var(--slate);
+  border: 1px solid var(--hairline);
+  background: var(--panel-alt);
+  border-radius: 999px;
+  padding: 6px 10px;
+  line-height: 1;
+}
+.rb-settings-status-ready {
+  color: var(--gold);
+  border-color: rgba(201,162,39,0.38);
+  background: rgba(201,162,39,0.10);
+}
+.rb-settings-status-error {
+  color: #FFF2F1;
+  border-color: rgba(210,86,76,0.54);
+  background: rgba(111,29,27,0.42);
+}
+.rb-offer-lock-toggle {
+  color: var(--chalk);
+  font-size: 13px;
+  font-weight: 600;
+  border: 1px solid var(--hairline);
+  border-radius: 8px;
+  background: var(--panel-alt);
+  padding: 8px 10px;
+}
+.rb-offer-lock-toggle input:checked + .rb-switch-track { background: #6F1D1B; border-color: #B33A32; }
+.rb-mobile-only { display: none; }
+.rb-my-offer-summary-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 16px;
+}
+.rb-my-offer-meta {
+  min-width: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  white-space: nowrap;
+  overflow: hidden;
+}
+.rb-mobile-admin-control { display: inline-flex; }
+.rb-team-card-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 14px;
+  align-items: center;
+}
+.rb-coach-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 30px;
+  min-width: 110px;
+  max-width: 190px;
+  margin: 0;
+  padding: 7px 12px;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--chalk);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* Prospect boards behave like rows in a recruiting ledger. */
+.rb-board-list { display: flex; flex-direction: column; border-top: 1px solid var(--hairline); }
+.rb-board-tile { display: flex; align-items: center; min-height: 112px; padding: 24px; width: 100%; color: inherit; font: inherit; text-align: left; cursor: pointer; border: 0; border-bottom: 1px solid var(--hairline); border-radius: 0; background: transparent; transition: background .15s; }
+.rb-board-tile:hover { background: var(--panel); }
+.rb-board-tile:focus-visible { position: relative; z-index: 1; outline-offset: -3px; }
+.rb-board-tile-inner { display: flex; justify-content: space-between; align-items: center; gap: 24px; width: 100%; }
+.rb-board-info { min-width: 0; }
+.rb-board-title { display: block; font-size: 24px; font-weight: 500; letter-spacing: .01em; }
+.rb-board-meta { display: block; font-size: 14px; color: var(--slate); margin-top: 6px; }
+.rb-board-trailing { display: flex; align-items: center; gap: 36px; }
+.rb-board-trailing > .rb-icon { color: var(--slate); transition: transform .15s, color .15s; }
+.rb-board-tile:hover .rb-board-trailing > .rb-icon { color: var(--chalk); transform: translateX(3px); }
+.rb-board-stars { font-size: 18px; white-space: nowrap; letter-spacing: .08em; }
+.rb-values-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(118px, 1fr));
+  gap: 7px;
+  margin-top: 12px;
+}
+.rb-value-chip {
+  position: relative;
+  overflow: hidden;
+  border: 1px solid var(--hairline);
+  border-radius: 6px;
+  background: var(--panel-alt);
+  padding: 7px 9px;
+}
+.rb-value-chip:before {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: var(--value-fill, 0%);
+  background: rgba(201,162,39,0.12);
+  opacity: 0.9;
+}
+.rb-value-chip > span {
+  position: relative;
+  z-index: 1;
+}
+.rb-value-chip-strong { border-color: var(--gold-dim); }
+/* Persistent league masthead and location-aware navigation. */
+.rb-nav-shell { margin-bottom: 36px; }
+.rb-nav-top { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 20px; padding-bottom: 28px; }
+.rb-nav-brand { display: inline-flex; align-items: center; padding: 0; border: 0; background: transparent; color: inherit; cursor: pointer; }
+.rb-nav-session { display: flex; align-items: center; gap: 20px; font-size: 14px; min-height: 32px; }
+.rb-nav-team { display: inline-flex; align-items: center; gap: 8px; line-height: 1.2; }
+.rb-nav-session a { color: var(--slate); text-decoration: none; font-size: 13px; }
+.rb-nav-session a:hover { color: var(--chalk); }
+.rb-session-divider { width: 1px; height: 20px; background: var(--hairline); }
+.rb-nav-actions { display: flex; gap: 30px; overflow-x: auto; scrollbar-width: thin; border-bottom: 1px solid var(--hairline); }
+.rb-nav-link { flex: 0 0 auto; position: relative; padding: 14px 0 16px; border: 0; background: transparent; color: var(--slate); font: inherit; font-size: 14px; font-weight: 500; cursor: pointer; }
+.rb-nav-link:hover { color: var(--chalk); }
+.rb-nav-link[aria-current="page"] { color: var(--chalk); }
+.rb-nav-link[aria-current="page"]::after { content: ""; position: absolute; bottom: 0; left: 0; right: 0; height: 3px; background: var(--accent); }
+.rb-nav-link:focus-visible { outline-offset: -4px; }
+.rb-team-picker { position: relative; }
+.rb-team-results {
+  position: absolute;
+  z-index: 5;
+  top: calc(100% + 6px);
+  left: 0;
+  right: 0;
+  max-height: 220px;
+  overflow: auto;
+  background: #171A20;
+  border: 1px solid var(--hairline);
+  border-radius: 8px;
+  box-shadow: 0 16px 36px rgba(0,0,0,0.35);
+}
+.rb-team-option {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  background: transparent;
+  color: var(--chalk);
+  border: 0;
+  padding: 10px 12px;
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+}
+.rb-team-option:hover { background: var(--panel-alt); }
+.rb-position-counts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0 0 12px 0;
+}
+.rb-position-count-actions {
+  display: inline-flex;
+  gap: 5px;
+}
+.rb-position-count {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 5px;
+  font-family: 'Inter', sans-serif;
+  border: 1px solid var(--hairline);
+  border-radius: 6px;
+  background: var(--panel-alt);
+  color: inherit;
+  padding: 5px 8px;
+  line-height: 1;
+  cursor: pointer;
+  transition: opacity .15s, border-color .15s, background .15s;
+}
+.rb-position-count:hover { border-color: var(--gold-dim); }
+.rb-position-count-muted { opacity: 0.38; background: var(--ink); }
+.rb-position-count-action {
+  color: var(--chalk);
+  font-size: 12px;
+  font-weight: 600;
+  padding: 5px 7px;
+}
+.rb-position-count strong {
+  color: var(--chalk);
+  font-size: 12px;
+}
+.rb-position-count span {
+  color: var(--gold);
+  font-size: 12px;
+  font-weight: 700;
+}
+.rb-commit-override-grid {
+  display: grid;
+  grid-template-columns: minmax(90px, 120px) minmax(180px, 1fr) auto auto;
+  gap: 10px;
+  align-items: center;
+}
+@media (max-width: 720px) {
+  .rb-root { padding: 16px; border-radius: 0; }
+  .rb-btn { padding: 10px 12px; font-size: 14px; }
+  .rb-back-top { top: 12px; }
+  .rb-card { border-radius: 8px; }
+  .rb-desktop-only { display: none !important; }
+  .rb-mobile-only { display: inline !important; }
+  .rb-mobile-admin-control { display: none !important; }
+  .rb-team-card-mobile { padding: 10px 12px !important; }
+  .rb-team-card-row { grid-template-columns: minmax(0, 1fr); gap: 6px; }
+  .rb-commit-override-grid { grid-template-columns: minmax(0, 1fr); }
+  .rb-coach-pill { min-width: 0; max-width: 100%; min-height: 28px; padding: 6px 10px; font-size: 12px; justify-content: flex-start; }
+  .rb-values-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+  .rb-value-chip { padding: 6px 6px; }
+  .rb-value-chip > span { flex-direction: column; align-items: flex-start !important; gap: 2px !important; }
+  .rb-offer-block-header { display: grid !important; grid-template-columns: 1fr !important; gap: 9px !important; }
+  .rb-offer-visit-wrap { display: grid !important; grid-template-columns: max-content minmax(0, 1fr); gap: 7px !important; width: 100%; overflow: visible !important; }
+  .rb-visit-badge { width: 100%; min-height: 34px; display: flex !important; align-items: center; justify-content: center; text-align: center; line-height: 1.2; white-space: normal !important; padding: 7px 8px !important; }
+  .rb-visit-badge-coach { width: auto; min-width: 118px; }
+  .rb-visit-badge-campus { grid-column: auto / span 1; }
+  .rb-my-offer-summary-grid { grid-template-columns: 1fr; gap: 12px; }
+  .rb-my-offer-meta { gap: 8px; }
+  .rb-my-offer-actions { justify-content: space-between !important; width: 100%; }
+  .rb-my-offer-actions .rb-btn { flex: 1 1 0; text-align: center; }
+  .rb-my-offer-visits { width: 100%; display: grid !important; grid-template-columns: 1fr; align-items: stretch !important; }
+  .rb-my-offer-visits .rb-tag { width: 100%; text-align: center; }
+  .rb-mobile-team-meta { display: none !important; }
+  .rb-mobile-stack { grid-template-columns: 1fr !important; }
+  .rb-mobile-tight { padding: 11px 12px !important; }
+  .rb-h { letter-spacing: 0.02em; }
+}
+
+/* League identity and coach entry. */
+.rb-root.rb-entry { max-width: none; padding: 0; }
+.rb-icon { display: block; width: 22px; height: 22px; flex: 0 0 22px; }
+.rb-eyebrow { font-size: 12px; font-weight: 600; letter-spacing: .12em; text-transform: uppercase; }
+.rb-brand { display: inline-flex; align-items: center; gap: 12px; color: #F2F2F0; }
+.rb-brand img { display: block; width: 40px; height: 40px; object-fit: cover; border-radius: 3px; }
+.rb-brand-name { font-family: 'Oswald', sans-serif; font-size: 27px; font-weight: 600; letter-spacing: -.02em; line-height: 1.2; }
+.rb-brand-name > span { color: #A0A3A6; font-weight: 500; }
+.rb-home { min-height: 100vh; min-height: 100svh; display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(400px, 1fr); }
+.rb-home-hero { position: relative; isolation: isolate; overflow: hidden; display: flex; flex-direction: column; justify-content: space-between; padding: 40px clamp(32px, 5vw, 88px); background: #171819; border-top: 5px solid var(--accent); min-width: 0; }
+/* Keep the supplied stadium photograph intact; blend it into the league masthead. */
+.rb-home-hero::before { content: ""; position: absolute; z-index: -2; inset: 20% 0 0; background: url('./assets/wvu-stadium.webp') center 55% / cover no-repeat; filter: saturate(.65); opacity: .8; pointer-events: none; }
+.rb-home-hero::after { content: ""; position: absolute; z-index: -1; inset: 0; background: linear-gradient(180deg, #171819 18%, rgba(23,24,25,.96) 33%, rgba(23,24,25,.72) 52%, rgba(23,24,25,.4) 76%, rgba(23,24,25,.9) 100%), linear-gradient(90deg, rgba(23,24,25,.32), transparent 75%); pointer-events: none; }
+.rb-home-masthead { display: flex; align-items: center; justify-content: space-between; gap: 24px; }
+.rb-home-league { color: #A0A3A6; }
+.rb-home-editorial { padding: 76px 0 88px; }
+.rb-editorial-rule { width: 48px; height: 4px; background: var(--accent); margin-bottom: 28px; }
+.rb-home-editorial > .rb-eyebrow { margin: 0 0 22px; color: #A0A3A6; }
+.rb-home-title { font-family: 'Oswald', sans-serif; font-size: clamp(54px, 6.4vw, 112px); font-weight: 600; text-transform: uppercase; letter-spacing: -.035em; line-height: 1.08; margin: 0; }
+.rb-home-title > span { color: #A0A3A6; }
+.rb-home-copy { max-width: 355px; color: #B6B8BA; font-size: 16px; line-height: 1.8; margin: 28px 0 0; }
+.rb-home-colophon { display: flex; justify-content: space-between; align-items: center; gap: 16px; padding: 20px 0 24px; border-top: 1px solid rgba(242,242,240,.2); font-size: 12px; color: #A0A3A6; }
+.rb-colophon-mark { font-family: 'Oswald', sans-serif; letter-spacing: .06em; font-weight: 600; font-size: 18px; }
+.rb-home-login { --ink: #fff; --chalk: #202224; --slate: #666A6D; --panel-alt: #EEEFEF; --hairline: #D1D3D4; color-scheme: light; background: #F7F7F5; color: var(--chalk); display: flex; flex-direction: column; justify-content: space-between; padding: 45px clamp(32px, 4.7vw, 88px) 24px; min-width: 0; }
+.rb-login-topline { display: flex; justify-content: space-between; align-items: center; color: var(--slate); gap: 16px; }
+.rb-login-step { font-family: 'IBM Plex Mono', monospace; font-size: 12px; color: #767A7D; }
+.rb-login-content { width: 100%; max-width: 390px; margin: 68px auto 88px; }
+.rb-login-kicker { color: #9A2830; margin: 0 0 18px; }
+.rb-login-content h2 { font-size: clamp(30px, 2.9vw, 42px); font-weight: 600; line-height: 1.15; letter-spacing: -.055em; margin: 0 0 18px; }
+.rb-login-copy { font-size: 16px; line-height: 1.7; color: var(--slate); margin: 0 0 32px; max-width: 340px; }
+.rb-login-cta { display: flex; width: 100%; min-height: 54px; align-items: center; justify-content: space-between; gap: 12px; background: #242628; color: #fff; border-color: #242628; font-size: 14px; padding: 15px 18px; border-radius: 3px; }
+.rb-login-cta > span { flex: 1; text-align: left; }
+.rb-login-cta:hover { background: #3A3D40; border-color: #3A3D40; }
+.rb-login-cta > .rb-icon:last-child { width: 18px; flex-basis: 18px; }
+.rb-login-hint { color: var(--slate); font-size: 13px; line-height: 1.7; margin: 16px 0 0; }
+.rb-login-footer { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 10px; border-top: 1px solid #D9DBDC; padding-top: 20px; color: var(--slate); font-size: 12px; }
+.rb-connected-account { display: flex; align-items: center; gap: 12px; padding: 14px 0; margin-bottom: 24px; border-top: 1px solid var(--hairline); border-bottom: 1px solid var(--hairline); font-size: 14px; }
+.rb-connected-account > span:first-of-type { overflow-wrap: anywhere; min-width: 0; }
+.rb-connected-check { margin-left: auto; color: #267045; }
+.rb-login-label { display: block; font-size: 14px; font-weight: 600; margin-bottom: 8px; }
+.rb-team-picker + .rb-login-hint { margin: 8px 0 24px; }
+.rb-home-login .rb-team-results { background: #fff; box-shadow: 0 8px 20px #00000012; border-radius: 3px; }
+.rb-login-switch { background: transparent; border: 0; display: block; margin: 20px auto 0; padding: 4px 0; font-size: 13px; color: var(--slate); cursor: pointer; text-underline-offset: 4px; }
+.rb-login-switch:hover { color: #202224; text-decoration: underline; }
+.rb-login-error { margin-top: 20px; border-left: 3px solid #B92F39; background: #F9E8E9; color: #98252D; padding: 12px 14px; font-size: 14px; line-height: 1.5; }
+.rb-sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
+.rb-page-heading { display: flex; align-items: flex-end; justify-content: space-between; gap: 20px; margin: 0 0 26px; }
+.rb-page-heading .rb-eyebrow { margin: 0 0 8px; color: var(--slate); }
+.rb-page-heading h1 { font-family: 'Oswald', sans-serif; font-size: 40px; font-weight: 500; letter-spacing: -.02em; text-transform: uppercase; line-height: 1.15; margin: 0; }
+.rb-page-count { color: var(--slate); font-family: 'IBM Plex Mono', monospace; font-size: 13px; white-space: nowrap; padding-bottom: 4px; }
+.rb-board-search { display: flex; align-items: center; gap: 12px; padding: 0 16px; margin-bottom: 28px; border: 1px solid var(--hairline); border-radius: 4px; background: var(--panel); color: var(--slate); }
+.rb-board-search:focus-within { outline: 2px solid var(--accent); outline-offset: 2px; }
+.rb-board-search .rb-input { background: transparent; border: 0; outline: none; padding: 14px 0; min-width: 0; }
+.rb-boot { min-height: 100vh; min-height: 100svh; display: flex; flex-direction: column; border-top: 5px solid var(--accent); padding: 36px clamp(24px, 5vw, 80px) 24px; }
+.rb-boot-masthead { display: flex; align-items: center; justify-content: space-between; gap: 20px; border-bottom: 1px solid var(--hairline); padding-bottom: 28px; }
+.rb-boot-masthead > .rb-eyebrow { color: var(--slate); }
+.rb-boot-content { width: 100%; max-width: 440px; margin: auto; padding: 88px 0 112px; }
+.rb-boot-content > .rb-eyebrow { color: var(--slate); margin: 0 0 18px; }
+.rb-boot-content h1 { font-family: 'Oswald', sans-serif; font-size: clamp(32px, 4vw, 46px); font-weight: 500; text-transform: uppercase; line-height: 1.2; letter-spacing: -.015em; margin: 0 0 16px; }
+.rb-boot-message { color: var(--slate); font-size: 16px; margin: 0 0 36px; }
+.rb-boot-progress { height: 3px; background: var(--hairline); overflow: hidden; }
+.rb-boot-progress > span { display: block; width: 36%; height: 100%; background: var(--accent); animation: rb-loading 1.8s ease-in-out infinite; }
+.rb-boot-stages { display: flex; flex-wrap: wrap; gap: 20px 40px; margin-top: 20px; }
+.rb-boot-stage { display: inline-flex; align-items: center; gap: 9px; font-size: 13px; color: var(--slate); }
+.rb-boot-stage > i { width: 6px; height: 6px; border: 1px solid #7E8286; border-radius: 50%; }
+.rb-boot-stage-active { color: var(--chalk); }
+.rb-boot-stage-active > i { background: var(--accent); border-color: var(--accent); }
+.rb-boot-stage-done > i { background: #76A886; border-color: #76A886; }
+.rb-boot-footer { color: var(--slate); font-size: 12px; text-align: center; }
+@keyframes rb-loading { 0% { transform: translateX(-110%); } 100% { transform: translateX(290%); } }
+@media (prefers-reduced-motion: reduce) {
+  .rb-root *, .rb-root *::before, .rb-root *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
+  .rb-boot-progress > span { width: 100%; opacity: .65; }
+}
+@media (max-width: 720px) {
+  .rb-root { padding: 24px 20px 40px; }
+  .rb-nav-shell { margin-bottom: 28px; }
+  .rb-nav-top { gap: 16px; padding-bottom: 20px; }
+  .rb-nav-session { gap: 12px; }
+  .rb-nav-team strong { font-size: 14px; }
+  .rb-nav-actions { gap: 24px; }
+  .rb-nav-link { padding: 12px 0 14px; }
+  .rb-page-heading { align-items: flex-start; flex-wrap: wrap; gap: 12px; margin-bottom: 20px; }
+  .rb-page-heading h1 { font-size: 32px; }
+  .rb-page-count { font-size: 12px; }
+  .rb-board-tile { min-height: 104px; padding: 20px 4px; }
+  .rb-board-tile-inner { gap: 12px; }
+  .rb-board-title { font-size: 20px; }
+  .rb-board-meta { font-size: 13px; line-height: 1.7; }
+  .rb-board-trailing { flex-direction: column; align-items: flex-end; gap: 10px; }
+  .rb-board-stars { font-size: 14px; letter-spacing: 0; }
+  .rb-board-trailing > .rb-icon { width: 18px; height: 18px; flex-basis: 18px; }
+  .rb-board-search { margin-bottom: 20px; }
+  .rb-board-search .rb-input { font-size: 16px; }
+  .rb-values-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .rb-value-chip .rb-mono { font-size: 12px !important; }
+  .rb-boot { padding: 24px; }
+  .rb-boot-masthead > .rb-eyebrow { display: none; }
+}
+@media (min-width: 1600px) {
+  .rb-home-hero { padding-left: max(88px, calc((100vw - 1424px) / 2)); }
+  .rb-home-login { padding-right: max(88px, calc((100vw - 1424px) / 2)); }
+}
+@media (max-width: 900px) {
+  .rb-home { grid-template-columns: minmax(0, 1fr) minmax(340px, 1fr); }
+  .rb-home-hero { padding: 28px; }
+  .rb-home-title { font-size: clamp(44px, 6.2vw, 60px); }
+  .rb-home-login { padding: 33px 28px 24px; }
+  .rb-home-league, .rb-colophon-mark { display: none; }
+}
+@media (max-width: 680px) {
+  .rb-root.rb-entry { padding: 0; }
+  .rb-home { grid-template-columns: minmax(0, 1fr); background: #F7F7F5; }
+  .rb-home-hero { padding: 24px; }
+  .rb-home-hero::before { inset: 0; background-position: center 45%; opacity: .7; }
+  .rb-home-hero::after { background: linear-gradient(90deg, rgba(23,24,25,.97), rgba(23,24,25,.75) 52%, rgba(23,24,25,.4)), linear-gradient(0deg, rgba(23,24,25,.7), transparent 65%); }
+  .rb-home-editorial { padding: 36px 0 12px; }
+  .rb-editorial-rule, .rb-home-editorial > .rb-eyebrow, .rb-home-copy, .rb-home-colophon { display: none; }
+  .rb-home-title { font-size: clamp(38px, 9vw, 60px); }
+  .rb-home-title br { display: none; }
+  .rb-home-title > span { display: block; }
+  .rb-home-league { display: block; }
+  .rb-home-login { padding: 28px 24px 24px; }
+  .rb-login-content { max-width: none; margin: 36px 0 44px; }
+  .rb-login-kicker { display: none; }
+  .rb-login-content h2 { font-size: 32px; }
+  .rb-login-copy { margin-bottom: 24px; max-width: none; }
+  .rb-login-footer { font-size: 12px; }
+}

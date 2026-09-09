@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>NZCFL RecruitHQ</title>
 <meta name="description" content="Every offer, on the record.">
-<meta name="theme-color" content="#0F1420">
+<meta name="theme-color" content="#141516">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="RecruitHQ">
@@ -21,574 +21,27 @@
 <link rel="icon" href="/NZCFL.jpg" type="image/jpeg">
 <link rel="apple-touch-icon" href="/NZCFL.jpg">
 <link rel="manifest" href="/manifest.webmanifest">
-<style>
-@import url('https://fonts.googleapis.com/css2?family=Oswald:wght@500;600;700&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap');
-
-.rb-root {
-  --ink: #0F1420;
-  --panel: #161C2B;
-  --panel-alt: #1C2438;
-  --hairline: #2A3348;
-  --gold: #C9A227;
-  --gold-dim: #8A7222;
-  --turf: #4C8058;
-  --alert: #D2564C;
-  --chalk: #EDEEF0;
-  --slate: #8892A6;
-  font-family: 'Inter', sans-serif;
-  background: var(--ink);
-  color: var(--chalk);
-  border-radius: 14px;
-  padding: 28px;
-  min-height: 500px;
-}
-body { margin: 0; background: #0F1420; }
-.rb-root * { box-sizing: border-box; }
-.rb-h { font-family: 'Oswald', sans-serif; text-transform: uppercase; letter-spacing: 0.04em; }
-.rb-mono { font-family: 'IBM Plex Mono', monospace; }
-.rb-btn {
-  font-family: 'Inter', sans-serif; font-weight: 600; font-size: 13px;
-  background: var(--panel-alt); color: var(--chalk); border: 1px solid var(--hairline);
-  border-radius: 6px; padding: 9px 16px; cursor: pointer; transition: border-color .15s;
-}
-.rb-btn:hover { border-color: var(--gold-dim); }
-.rb-btn:disabled { opacity: 0.45; cursor: default; }
-.rb-btn-gold { background: var(--gold); color: #1A1508; border: 1px solid var(--gold); }
-.rb-btn-gold:hover { background: #DBB233; border-color: #DBB233; }
-.rb-back-top {
-  position: fixed;
-  top: 18px;
-  left: 50%;
-  z-index: 100;
-  background: var(--gold);
-  color: #1A1508;
-  border-color: var(--gold);
-  box-shadow: 0 14px 32px rgba(0,0,0,0.34);
-  opacity: 0;
-  pointer-events: none;
-  transform: translate(-50%, -12px);
-  visibility: hidden;
-  transition: opacity .16s, transform .16s, visibility .16s, background .15s, border-color .15s;
-}
-.rb-back-top:hover { background: #DBB233; border-color: #DBB233; }
-.rb-back-top-visible {
-  opacity: 1;
-  pointer-events: auto;
-  transform: translate(-50%, 0);
-  visibility: visible;
-}
-.rb-card { background: var(--panel); border: 1px solid var(--hairline); border-radius: 10px; }
-.rb-input, .rb-textarea {
-  font-family: 'Inter', sans-serif; background: var(--ink); color: var(--chalk);
-  border: 1px solid var(--hairline); border-radius: 6px; padding: 8px 11px; font-size: 13px; width: 100%;
-}
-.rb-input:focus, .rb-textarea:focus { outline: none; border-color: var(--gold-dim); }
-.rb-file-input { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
-.rb-file-label {
-  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
-  font-family: 'Inter', sans-serif; font-weight: 600; font-size: 13px;
-  background: var(--panel-alt); color: var(--chalk); border: 1px solid var(--hairline);
-  border-radius: 6px; padding: 10px 16px; cursor: pointer; transition: border-color .15s, background .15s;
-}
-.rb-file-label:hover { border-color: var(--gold-dim); background: #202941; }
-.rb-btn-danger { background: #6F1D1B; color: #FFF2F1; border-color: #B33A32; }
-.rb-btn-danger:hover { background: #8D2723; border-color: #D2564C; }
-.rb-offer-summary::-webkit-details-marker { display: none; }
-.rb-star { color: var(--gold); }
-.rb-star-empty { color: #3A4258; }
-.rb-scrollbar::-webkit-scrollbar { width: 8px; }
-.rb-scrollbar::-webkit-scrollbar-thumb { background: var(--hairline); border-radius: 4px; }
-.rb-tag { font-size: 11px; background: var(--panel-alt); border: 1px solid var(--hairline); border-radius: 6px; padding: 6px 10px; margin-top: 4px; display: block; }
-.rb-filter-row { display: flex; gap: 10px; align-items: center; justify-content: flex-end; flex-wrap: wrap; margin-top: 10px; }
-.rb-segmented {
-  display: inline-flex;
-  gap: 2px;
-  padding: 3px;
-  border: 1px solid var(--hairline);
-  border-radius: 8px;
-  background: var(--ink);
-}
-.rb-segmented button {
-  font-family: 'Inter', sans-serif;
-  font-weight: 700;
-  font-size: 11px;
-  color: var(--slate);
-  background: transparent;
-  border: 0;
-  border-radius: 6px;
-  padding: 7px 10px;
-  cursor: pointer;
-}
-.rb-segmented button:hover { color: var(--chalk); }
-.rb-segmented button[aria-pressed="true"] {
-  color: #1A1508;
-  background: var(--gold);
-}
-.rb-toggle {
-  display: inline-flex;
-  align-items: center;
-  gap: 10px;
-  color: var(--slate);
-  font-size: 12px;
-  cursor: pointer;
-  user-select: none;
-}
-.rb-toggle input { position: absolute; opacity: 0; pointer-events: none; }
-.rb-switch-track {
-  width: 44px;
-  height: 24px;
-  border-radius: 999px;
-  background: #333B4F;
-  border: 1px solid var(--hairline);
-  padding: 2px;
-  transition: background .15s, border-color .15s;
-  flex: 0 0 auto;
-}
-.rb-switch-thumb {
-  display: block;
-  width: 18px;
-  height: 18px;
-  border-radius: 7px;
-  background: #F3F4F6;
-  box-shadow: 0 2px 5px rgba(0,0,0,0.32);
-  transition: transform .15s;
-}
-.rb-toggle input:checked + .rb-switch-track { background: #58BF72; border-color: #43995B; }
-.rb-toggle input:checked + .rb-switch-track .rb-switch-thumb { transform: translateX(20px); }
-.rb-offer-window-row {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 14px;
-  flex-wrap: wrap;
-}
-.rb-offer-window-actions {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 12px;
-  flex-wrap: wrap;
-}
-.rb-offer-status {
-  font-family: 'IBM Plex Mono', monospace;
-  font-size: 12px;
-  color: var(--gold);
-  border: 1px solid rgba(201,162,39,0.38);
-  background: rgba(201,162,39,0.10);
-  border-radius: 999px;
-  padding: 6px 10px;
-  line-height: 1;
-}
-.rb-offer-status-closed {
-  color: #FFF2F1;
-  border-color: rgba(210,86,76,0.54);
-  background: rgba(111,29,27,0.42);
-}
-.rb-settings-status {
-  display: inline-flex;
-  align-items: center;
-  width: fit-content;
-  font-family: 'IBM Plex Mono', monospace;
-  font-size: 12px;
-  color: var(--slate);
-  border: 1px solid var(--hairline);
-  background: var(--panel-alt);
-  border-radius: 999px;
-  padding: 6px 10px;
-  line-height: 1;
-}
-.rb-settings-status-ready {
-  color: var(--gold);
-  border-color: rgba(201,162,39,0.38);
-  background: rgba(201,162,39,0.10);
-}
-.rb-settings-status-error {
-  color: #FFF2F1;
-  border-color: rgba(210,86,76,0.54);
-  background: rgba(111,29,27,0.42);
-}
-.rb-offer-lock-toggle {
-  color: var(--chalk);
-  font-size: 13px;
-  font-weight: 600;
-  border: 1px solid var(--hairline);
-  border-radius: 8px;
-  background: var(--panel-alt);
-  padding: 8px 10px;
-}
-.rb-offer-lock-toggle input:checked + .rb-switch-track { background: #6F1D1B; border-color: #B33A32; }
-.rb-mobile-only { display: none; }
-.rb-my-offer-summary-grid {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 16px;
-}
-.rb-my-offer-meta {
-  min-width: 0;
-  display: flex;
-  align-items: baseline;
-  gap: 10px;
-  white-space: nowrap;
-  overflow: hidden;
-}
-.rb-mobile-admin-control { display: inline-flex; }
-.rb-team-card-row {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 14px;
-  align-items: center;
-}
-.rb-coach-pill {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-height: 30px;
-  min-width: 110px;
-  max-width: 190px;
-  margin: 0;
-  padding: 7px 12px;
-  font-size: 13px;
-  font-weight: 700;
-  color: var(--chalk);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.rb-board-list {
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-}
-.rb-board-tile {
-  min-height: 132px;
-  padding: 28px 30px;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-}
-.rb-board-tile-inner {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 22px;
-  width: 100%;
-}
-.rb-board-title {
-  font-size: 22px;
-  font-weight: 600;
-}
-.rb-board-meta {
-  font-size: 15px;
-  color: var(--slate);
-  margin-top: 8px;
-}
-.rb-board-stars {
-  font-size: 22px;
-  white-space: nowrap;
-}
-.rb-values-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(118px, 1fr));
-  gap: 7px;
-  margin-top: 12px;
-}
-.rb-value-chip {
-  position: relative;
-  overflow: hidden;
-  border: 1px solid var(--hairline);
-  border-radius: 6px;
-  background: var(--panel-alt);
-  padding: 7px 9px;
-}
-.rb-value-chip:before {
-  content: "";
-  position: absolute;
-  inset: 0 auto 0 0;
-  width: var(--value-fill, 0%);
-  background: linear-gradient(90deg, rgba(210,86,76,0.32), rgba(201,162,39,0.34), rgba(88,191,114,0.36));
-  opacity: 0.9;
-}
-.rb-value-chip > span {
-  position: relative;
-  z-index: 1;
-}
-.rb-value-chip-strong { border-color: var(--gold-dim); }
-.rb-nav-shell {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  margin-bottom: 20px;
-  flex-wrap: wrap;
-  gap: 14px;
-}
-.rb-nav-brand {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-.rb-nav-logo {
-  width: 44px;
-  height: 44px;
-  border-radius: 11px;
-  object-fit: cover;
-  border: 1px solid rgba(237,238,240,0.18);
-  box-shadow: 0 8px 24px rgba(0,0,0,0.3);
-}
-.rb-nav-side {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: 10px;
-}
-.rb-nav-session {
-  font-size: 15px;
-  color: var(--chalk);
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  line-height: 1;
-  min-height: 32px;
-}
-.rb-nav-session a {
-  color: var(--gold);
-  text-decoration: none;
-  font-weight: 600;
-}
-.rb-nav-team {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  line-height: 1;
-}
-.rb-nav-actions {
-  display: flex;
-  gap: 8px;
-  flex-wrap: wrap;
-  justify-content: flex-end;
-}
-.rb-home {
-  min-height: calc(100vh - 56px);
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(300px, 380px);
-  gap: 18px;
-  align-items: stretch;
-}
-.rb-home-hero {
-  position: relative;
-  overflow: hidden;
-  border: 1px solid var(--hairline);
-  border-radius: 12px;
-  min-height: 520px;
-  padding: 40px;
-  background:
-    linear-gradient(135deg, rgba(15,20,32,0.72), rgba(15,20,32,0.94)),
-    radial-gradient(circle at 18% 20%, rgba(201,162,39,0.22), transparent 32%),
-    linear-gradient(135deg, #171d2d 0%, #101622 48%, #261415 100%);
-}
-.rb-home-hero:before {
-  content: "";
-  position: absolute;
-  z-index: 0;
-  inset: auto -14% -34% 18%;
-  height: 56%;
-  transform: rotate(-8deg);
-  background:
-    repeating-linear-gradient(90deg, rgba(237,238,240,0.08) 0 2px, transparent 2px 110px),
-    linear-gradient(180deg, rgba(76,128,88,0.62), rgba(35,81,49,0.22));
-  border: 1px solid rgba(237,238,240,0.07);
-  border-radius: 100%;
-}
-.rb-home-hero:after {
-  content: "";
-  position: absolute;
-  z-index: 0;
-  right: 46px;
-  bottom: 44px;
-  width: 230px;
-  height: 230px;
-  border-radius: 50%;
-  border: 1px solid rgba(201,162,39,0.34);
-  background: radial-gradient(circle, rgba(201,162,39,0.16), rgba(201,162,39,0.03) 46%, transparent 68%);
-}
-.rb-home-logo {
-  width: 104px;
-  height: 104px;
-  border-radius: 24px;
-  object-fit: cover;
-  box-shadow: 0 18px 50px rgba(0,0,0,0.45);
-  border: 1px solid rgba(237,238,240,0.18);
-}
-.rb-home-title {
-  font-family: 'Oswald', sans-serif;
-  font-size: 58px;
-  line-height: 1;
-  letter-spacing: 0.02em;
-  margin: 26px 0 16px;
-  max-width: 620px;
-}
-.rb-home-copy {
-  font-size: 16px;
-  line-height: 1.55;
-  color: #C6CCD9;
-  max-width: 560px;
-}
-.rb-home-login {
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  padding: 30px;
-  min-height: 520px;
-}
-.rb-team-picker { position: relative; }
-.rb-team-results {
-  position: absolute;
-  z-index: 5;
-  top: calc(100% + 6px);
-  left: 0;
-  right: 0;
-  max-height: 220px;
-  overflow: auto;
-  background: #171A20;
-  border: 1px solid var(--hairline);
-  border-radius: 8px;
-  box-shadow: 0 16px 36px rgba(0,0,0,0.35);
-}
-.rb-team-option {
-  width: 100%;
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  background: transparent;
-  color: var(--chalk);
-  border: 0;
-  padding: 10px 12px;
-  text-align: left;
-  font: inherit;
-  cursor: pointer;
-}
-.rb-team-option:hover { background: var(--panel-alt); }
-.rb-position-counts {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  margin: 0 0 12px 0;
-}
-.rb-position-count-actions {
-  display: inline-flex;
-  gap: 5px;
-}
-.rb-position-count {
-  display: inline-flex;
-  align-items: baseline;
-  gap: 5px;
-  font-family: 'Inter', sans-serif;
-  border: 1px solid var(--hairline);
-  border-radius: 6px;
-  background: var(--panel-alt);
-  color: inherit;
-  padding: 5px 8px;
-  line-height: 1;
-  cursor: pointer;
-  transition: opacity .15s, border-color .15s, background .15s;
-}
-.rb-position-count:hover { border-color: var(--gold-dim); }
-.rb-position-count-muted { opacity: 0.38; background: var(--ink); }
-.rb-position-count-action {
-  color: var(--chalk);
-  font-size: 12px;
-  font-weight: 600;
-  padding: 5px 7px;
-}
-.rb-position-count strong {
-  color: var(--chalk);
-  font-size: 12px;
-}
-.rb-position-count span {
-  color: var(--gold);
-  font-size: 12px;
-  font-weight: 700;
-}
-.rb-commit-override-grid {
-  display: grid;
-  grid-template-columns: minmax(90px, 120px) minmax(180px, 1fr) auto auto;
-  gap: 10px;
-  align-items: center;
-}
-.rb-auth-step {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 26px;
-  height: 26px;
-  border-radius: 50%;
-  background: var(--gold);
-  color: #1A1508;
-  font-weight: 700;
-  font-size: 12px;
-}
-@media (max-width: 1050px) {
-  .rb-home { grid-template-columns: minmax(0, 1fr) minmax(280px, 340px); }
-  .rb-home-hero { padding: 30px; }
-  .rb-home-title { font-size: 46px; max-width: 500px; }
-  .rb-home-copy { font-size: 14px; max-width: 470px; }
-}
-@media (max-width: 720px) {
-  .rb-root { padding: 16px; border-radius: 0; }
-  .rb-btn { padding: 8px 11px; font-size: 12px; }
-  .rb-back-top { top: 12px; }
-  .rb-card { border-radius: 8px; }
-  .rb-desktop-only { display: none !important; }
-  .rb-mobile-only { display: inline !important; }
-  .rb-mobile-admin-control { display: none !important; }
-  .rb-team-card-mobile { padding: 10px 12px !important; }
-  .rb-team-card-row { grid-template-columns: minmax(0, 1fr); gap: 6px; }
-  .rb-commit-override-grid { grid-template-columns: minmax(0, 1fr); }
-  .rb-coach-pill { min-width: 0; max-width: 100%; min-height: 28px; padding: 6px 10px; font-size: 12px; justify-content: flex-start; }
-  .rb-nav-brand { gap: 9px; }
-  .rb-nav-logo { width: 38px; height: 38px; border-radius: 9px; }
-  .rb-nav-shell { align-items: stretch; }
-  .rb-nav-side { align-items: stretch; width: 100%; }
-  .rb-nav-session { justify-content: flex-start; }
-  .rb-nav-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); width: 100%; }
-  .rb-nav-actions .rb-btn { width: 100%; }
-  .rb-nav-actions .rb-btn:last-child:nth-child(odd) { grid-column: 1 / -1; }
-  .rb-board-list { gap: 10px; }
-  .rb-board-tile { min-height: 94px; padding: 16px 18px; }
-  .rb-board-tile-inner { gap: 10px; }
-  .rb-board-title { font-size: 16px; }
-  .rb-board-meta { font-size: 12px; margin-top: 5px; }
-  .rb-board-stars { font-size: 16px; }
-  .rb-values-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
-  .rb-value-chip { padding: 6px 6px; }
-  .rb-value-chip > span { flex-direction: column; align-items: flex-start !important; gap: 2px !important; }
-  .rb-value-chip .rb-mono { font-size: 8px !important; letter-spacing: 0.02em !important; }
-  .rb-value-chip strong.rb-mono { font-size: 10px !important; }
-  .rb-offer-block-header { display: grid !important; grid-template-columns: 1fr !important; gap: 9px !important; }
-  .rb-offer-visit-wrap { display: grid !important; grid-template-columns: max-content minmax(0, 1fr); gap: 7px !important; width: 100%; overflow: visible !important; }
-  .rb-visit-badge { width: 100%; min-height: 34px; display: flex !important; align-items: center; justify-content: center; text-align: center; line-height: 1.2; white-space: normal !important; padding: 7px 8px !important; }
-  .rb-visit-badge-coach { width: auto; min-width: 118px; }
-  .rb-visit-badge-campus { grid-column: auto / span 1; }
-  .rb-my-offer-summary-grid { grid-template-columns: 1fr; gap: 12px; }
-  .rb-my-offer-meta { gap: 8px; }
-  .rb-my-offer-actions { justify-content: space-between !important; width: 100%; }
-  .rb-my-offer-actions .rb-btn { flex: 1 1 0; text-align: center; }
-  .rb-my-offer-visits { width: 100%; display: grid !important; grid-template-columns: 1fr; align-items: stretch !important; }
-  .rb-my-offer-visits .rb-tag { width: 100%; text-align: center; }
-  .rb-mobile-team-meta { display: none !important; }
-  .rb-mobile-stack { grid-template-columns: 1fr !important; }
-  .rb-mobile-tight { padding: 11px 12px !important; }
-  .rb-h { letter-spacing: 0.02em; }
-  .rb-home { grid-template-columns: 1fr; }
-  .rb-home-hero { min-height: auto; padding: 24px; }
-  .rb-home-title { font-size: 38px; }
-  .rb-home-login { min-height: auto; padding: 22px; }
-}
-</style>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Oswald:wght@500;600;700&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="/styles.css" onerror="this.onerror=null;this.href='styles.css'">
 </head>
 <body>
 
-<div id="rb-app" class="rb-root"></div>
+<div id="rb-app" class="rb-root rb-entry">
+<main class="rb-boot">
+  <header class="rb-boot-masthead"><span class="rb-brand"><img src="/NZCFL.jpg" alt="NZCFL" width="40" height="40"><span class="rb-brand-name">Recruit<span>HQ</span></span></span><span class="rb-eyebrow">League recruiting</span></header>
+  <section class="rb-boot-content" aria-labelledby="rb-boot-title">
+    <p class="rb-eyebrow">NZCFL / RecruitHQ</p>
+    <h1 id="rb-boot-title">Loading RecruitHQ</h1>
+    <p class="rb-boot-message" role="status" aria-live="polite">Getting the latest league data.</p>
+    <div class="rb-boot-progress" aria-hidden="true"><span></span></div>
+    <div class="rb-boot-stages"><span class="rb-boot-stage rb-boot-stage-active"><i aria-hidden="true"></i>League data</span><span class="rb-boot-stage"><i aria-hidden="true"></i>Coach account</span></div>
+  </section>
+  <footer class="rb-boot-footer">Every offer. On the record.</footer>
+</main>
+</div>
+<noscript><p style="padding:24px;color:#F2F2F0;font-family:sans-serif;">RecruitHQ needs JavaScript to load the league and sign you in. Enable JavaScript, then reload this page.</p></noscript>
 
 <script src="team-branding.js"></script>
 <script src="default-class-2062.js"></script>
@@ -1091,22 +544,20 @@ function renderCommittedTag(teamName, clickable, returnContext){
     return '<span class="rb-tag"' + returnAttr + ' style="display:inline-flex;align-items:center;gap:6px;margin:0;white-space:nowrap;' + clickableStyle + '">Committed: ' + escapeHtml(teamName) + '</span>';
   }
   const primary = brand.primary || 'var(--hairline)';
-  const secondary = brand.secondary || 'var(--chalk)';
-  return '<span class="rb-tag"' + returnAttr + ' style="display:inline-flex;align-items:center;gap:7px;margin:0;white-space:nowrap;border-color:' + escapeHtml(primary) + ';background:linear-gradient(90deg,' + escapeHtml(primary) + '44,' + escapeHtml(secondary) + '1f);' + clickableStyle + '">' + renderTeamLogo(brand) + '<span>Committed: <span class="rb-desktop-only">' + escapeHtml(brand.region || teamName) + '</span><span class="rb-mobile-only">' + escapeHtml(brand.abbrev || brand.region || teamName) + '</span></span></span>';
+  return '<span class="rb-tag"' + returnAttr + ' style="display:inline-flex;align-items:center;gap:7px;margin:0;white-space:nowrap;border-color:' + escapeHtml(primary) + ';background:var(--panel-alt);' + clickableStyle + '">' + renderTeamLogo(brand) + '<span>Committed: <span class="rb-desktop-only">' + escapeHtml(brand.region || teamName) + '</span><span class="rb-mobile-only">' + escapeHtml(brand.abbrev || brand.region || teamName) + '</span></span></span>';
 }
 
 function renderTeamCoachBadge(teamName){
   const brand = getTeamBranding(teamName);
   if (!brand) return '<strong class="rb-nav-team" style="color:var(--chalk);">' + escapeHtml(teamName) + '</strong>';
-  return '<span class="rb-nav-team">' + renderTeamLogo(brand, 28) + '<strong style="color:' + escapeHtml(brand.primary || 'var(--chalk)') + ';line-height:1;"><span class="rb-desktop-only">' + escapeHtml(teamName) + '</span><span class="rb-mobile-only">' + escapeHtml(brand.abbrev || teamName) + '</span></strong></span>';
+  return '<span class="rb-nav-team">' + renderTeamLogo(brand, 28) + '<strong style="color:var(--chalk);line-height:1;"><span class="rb-desktop-only">' + escapeHtml(teamName) + '</span><span class="rb-mobile-only">' + escapeHtml(brand.abbrev || teamName) + '</span></strong></span>';
 }
 
 function committedCardStyle(teamName){
   const brand = getTeamBranding(teamName);
   if (!brand || !brand.primary) return 'opacity:0.48;filter:grayscale(0.45);';
   const primary = brand.primary;
-  const secondary = brand.secondary || primary;
-  return 'opacity:0.82;border-color:' + primary + '88;background:linear-gradient(90deg,' + primary + '38,' + secondary + '12 56%,var(--panel) 100%);box-shadow:inset 4px 0 0 ' + primary + ';';
+  return 'border-color:' + primary + '66;background:var(--panel);box-shadow:inset 3px 0 0 ' + primary + ';';
 }
 
 function offerCountForProspect(pid){
@@ -1183,6 +634,7 @@ async function loadAll(){
   await syncLeagueState(false);
   await ensureDefaultSeasonData();
   dbReady = true;
+  render();
   await loadServerAuth();
   sessionReady = true;
   startLeagueSync();
@@ -3190,8 +2642,9 @@ async function confirmReset(){
 
 function render(){
   const root = document.getElementById('rb-app');
+  root.classList.toggle('rb-entry', !dbReady || !sessionReady || !SESSION);
   if (!dbReady || !sessionReady){
-    root.innerHTML = '<p class="rb-mono" style="color:var(--slate)">Loading league data...</p>' + renderBackTopControl();
+    root.innerHTML = renderLoadingPage();
     bindEvents();
     return;
   }
@@ -3250,63 +2703,83 @@ function renderTeamAutocomplete(query){
   }).join('') + '</div>';
 }
 
+function renderBrand(){
+  return '<span class="rb-brand"><img src="/NZCFL.jpg" alt="NZCFL" width="40" height="40"><span class="rb-brand-name">Recruit<span>HQ</span></span></span>';
+}
+
+function renderArrow(){
+  return '<svg class="rb-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M4 12h15m-6-6 6 6-6 6"/></svg>';
+}
+
+function renderDiscordIcon(){
+  return '<svg class="rb-icon" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M20.3 4.4a19.8 19.8 0 0 0-4.9-1.5l-.6 1.2a18.3 18.3 0 0 0-5.6 0l-.6-1.2a19.7 19.7 0 0 0-4.9 1.5C.6 9 .1 13.5.4 18a20 20 0 0 0 6 3l1.2-2a12 12 0 0 1-1.9-.9l.5-.4a14.1 14.1 0 0 0 11.6 0l.5.4a12 12 0 0 1-1.9.9l1.2 2a20 20 0 0 0 6-3c.4-5.2-.8-9.6-3.3-13.6ZM8.4 15.2c-1.2 0-2.1-1.1-2.1-2.4s.9-2.4 2.1-2.4 2.1 1.1 2.1 2.4-.9 2.4-2.1 2.4Zm7.2 0c-1.2 0-2.1-1.1-2.1-2.4s.9-2.4 2.1-2.4 2.1 1.1 2.1 2.4-.9 2.4-2.1 2.4Z"/></svg>';
+}
+
+function renderLoadingPage(){
+  return '<main class="rb-boot">' +
+    '<header class="rb-boot-masthead">' + renderBrand() + '<span class="rb-eyebrow">League recruiting</span></header>' +
+    '<section class="rb-boot-content" aria-labelledby="rb-boot-title">' +
+      '<p class="rb-eyebrow">NZCFL / RecruitHQ</p><h1 id="rb-boot-title">Loading RecruitHQ</h1>' +
+      '<p class="rb-boot-message" role="status" aria-live="polite">' + (dbReady ? 'Checking your Discord session.' : 'Getting the latest league data.') + '</p>' +
+      '<div class="rb-boot-progress" aria-hidden="true"><span></span></div>' +
+      '<div class="rb-boot-stages"><span class="rb-boot-stage ' + (dbReady ? 'rb-boot-stage-done' : 'rb-boot-stage-active') + '"><i aria-hidden="true"></i>League data' + (dbReady ? '<span class="rb-sr-only"> loaded</span>' : '') + '</span>' +
+      '<span class="rb-boot-stage' + (dbReady ? ' rb-boot-stage-active' : '') + '"><i aria-hidden="true"></i>Coach account</span></div>' +
+    '</section><footer class="rb-boot-footer">Every offer. On the record.</footer></main>';
+}
+
 function renderHomePage(){
-  let html = '<div class="rb-home">';
-  html += '<section class="rb-home-hero">' +
-    '<div style="position:relative;z-index:1;">' +
-      '<img class="rb-home-logo" src="/NZCFL.jpg" alt="NZCFL logo">' +
-      '<div class="rb-home-title">NZCFL RecruitHQ</div>' +
-      '<div class="rb-home-copy">The recruiting room for the league: prospects, public offers, visits, commits, and promises all tracked in one clean place.</div>' +
+  const linking = UI.loginStep === 'team';
+  const accountName = (UI.pendingDiscordUser && (UI.pendingDiscordUser.displayName || UI.pendingDiscordUser.username)) || 'Discord account';
+  let html = '<main class="rb-home">';
+  html += '<section class="rb-home-hero" aria-labelledby="rb-home-title">' +
+    '<div class="rb-home-masthead">' + renderBrand() + '<span class="rb-eyebrow rb-home-league">NZCFL</span></div>' +
+    '<div class="rb-home-editorial"><div class="rb-editorial-rule" aria-hidden="true"></div>' +
+      '<p class="rb-eyebrow">The league recruiting office</p>' +
+      '<h1 class="rb-home-title" id="rb-home-title">Every offer.<br><span>On the record.</span></h1>' +
+      '<p class="rb-home-copy">Prospects, offers, visits and commitments for the NZCFL.</p>' +
     '</div>' +
+    '<div class="rb-home-colophon"><span>Prospects &nbsp;/&nbsp; Offers &nbsp;/&nbsp; Commitments</span><span class="rb-colophon-mark" aria-hidden="true">NZCFL</span></div>' +
   '</section>';
-  html += '<section class="rb-card rb-home-login">' +
-    '<div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;">' +
-      '<span class="rb-auth-step">' + (UI.loginStep === 'team' ? '2' : '1') + '</span>' +
-      '<div><div class="rb-h" style="font-size:22px;">' + (UI.loginStep === 'team' ? 'Link Your Team' : 'Discord Login') + '</div>' +
-      '<div class="rb-mono" style="font-size:12px;color:var(--slate);margin-top:2px;">' + (UI.loginStep === 'team' ? escapeHtml((UI.pendingDiscordUser && (UI.pendingDiscordUser.displayName || UI.pendingDiscordUser.username)) || 'Discord connected') : 'one Discord, one coach account') + '</div></div>' +
-    '</div>';
-  if (UI.loginStep === 'team'){
-    html += '<div style="display:flex;flex-direction:column;gap:12px;margin-top:12px;">' +
-      '<label style="font-size:12px;color:var(--slate);">Team</label>' +
+  html += '<section class="rb-home-login" aria-labelledby="rb-login-title">' +
+    '<div class="rb-login-topline"><span class="rb-eyebrow">Coach access</span><span class="rb-login-step">' + (linking ? '02 / 02' : '01 / 02') + '</span></div>' +
+    '<div class="rb-login-content">' +
+      '<p class="rb-eyebrow rb-login-kicker">' + (linking ? 'Discord connected' : 'Welcome to RecruitHQ') + '</p>' +
+      '<h2 id="rb-login-title">' + (linking ? 'Choose your team.' : 'Coach sign in.') + '</h2>' +
+      '<p class="rb-login-copy">' + (linking ? 'Link your school to finish setting up your recruiting account.' : 'Use your Discord account to access your team’s recruiting board.') + '</p>';
+  if (linking){
+    html += '<div class="rb-connected-account">' + renderDiscordIcon() + '<span>' + escapeHtml(accountName) + '</span><span class="rb-connected-check" aria-label="Connected">&#10003;</span></div>' +
+      '<label class="rb-login-label" for="rb-login-team-link">Your team</label>' +
       '<div class="rb-team-picker">' +
-        '<input class="rb-input" id="rb-login-team-link" placeholder="Michigan State" autocomplete="off" style="font-size:15px;padding:12px 13px;" value="' + escapeHtml(UI.teamLinkQuery || '') + '">' +
+        '<input class="rb-input" id="rb-login-team-link" placeholder="Search for your school" autocomplete="off" aria-describedby="rb-team-link-help" value="' + escapeHtml(UI.teamLinkQuery || '') + '">' +
         '<div id="rb-team-results-slot">' + renderTeamAutocomplete(UI.teamLinkQuery || '') + '</div>' +
       '</div>' +
-      '<button class="rb-btn rb-btn-gold" id="rb-link-team-btn" style="padding:12px 16px;font-size:14px;">Enter RecruitHQ</button>' +
-      '<button class="rb-btn" id="rb-logout-pending-btn" style="padding:12px 16px;font-size:14px;">Use a different Discord</button>' +
-    '</div>';
+      '<p class="rb-login-hint" id="rb-team-link-help">Only available teams appear in search.</p>' +
+      '<button type="button" class="rb-btn rb-login-cta" id="rb-link-team-btn"><span>Enter RecruitHQ</span>' + renderArrow() + '</button>' +
+      '<button type="button" class="rb-login-switch" id="rb-logout-pending-btn">Use a different Discord account</button>';
   } else {
-    html += '<div style="display:flex;flex-direction:column;gap:12px;margin-top:18px;">' +
-      '<button class="rb-btn rb-btn-gold" id="rb-discord-login-btn" style="padding:13px 16px;font-size:14px;">Continue with Discord</button>' +
-    '</div>';
+    html += '<button type="button" class="rb-btn rb-login-cta" id="rb-discord-login-btn">' + renderDiscordIcon() + '<span>Continue with Discord</span>' + renderArrow() + '</button>' +
+      '<p class="rb-login-hint">First time here? You’ll link your team after signing in.</p>';
   }
-  if (UI.loginError) html += '<div style="font-size:12px;color:var(--alert);margin-top:12px;">' + escapeHtml(UI.loginError) + '</div>';
-  html += '</section></div>';
+  if (UI.loginError) html += '<div class="rb-login-error" role="alert">' + escapeHtml(UI.loginError) + '</div>';
+  html += '</div><div class="rb-login-footer"><span>NZCFL members only</span><span>Powered by Discord</span></div></section></main>';
   return html;
 }
 
 function renderNav(){
-  let html = '<div class="rb-nav-shell">';
-  html += '<div class="rb-nav-brand" data-nav="feed" style="cursor:pointer;">' +
-      '<img class="rb-nav-logo" src="/NZCFL.jpg" alt="NZCFL logo">' +
-      '<div>' +
-        '<div class="rb-h" style="font-size:22px;font-weight:700;letter-spacing:0.06em;text-transform:none;">NZCFL RecruitHQ</div>' +
-        '<div class="rb-mono" style="font-size:12px;color:var(--slate);margin-top:2px;">every offer, on the record</div>' +
-      '</div>' +
-    '</div>';
-  html += '<div class="rb-nav-side">';
-  if (SESSION){
-    html += '<div class="rb-nav-session">' + renderTeamCoachBadge(SESSION.team) + '<span style="color:var(--slate);">&middot;</span><a href="#" id="rb-logout">Log out</a></div>';
-  }
-  html += '<div class="rb-nav-actions">' +
-      '<button class="rb-btn" data-nav="feed">Prospect Board</button>' +
-      (SESSION ? '<button class="rb-btn" data-nav="myoffers">My Offers</button>' : '') +
-      (SESSION ? '<button class="rb-btn" data-nav="mycommits">My Commits</button>' : '') +
-      (SESSION ? '<button class="rb-btn" data-nav="teams">Teams</button>' : '') +
-      (canViewSettings() ? '<button class="rb-btn" data-nav="setup">Settings</button>' : '') +
-    '</div>';
-  html += '</div></div>';
-  return html;
+  let activeView = UI.view;
+  if (activeView === 'prospect') activeView = UI.prospectReturnView || 'feed';
+  if (activeView === 'thread') activeView = 'feed';
+  if (activeView === 'teamcommits' || activeView === 'teamoffers') activeView = 'teams';
+  const items = [['feed', 'Prospect Board'], ['myoffers', 'My Offers'], ['mycommits', 'My Commits'], ['teams', 'Teams']];
+  if (canViewSettings()) items.push(['setup', 'Settings']);
+  let html = '<header class="rb-nav-shell"><div class="rb-nav-top">' +
+    '<button type="button" class="rb-nav-brand" data-nav="feed" aria-label="RecruitHQ prospect board">' + renderBrand() + '</button>' +
+    '<div class="rb-nav-session">' + renderTeamCoachBadge(SESSION.team) + '<span class="rb-session-divider" aria-hidden="true"></span><a href="#" id="rb-logout">Log out</a></div>' +
+    '</div><nav class="rb-nav-actions" aria-label="Main navigation">';
+  items.forEach(function(item){
+    html += '<button type="button" class="rb-nav-link" data-nav="' + item[0] + '"' + (activeView === item[0] ? ' aria-current="page"' : '') + '>' + item[1] + '</button>';
+  });
+  return html + '</nav></header>';
 }
 
 function renderSummaryBanner(){
@@ -4029,7 +3502,8 @@ function renderFeed(){
   if (!recruitingStageConfig().usesWaves && DB.threads.length === 1){
     return renderThreadProspectList(DB.threads[0]);
   }
-  let html = '<input class="rb-input" id="rb-board-search" placeholder="Search recruits by name, rank or hometown" style="margin-bottom:14px;" />';
+  let html = '<div class="rb-page-heading"><div><p class="rb-eyebrow">' + escapeHtml(recruitingStageConfig().label) + ' recruiting</p><h1>Prospect board</h1></div><span class="rb-page-count">' + Object.keys(DB.prospects).length.toLocaleString() + ' prospects</span></div>';
+  html += '<label class="rb-board-search"><svg class="rb-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 4.5 4.5"/></svg><span class="rb-sr-only">Search recruits by name, rank or hometown</span><input class="rb-input" id="rb-board-search" type="search" placeholder="Search by name, rank or hometown" /></label>';
   html += '<div id="rb-board-cards" class="rb-board-list">';
   DB.threads.forEach(function(t){
     const visibleIds = visibleBoardProspectIds(t);
@@ -4044,15 +3518,15 @@ function renderFeed(){
       const p = DB.prospects[pid] || {};
       return [p.rank, '#' + p.rank, p.name, p.hometown].join(' ');
     }).join(' ').toLowerCase();
-    html += '<div class="rb-card rb-board-tile" data-board-card="1" data-search="' + escapeHtml(threadSearch) + '" data-open-thread="' + t.id + '">' +
-      '<div class="rb-board-tile-inner">' +
-        '<div style="min-width:0;">' +
-          '<div class="rb-h rb-board-title">' + escapeHtml(t.title) + '</div>' +
-          '<div class="rb-board-meta">' + rankRangeForThread(t) + ' &middot; ' + uncommittedLabel + ' &middot; ' + offerLabel + '</div>' +
-        '</div>' +
-        '<div class="rb-board-stars">' + starsOrLabel(t.stars) + '</div>' +
-      '</div>' +
-    '</div>';
+    html += '<button type="button" class="rb-card rb-board-tile" data-board-card="1" data-search="' + escapeHtml(threadSearch) + '" data-open-thread="' + t.id + '">' +
+      '<span class="rb-board-tile-inner">' +
+        '<span class="rb-board-info">' +
+          '<span class="rb-h rb-board-title">' + escapeHtml(t.title) + '</span>' +
+          '<span class="rb-board-meta">' + rankRangeForThread(t) + ' &middot; ' + uncommittedLabel + ' &middot; ' + offerLabel + '</span>' +
+        '</span>' +
+        '<span class="rb-board-trailing"><span class="rb-board-stars">' + starsOrLabel(t.stars) + '</span>' + renderArrow() + '</span>' +
+      '</span>' +
+    '</button>';
 	  });
   html += '</div>';
   html += '<div id="rb-board-player-results" style="display:none;flex-direction:column;gap:10px;">';
