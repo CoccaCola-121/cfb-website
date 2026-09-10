@@ -439,7 +439,6 @@ button, a, input, select, textarea, summary { -webkit-tap-highlight-color: trans
 .rb-home-hero::before { content: ""; position: absolute; z-index: -2; inset: 20% 0 0; background: url('./assets/wvu-stadium.webp') center 55% / cover no-repeat; filter: saturate(.65); opacity: .8; pointer-events: none; }
 .rb-home-hero::after { content: ""; position: absolute; z-index: -1; inset: 0; background: linear-gradient(180deg, #171819 18%, rgba(23,24,25,.96) 33%, rgba(23,24,25,.72) 52%, rgba(23,24,25,.4) 76%, rgba(23,24,25,.9) 100%), linear-gradient(90deg, rgba(23,24,25,.32), transparent 75%); pointer-events: none; }
 .rb-home-masthead { display: flex; align-items: center; justify-content: space-between; gap: 24px; }
-.rb-home-league { color: #A0A3A6; }
 .rb-home-editorial { padding: 76px 0 88px; }
 .rb-editorial-rule { width: 48px; height: 4px; background: var(--accent); margin-bottom: 28px; }
 .rb-home-editorial > .rb-eyebrow { margin: 0 0 22px; color: #A0A3A6; }
@@ -447,7 +446,6 @@ button, a, input, select, textarea, summary { -webkit-tap-highlight-color: trans
 .rb-home-title > span { color: #A0A3A6; }
 .rb-home-copy { max-width: 355px; color: #B6B8BA; font-size: 16px; line-height: 1.8; margin: 28px 0 0; }
 .rb-home-colophon { display: flex; justify-content: space-between; align-items: center; gap: 16px; padding: 20px 0 24px; border-top: 1px solid rgba(242,242,240,.2); font-size: 12px; color: #A0A3A6; }
-.rb-colophon-mark { font-family: 'Oswald', sans-serif; letter-spacing: .06em; font-weight: 600; font-size: 18px; }
 .rb-home-login { --ink: #fff; --chalk: #202224; --slate: #666A6D; --panel-alt: #EEEFEF; --hairline: #D1D3D4; color-scheme: light; background: #F7F7F5; color: var(--chalk); display: flex; flex-direction: column; justify-content: space-between; padding: 45px clamp(24px, 2.5vw, 48px) 24px; min-width: 0; }
 .rb-login-topline { display: flex; justify-content: space-between; align-items: center; color: var(--slate); gap: 16px; }
 .rb-login-step { font-family: 'IBM Plex Mono', monospace; font-size: 12px; color: #767A7D; }
@@ -530,7 +528,6 @@ button, a, input, select, textarea, summary { -webkit-tap-highlight-color: trans
   .rb-home-hero { padding: 28px; }
   .rb-home-title { font-size: clamp(44px, 6.2vw, 60px); }
   .rb-home-login { padding: 33px 28px 24px; }
-  .rb-home-league, .rb-colophon-mark { display: none; }
 }
 @media (max-width: 680px) {
   .rb-root.rb-entry { padding: 0; }
@@ -543,7 +540,6 @@ button, a, input, select, textarea, summary { -webkit-tap-highlight-color: trans
   .rb-home-title { font-size: clamp(38px, 9vw, 60px); }
   .rb-home-title br { display: none; }
   .rb-home-title > span { display: block; }
-  .rb-home-league { display: block; }
   .rb-home-login { padding: 28px 24px 24px; }
   .rb-login-content { max-width: none; margin: 36px 0 44px; }
   .rb-login-kicker { display: none; }

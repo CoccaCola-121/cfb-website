@@ -2761,19 +2761,19 @@ function renderHomePage(){
   const accountName = (UI.pendingDiscordUser && (UI.pendingDiscordUser.displayName || UI.pendingDiscordUser.username)) || 'Discord account';
   let html = '<main class="rb-home">';
   html += '<section class="rb-home-hero" aria-labelledby="rb-home-title">' +
-    '<div class="rb-home-masthead">' + renderBrand() + '<span class="rb-eyebrow rb-home-league">NZCFL</span></div>' +
+    '<div class="rb-home-masthead">' + renderBrand() + '</div>' +
     '<div class="rb-home-editorial"><div class="rb-editorial-rule" aria-hidden="true"></div>' +
       '<p class="rb-eyebrow">The league recruiting office</p>' +
       '<h1 class="rb-home-title" id="rb-home-title">Every offer.<br><span>On the record.</span></h1>' +
       '<p class="rb-home-copy">Prospects, offers, visits and commitments for the NZCFL.</p>' +
     '</div>' +
-    '<div class="rb-home-colophon"><span>Prospects &nbsp;/&nbsp; Offers &nbsp;/&nbsp; Commitments</span><span class="rb-colophon-mark" aria-hidden="true">NZCFL</span></div>' +
+    '<div class="rb-home-colophon"><span>Prospects &nbsp;/&nbsp; Offers &nbsp;/&nbsp; Commitments</span></div>' +
   '</section>';
   html += '<section class="rb-home-login" aria-labelledby="rb-login-title">' +
     '<div class="rb-login-topline"><span class="rb-eyebrow">Coach access</span><span class="rb-login-step">' + (linking ? '02 / 02' : '01 / 02') + '</span></div>' +
     '<div class="rb-login-content">' +
       '<p class="rb-eyebrow rb-login-kicker">' + (linking ? 'Discord connected' : 'Welcome to RecruitHQ') + '</p>' +
-      '<h2 id="rb-login-title">' + (linking ? 'Choose your team.' : 'Coach sign in.') + '</h2>' +
+      '<h2 id="rb-login-title">' + (linking ? 'Choose your team.' : 'Sign in, coach.') + '</h2>' +
       '<p class="rb-login-copy">' + (linking ? 'Link your school to finish setting up your recruiting account.' : 'Use your Discord account to access your team’s recruiting board.') + '</p>';
   if (linking){
     html += '<div class="rb-connected-account">' + renderDiscordIcon() + '<span>' + escapeHtml(accountName) + '</span><span class="rb-connected-check" aria-label="Connected">&#10003;</span></div>' +
@@ -2790,7 +2790,7 @@ function renderHomePage(){
       '<p class="rb-login-hint">First time here? You’ll link your team after signing in.</p>';
   }
   if (UI.loginError) html += '<div class="rb-login-error" role="alert">' + escapeHtml(UI.loginError) + '</div>';
-  html += '</div><div class="rb-login-footer"><span>NZCFL members only</span><span>Powered by Discord</span></div></section></main>';
+  html += '</div><div class="rb-login-footer"><span>League members only</span><span>Powered by Discord</span></div></section></main>';
   return html;
 }
 
