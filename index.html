@@ -3778,6 +3778,8 @@ function renderThread(){
 function renderProspectDetail(){
   const p = DB.prospects[UI.prospectId];
   if (!p) return '<div style="color:var(--slate);">Prospect not found.</div>';
+  const viewerTeam = SESSION && SESSION.team ? teamKey(canonicalTeamName(SESSION.team)) : '';
+  const ownCommit = !!(p.commitTeam && viewerTeam && teamKey(canonicalTeamName(p.commitTeam)) === viewerTeam);
   const offers = DB.offersByProspect[p.id] || [];
   const sessionOffer = SESSION ? findAnyOfferForTeam(p.id, SESSION.team) : null;
   const returnView = UI.prospectReturnView || 'feed';
@@ -3785,7 +3787,9 @@ function renderProspectDetail(){
   let html = '<div style="margin-bottom:16px;"><button class="rb-btn" data-nav="' + escapeHtml(returnView) + '">&larr; ' + escapeHtml(returnLabel) + '</button></div>';
   html += '<div class="rb-card" style="padding:18px 20px;margin-bottom:14px;' + (p.commitTeam ? committedCardStyle(p.commitTeam) : '') + '">';
   html += '<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;">';
-  html += '<div style="min-width:0;flex:1 1 420px;"><div class="rb-h" style="font-size:22px;">#' + p.rank + ' ' + escapeHtml(p.name) + '</div>';
+  html += '<div style="min-width:0;flex:1 1 420px;">';
+  if (ownCommit) html += '<div class="rb-own-commit"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="m3 8 3 3 7-7"/></svg><span>Committed to your team</span></div>';
+  html += '<div class="rb-h' + (ownCommit ? ' rb-prospect-title-owned' : '') + '" style="font-size:22px;">#' + p.rank + ' ' + escapeHtml(p.name) + '</div>';
   html += '<div class="rb-mono" style="font-size:13px;color:var(--slate);margin-top:4px;">' + escapeHtml(p.position) + (p.rating ? ' &middot; ' + escapeHtml(p.rating) : '') + (p.hometown ? ' &middot; ' + escapeHtml(p.hometown) : '') + '</div>';
   html += '</div>';
   html += '<div style="display:flex;align-items:center;justify-content:flex-end;gap:10px;flex-wrap:wrap;">' +

@@ -11,7 +11,7 @@ const boot = script.lastIndexOf('\napplyRoute(routeFromPath(window.location.path
 assert(boot > 0, 'The app bootstrap must be identifiable without executing network requests.');
 const source = script.slice(0, boot) + `
   globalThis.app = { DB, UI, renderFeed, renderBoardSearchResults, renderTeamsPage,
-    renderThreadProspectList, builtInTeamBranding, getTeamBranding, activeTeamBrands,
+    renderThreadProspectList, renderProspectDetail, builtInTeamBranding, getTeamBranding, activeTeamBrands,
     teamBorderColor, bindEvents, applyDefaultClassData, releaseWave1, releaseWave2,
     setSession(value){ SESSION = value; } };
 })();`;
@@ -209,4 +209,36 @@ test('the full bundled class stays lightweight before a search', () => {
   const html = app.renderFeed();
   assert.deepEqual(prospectIDs(html), []);
   assert(Buffer.byteLength(html) < 10000, 'Board markup must not include a hidden copy of the full class.');
+});
+
+test('a recruit committed to the viewing coach gets the gold title and explicit indicator', () => {
+  const { app } = harness();
+  app.UI.prospectId = 'r1';
+  app.setSession({ team: 'Boise State', accessLevel: 'coach' });
+  const html = app.renderProspectDetail();
+  assert.match(html, /class="rb-h rb-prospect-title-owned"[^>]*>#1 Jordan Able<\/div>/);
+  assert.match(html, /Committed to your team/);
+  assert.match(html, /data-open-team-commits="Boise State"/);
+  assert(!html.includes('data-open-submit='));
+  app.DB.prospects.r1.commitTeam = 'Cal';
+  app.setSession({ team: 'California', accessLevel: 'coach' });
+  assert.match(app.renderProspectDetail(), /Committed to your team/);
+});
+
+test('own-commit styling clears when the viewer or recruit commitment changes', () => {
+  const { app } = harness();
+  app.UI.prospectId = 'r1';
+  for (const session of [null, { team: '' }, { team: 'Michigan State' }]) {
+    app.setSession(session);
+    const html = app.renderProspectDetail();
+    assert(!html.includes('rb-prospect-title-owned'));
+    assert(!html.includes('Committed to your team'));
+  }
+  app.setSession({ team: 'Boise State' });
+  assert.match(app.renderProspectDetail(), /Committed to your team/);
+  app.DB.prospects.r1.commitTeam = '';
+  const html = app.renderProspectDetail();
+  assert(!html.includes('rb-prospect-title-owned'));
+  assert(!html.includes('Committed to your team'));
+  assert.match(html, /data-open-submit="r1"/);
 });
