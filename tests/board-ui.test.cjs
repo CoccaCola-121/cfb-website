@@ -261,7 +261,7 @@ test('mobile presentation preserves full-name search, recruit details, and commi
   app.DB.prospects.r1.rating = 91;
   const html = app.renderBoardSearchResults('Pharaoh Lizotte');
   assert.match(html, /rb-mobile-only">P\. Lizotte/);
-  assert.match(html, /QB<span class="rb-desktop-only"> &middot; 91/);
+  assert.match(html, /QB<span class="rb-recruit-rating"> &middot; 91/);
   assert.match(html, /aria-label="Committed to Boise State"/);
   assert.match(html, /data-open-team-commits="Boise State"/);
   app.UI.prospectId = 'r1';

@@ -3333,12 +3333,13 @@ function renderMyOffers(){
       html += '<span class="rb-my-offer-meta">' +
         '<span class="rb-mono" style="color:var(--slate);flex:0 0 auto;">#' + escapeHtml(p.rank || '?') + '</span>' +
         '<strong data-open-prospect="' + escapeHtml(row.prospectId) + '" title="' + escapeHtml(p.name || '') + '" style="overflow:hidden;text-overflow:ellipsis;color:var(--chalk);cursor:pointer;">' + renderRecruitName(p.name || 'Unknown prospect', 24) + '</strong>' +
-        '<span class="rb-mono" style="color:var(--slate);font-size:13px;flex:0 0 auto;">' + escapeHtml(p.position || '') + (p.rating ? '<span class="rb-desktop-only"> &middot; ' + escapeHtml(p.rating) + '</span>' : '') + '</span>' +
+        '<span class="rb-mono" style="color:var(--slate);font-size:13px;flex:0 0 auto;">' + escapeHtml(p.position || '') + (p.rating ? '<span class="rb-recruit-rating"> &middot; ' + escapeHtml(p.rating) + '</span>' : '') + '</span>' +
         (p.hometown ? '<span class="rb-mono rb-desktop-only" style="color:var(--slate);font-size:13px;flex:0 0 auto;">&middot;</span><span class="rb-mono rb-desktop-only" title="' + escapeHtml(p.hometown) + '" style="color:var(--slate);font-size:13px;overflow:hidden;text-overflow:ellipsis;">' + escapeHtml(shortText(p.hometown, 24)) + '</span>' : '') +
       '</span>';
       html += '<span class="rb-my-offer-visits" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">' + visitBadges(o.visits, true) + '</span>';
       html += '</span>';
       html += '<span class="rb-my-offer-actions" style="display:flex;align-items:center;justify-content:flex-end;gap:8px;white-space:nowrap;">' + (o.rescinded ? '<span class="rb-mono" style="color:var(--alert);font-size:12px;">rescinded</span>' : (p.commitTeam ? '<span class="rb-mono" style="color:var(--slate);font-size:12px;">committed</span>' : '<button class="rb-btn" data-edit-offer="' + escapeHtml(row.prospectId) + ':' + escapeHtml(o.id) + '">Edit</button><button class="rb-btn" data-rescind-offer="' + escapeHtml(row.prospectId) + ':' + escapeHtml(o.id) + '">Rescind</button>')) + '</span>';
+      html += '<span class="rb-mobile-only rb-offer-expand" aria-hidden="true">' + renderArrow() + '</span>';
       html += '</summary>';
       html += '<div style="margin-top:10px;">' + renderOfferBlock(o, p.commitTeam ? { collapsed: true } : { expanded: true }) + '</div>';
       html += '</details>';
@@ -3392,7 +3393,7 @@ function renderCommitsForTeam(team, title){
     html += '<details>';
     html += '<summary class="rb-offer-summary" style="list-style:none;cursor:pointer;">';
     html += '<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;">';
-    html += '<div class="rb-commit-identity" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;"><span class="rb-list-identity"><span class="rb-mono" style="color:var(--slate);">#' + p.rank + '</span> <strong data-open-prospect="' + escapeHtml(p.id) + '" title="' + escapeHtml(p.name) + '" style="color:var(--chalk);cursor:pointer;">' + renderRecruitName(p.name, 24) + '</strong> <span class="rb-mono" style="color:var(--slate);font-size:13px;">' + escapeHtml(p.position || '') + (p.rating ? '<span class="rb-desktop-only"> &middot; ' + escapeHtml(p.rating) + '</span>' : '') + (p.hometown ? '<span class="rb-desktop-only"> &middot; <span title="' + escapeHtml(p.hometown) + '">' + escapeHtml(shortText(p.hometown, 24)) + '</span></span>' : '') + '</span></span></div>';
+    html += '<div class="rb-commit-identity" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;"><span class="rb-list-identity"><span class="rb-mono" style="color:var(--slate);">#' + p.rank + '</span> <strong data-open-prospect="' + escapeHtml(p.id) + '" title="' + escapeHtml(p.name) + '" style="color:var(--chalk);cursor:pointer;">' + renderRecruitName(p.name, 24) + '</strong> <span class="rb-mono" style="color:var(--slate);font-size:13px;">' + escapeHtml(p.position || '') + (p.rating ? '<span class="rb-recruit-rating"> &middot; ' + escapeHtml(p.rating) + '</span>' : '') + (p.hometown ? '<span class="rb-desktop-only"> &middot; <span title="' + escapeHtml(p.hometown) + '">' + escapeHtml(shortText(p.hometown, 24)) + '</span></span>' : '') + '</span></span></div>';
     html += '<span class="rb-commit-promises" style="display:block;min-width:280px;max-width:100%;flex:1 1 360px;">' + renderPromiseChips(offers) + '</span><span class="rb-mobile-only rb-commit-expand">Details &rsaquo;</span>';
     html += '</div>';
     html += '</summary>';
@@ -3450,7 +3451,7 @@ function renderTeamOffers(){
     html += '<span style="min-width:0;display:flex;align-items:baseline;gap:10px;white-space:nowrap;overflow:hidden;">' +
       '<span class="rb-mono" style="color:var(--slate);flex:0 0 auto;">#' + escapeHtml(p.rank || '?') + '</span>' +
       '<strong data-open-prospect="' + escapeHtml(row.prospectId) + '" title="' + escapeHtml(p.name || '') + '" style="overflow:hidden;text-overflow:ellipsis;color:var(--chalk);cursor:pointer;">' + renderRecruitName(p.name || 'Unknown prospect', 24) + '</strong>' +
-      '<span class="rb-mono" style="color:var(--slate);font-size:13px;flex:0 0 auto;">' + escapeHtml(p.position || '') + (p.rating ? '<span class="rb-desktop-only"> &middot; ' + escapeHtml(p.rating) + '</span>' : '') + '</span>' +
+      '<span class="rb-mono" style="color:var(--slate);font-size:13px;flex:0 0 auto;">' + escapeHtml(p.position || '') + (p.rating ? '<span class="rb-recruit-rating"> &middot; ' + escapeHtml(p.rating) + '</span>' : '') + '</span>' +
       (p.hometown ? '<span class="rb-mono rb-desktop-only" style="color:var(--slate);font-size:13px;flex:0 0 auto;">&middot;</span><span class="rb-mono rb-desktop-only" title="' + escapeHtml(p.hometown) + '" style="color:var(--slate);font-size:13px;overflow:hidden;text-overflow:ellipsis;">' + escapeHtml(shortText(p.hometown, 24)) + '</span>' : '') +
     '</span>';
     html += '<span style="display:flex;align-items:center;justify-content:flex-end;gap:8px;white-space:nowrap;">' + (o.rescinded ? '<span class="rb-mono" style="color:var(--alert);font-size:12px;">rescinded</span>' : visitBadges(o.visits, true)) + '</span>';
@@ -3634,7 +3635,7 @@ function renderProspectBoardCard(pid, searchAttr, context){
   html += '<div class="rb-list-identity" style="min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' +
     '<span class="rb-mono" style="color:var(--slate);">#' + p.rank + '</span> ' +
     '<span title="' + escapeHtml(p.name) + '" style="font-weight:600;color:var(--chalk);">' + renderRecruitName(p.name, 24) + '</span> ' +
-    '<span class="rb-mono" style="color:var(--slate);font-size:13px;">' + escapeHtml(p.position) + (p.rating ? '<span class="rb-desktop-only"> &middot; ' + escapeHtml(p.rating) + '</span>' : '') + '</span>' +
+    '<span class="rb-mono" style="color:var(--slate);font-size:13px;">' + escapeHtml(p.position) + (p.rating ? '<span class="rb-recruit-rating"> &middot; ' + escapeHtml(p.rating) + '</span>' : '') + '</span>' +
     (p.hometown ? '<span class="rb-desktop-only" style="color:var(--slate);font-size:13px;"> &middot; <span title="' + escapeHtml(p.hometown) + '">' + escapeHtml(shortText(p.hometown, 28)) + '</span></span>' : '') +
   '</div>';
   html += '<div style="display:flex;align-items:center;gap:8px;white-space:nowrap;">' + (p.commitTeam || ended ? '' : offerCountTag(pid)) + (p.commitTeam ? renderCommittedTag(p.commitTeam, true, commitReturn) : (ended ? freeAgentTag() : '')) + '</div>';

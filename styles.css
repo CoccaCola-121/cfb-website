@@ -531,20 +531,22 @@ button, a, input, select, textarea, summary { -webkit-tap-highlight-color: trans
 }
 @media (max-width: 680px) {
   .rb-root.rb-entry { padding: 0; }
-  .rb-home { grid-template-columns: minmax(0, 1fr); background: #F7F7F5; }
+  .rb-home { grid-template-columns: minmax(0, 1fr); grid-template-rows: 2fr 1fr; background: #171819; }
   .rb-home-hero { padding: 24px; }
   .rb-home-hero::before { inset: 0; background-position: center 45%; opacity: .7; }
   .rb-home-hero::after { background: linear-gradient(90deg, rgba(23,24,25,.97), rgba(23,24,25,.75) 52%, rgba(23,24,25,.4)), linear-gradient(0deg, rgba(23,24,25,.7), transparent 65%); }
-  .rb-home-editorial { padding: 36px 0 12px; }
+  .rb-home-editorial { padding: 56px 0 32px; margin: auto 0; }
   .rb-editorial-rule, .rb-home-editorial > .rb-eyebrow, .rb-home-copy, .rb-home-colophon { display: none; }
   .rb-home-title { font-size: clamp(38px, 9vw, 60px); }
   .rb-home-title br { display: none; }
   .rb-home-title > span { display: block; }
-  .rb-home-login { padding: 28px 24px 24px; }
-  .rb-login-content { max-width: none; margin: 36px 0 44px; }
+  .rb-home-login { padding: 20px 24px; gap: 12px; }
+  .rb-login-content { max-width: none; margin: 0; }
   .rb-login-kicker { display: none; }
-  .rb-login-content h2 { font-size: 32px; }
-  .rb-login-copy { margin-bottom: 24px; max-width: none; }
+  .rb-login-content h2 { font-size: 28px; margin-bottom: 10px; }
+  .rb-login-copy { margin-bottom: 14px; max-width: none; font-size: 14px; line-height: 1.5; }
+  .rb-login-hint { margin-top: 10px; font-size: 12px; line-height: 1.5; }
+  .rb-login-footer { padding-top: 12px; }
   .rb-login-footer { font-size: 12px; }
 }
 
@@ -572,11 +574,17 @@ button, a, input, select, textarea, summary { -webkit-tap-highlight-color: trans
   .rb-value-chip-label { font-family: 'Inter', sans-serif; font-size: 11px; letter-spacing: 0; }
   .rb-value-chip-score { font-size: 14px; }
 
-  .rb-my-offer-summary-grid { gap: 8px; }
+  .rb-my-offer-summary-grid { grid-template-columns: minmax(0, 1fr) 16px; align-items: center; gap: 8px; }
   .rb-my-offer-summary-grid > span:first-child { gap: 6px !important; }
   .rb-my-offer-meta { gap: 6px; }
   .rb-my-offer-meta > strong { min-width: 0; }
-  .rb-my-offer-actions { justify-content: flex-end !important; gap: 6px !important; }
+  .rb-my-offer-summary-grid .rb-my-offer-actions { display: none !important; }
+  details[open] > .rb-my-offer-summary-grid .rb-my-offer-actions { display: flex !important; grid-column: 1 / -1; grid-row: 2; justify-content: flex-start !important; gap: 8px !important; padding-top: 10px; border-top: 1px solid var(--hairline); }
+  .rb-offer-expand { grid-column: 2; grid-row: 1; color: var(--slate); }
+  .rb-offer-expand .rb-icon { width: 16px; height: 16px; }
+  details[open] > summary .rb-offer-expand { transform: rotate(90deg); }
+  .rb-my-offer-summary-grid .rb-my-offer-visits { gap: 4px !important; }
+  .rb-my-offer-summary-grid .rb-visit-badge { border-color: transparent; background: transparent !important; padding: 0 6px 0 0 !important; min-height: 18px; color: var(--slate) !important; }
   .rb-my-offer-actions .rb-btn { flex: 0 0 auto; padding: 8px 12px; min-height: 36px; font-size: 12px; }
   .rb-my-offer-visits, .rb-offer-visit-wrap { display: flex !important; flex-wrap: wrap !important; gap: 5px !important; width: auto; }
   .rb-my-offer-visits:empty { display: none !important; }
