@@ -12,7 +12,7 @@ assert(boot > 0, 'The app bootstrap must be identifiable without executing netwo
 const source = script.slice(0, boot) + `
   globalThis.app = { DB, UI, renderFeed, renderBoardSearchResults, renderTeamsPage,
     renderThreadProspectList, renderProspectDetail, builtInTeamBranding, getTeamBranding, activeTeamBrands,
-    teamBorderColor, bindEvents, applyDefaultClassData, releaseWave1, releaseWave2,
+    mobileRecruitName, renderRecruitName, renderMyOffers, renderCommitsForTeam, renderTeamOffers, renderConditionalRescinds, renderRecruitValues, teamBorderColor, bindEvents, applyDefaultClassData, releaseWave1, releaseWave2,
     setSession(value){ SESSION = value; } };
 })();`;
 
@@ -241,4 +241,54 @@ test('own-commit styling clears when the viewer or recruit commitment changes', 
   assert(!html.includes('rb-prospect-title-owned'));
   assert(!html.includes('Committed to your team'));
   assert.match(html, /data-open-submit="r1"/);
+});
+
+
+test('mobile names abbreviate first names without losing surnames or suffixes', () => {
+  const { app } = harness();
+  for (const [full, compact] of [['Shane Starks', 'S. Starks'], ['Pharaoh Lizotte', 'P. Lizotte'], ['John James Smith Jr.', 'J. Smith Jr.'], ['Alex de la Cruz', 'A. de la Cruz'], ['Prince', 'Prince']]) {
+    assert.equal(app.mobileRecruitName(full), compact);
+    const html = app.renderRecruitName(full);
+    assert.ok(html.includes('rb-desktop-only">' + full));
+    assert.ok(html.includes('rb-mobile-only">' + compact));
+  }
+  assert.ok(!app.renderRecruitName('<img> Smith').includes('<img>'));
+});
+
+test('mobile presentation preserves full-name search, recruit details, and commitment actions', () => {
+  const { app } = harness();
+  app.DB.prospects.r1.name = 'Pharaoh Lizotte';
+  app.DB.prospects.r1.rating = 91;
+  const html = app.renderBoardSearchResults('Pharaoh Lizotte');
+  assert.match(html, /rb-mobile-only">P\. Lizotte/);
+  assert.match(html, /QB<span class="rb-desktop-only"> &middot; 91/);
+  assert.match(html, /aria-label="Committed to Boise State"/);
+  assert.match(html, /data-open-team-commits="Boise State"/);
+  app.UI.prospectId = 'r1';
+  assert.match(app.renderProspectDetail(), /#1 Pharaoh Lizotte<\/div>/);
+});
+
+test('offer and commit lists keep balanced markup and full data with mobile names', () => {
+  const { app } = harness();
+  app.DB.offersByProspect.r1 = [{ id: 'o1', team: 'Boise State', text: 'Welcome', visits: {}, promises: [] }];
+  app.setSession({ team: 'Boise State', username: 'Coach', accessLevel: 'coach' });
+  app.UI.teamOffersTeam = 'Boise State';
+  for (const html of [app.renderMyOffers(), app.renderTeamOffers(), app.renderCommitsForTeam('Boise State', 'Commits')]) {
+    assert.match(html, /rb-mobile-only">J\. Able/);
+    for (const tag of ['span', 'div', 'strong', 'details', 'summary']) {
+      const tokens = html.match(new RegExp('<\\/?' + tag + '(?:\\s[^>]*|)>', 'g')) || [];
+      let depth = 0;
+      for (const token of tokens) {
+        depth += token.startsWith('</') ? -1 : 1;
+        assert.ok(depth >= 0, tag + ' closes before opening');
+      }
+      assert.equal(depth, 0, tag + ' must stay balanced');
+    }
+  }
+  const rescind = app.renderConditionalRescinds();
+  for (const prefix of ['rb-cond', 'rb-mass']) {
+    for (const field of ['stars', 'scholarship', 'rank-mode', 'rank-value', 'overall-mode', 'overall-value']) {
+      assert.ok(rescind.includes('id="' + prefix + '-' + field + '"'));
+    }
+  }
 });

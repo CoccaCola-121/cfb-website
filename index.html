@@ -292,6 +292,20 @@ function shortText(value, max){
   return text.length > max ? text.slice(0, Math.max(0, max - 3)).trimEnd() + '...' : text;
 }
 
+// Keep full names in data/search and on the recruit page; abbreviate presentation only.
+function mobileRecruitName(name){
+  const parts = String(name || '').trim().split(/\s+/).filter(Boolean);
+  if (parts.length < 2) return parts.join(' ');
+  let last = parts.length - 1;
+  if (/^(jr\.?|sr\.?|ii|iii|iv|v)$/i.test(parts[last]) && last > 1) last--;
+  while (last > 1 && /^(de|del|da|di|la|van|von|st\.?)$/i.test(parts[last - 1])) last--;
+  return Array.from(parts[0])[0] + '. ' + parts.slice(last).join(' ');
+}
+
+function renderRecruitName(name, max){
+  return '<span class="rb-recruit-name"><span class="rb-desktop-only">' + escapeHtml(max ? shortText(name, max) : name) + '</span><span class="rb-mobile-only">' + escapeHtml(mobileRecruitName(name)) + '</span></span>';
+}
+
 function formatStoryline(text){
   return String(text == null ? '' : text).trim()
     .replace('Playing Time: Would prefer to be redshirted to further develop and start on a better Team', 'Playing Time: Would prefer to be redshirted to further develop and start on a better team');
@@ -373,7 +387,7 @@ function renderRecruitValues(values){
     const value = Math.max(0, Math.min(1, Number(row.value)));
     html += '<div class="rb-value-chip ' + (index < 3 ? 'rb-value-chip-strong' : '') + '" style="--value-fill:' + Math.round(value * 100) + '%;">' +
       '<span class="rb-value-chip-content">' +
-        '<span class="rb-mono rb-value-chip-label">' + escapeHtml(row.field.label) + '</span>' +
+        '<span class="rb-mono rb-value-chip-label"><span class="rb-desktop-only">' + escapeHtml(row.field.label) + '</span><span class="rb-mobile-only" title="' + escapeHtml(row.field.label) + '">' + escapeHtml(row.field.label.replace('Pro Potential', 'Pro pot.').replace('Playing Time', 'Play time')) + '</span></span>' +
         '<strong class="rb-mono rb-value-chip-score">' + escapeHtml(formatRecruitValue(value)) + '</strong>' +
       '</span>' +
     '</div>';
@@ -554,7 +568,7 @@ function renderCommittedTag(teamName, clickable, returnContext){
     return '<span class="rb-tag"' + returnAttr + ' style="display:inline-flex;align-items:center;gap:6px;margin:0;white-space:nowrap;' + clickableStyle + '">Committed: ' + escapeHtml(teamName) + '</span>';
   }
   const primary = brand.primary || 'var(--hairline)';
-  return '<span class="rb-tag"' + returnAttr + ' style="display:inline-flex;align-items:center;gap:7px;margin:0;white-space:nowrap;border-color:' + escapeHtml(primary) + ';background:var(--panel-alt);' + clickableStyle + '">' + renderTeamLogo(brand) + '<span>Committed: <span class="rb-desktop-only">' + escapeHtml(brand.region || teamName) + '</span><span class="rb-mobile-only">' + escapeHtml(brand.abbrev || brand.region || teamName) + '</span></span></span>';
+  return '<span class="rb-tag rb-commit-badge' + (brand.logoUrl ? ' rb-commit-badge-logo' : '') + '" title="Committed to ' + escapeHtml(teamName) + '" aria-label="Committed to ' + escapeHtml(teamName) + '"' + returnAttr + ' style="display:inline-flex;align-items:center;gap:7px;margin:0;white-space:nowrap;border-color:' + escapeHtml(primary) + ';background:var(--panel-alt);' + clickableStyle + '">' + renderTeamLogo(brand) + '<span>Committed: <span class="rb-desktop-only">' + escapeHtml(brand.region || teamName) + '</span><span class="rb-mobile-only">' + escapeHtml(brand.abbrev || brand.region || teamName) + '</span></span></span>';
 }
 
 function renderTeamCoachBadge(teamName){
@@ -2959,17 +2973,17 @@ function rescindFilterSummary(rule){
 
 function renderRescindFilterFields(prefix, includeCount){
   let html = '';
-  html += '<div class="rb-mobile-stack" style="display:grid;grid-template-columns:' + (includeCount ? '0.8fr ' : '') + '1fr 0.9fr;gap:10px;margin-bottom:10px;">';
+  html += '<div class="rb-mobile-stack rb-rescind-filters" style="display:grid;grid-template-columns:' + (includeCount ? '0.8fr ' : '') + '1fr 0.9fr;gap:10px;margin-bottom:10px;">';
   if (includeCount) html += '<label><span class="rb-mono" style="font-size:11px;color:var(--slate);">Commits needed</span><input class="rb-input" id="' + prefix + '-count" type="number" min="1" value="1" /></label>';
   html += '<label><span class="rb-mono" style="font-size:11px;color:var(--slate);">Stars</span><select class="rb-input" id="' + prefix + '-stars"><option value="">Any stars</option><option value="5">5 stars</option><option value="4">4 stars</option><option value="3">3 stars</option><option value="2">2 stars</option><option value="1">1 star</option><option value="0">0 stars</option></select></label>';
   html += '<label><span class="rb-mono" style="font-size:11px;color:var(--slate);">Offer type</span><select class="rb-input" id="' + prefix + '-scholarship"><option value="">Any type</option><option value="scholarship">Scholarship</option><option value="walkon">Walk-on</option></select></label>';
   html += '</div>';
   html += '<div style="margin-bottom:10px;">' + renderPositionChecklist(prefix) + '</div>';
-  html += '<div class="rb-mobile-stack" style="display:grid;grid-template-columns:1fr 0.8fr 1fr 0.8fr;gap:10px;align-items:end;">';
+  html += '<div class="rb-mobile-stack rb-rescind-thresholds" style="display:grid;grid-template-columns:1fr 0.8fr 1fr 0.8fr;gap:10px;align-items:end;">';
   html += '<label><span class="rb-mono" style="font-size:11px;color:var(--slate);">Rank filter</span><select class="rb-input" id="' + prefix + '-rank-mode"><option value="worse">Ranks below #</option><option value="better">Ranks # or better</option></select></label>';
-  html += '<input class="rb-input" id="' + prefix + '-rank-value" type="number" min="1" placeholder="blank = any rank" />';
+  html += '<input class="rb-input" id="' + prefix + '-rank-value" type="number" min="1" aria-label="Rank threshold" placeholder="blank = any rank" />';
   html += '<label><span class="rb-mono" style="font-size:11px;color:var(--slate);">Overall filter</span><select class="rb-input" id="' + prefix + '-overall-mode"><option value="below">Overall below</option><option value="atLeast">Overall at least</option></select></label>';
-  html += '<input class="rb-input" id="' + prefix + '-overall-value" type="number" min="1" max="99" placeholder="blank = any ovr" />';
+  html += '<input class="rb-input" id="' + prefix + '-overall-value" type="number" min="1" max="99" aria-label="Overall threshold" placeholder="blank = any ovr" />';
   html += '</div>';
   return html;
 }
@@ -2980,7 +2994,7 @@ function rulesForTeam(team){
 
 function renderConditionalRescinds(){
   const rules = rulesForTeam(SESSION.team);
-  let html = '<div class="rb-card" style="padding:18px 20px;margin-bottom:14px;">';
+  let html = '<div class="rb-card rb-rescind-center" style="padding:18px 20px;margin-bottom:14px;">';
   html += '<div class="rb-h" style="font-size:18px;margin-bottom:6px;">Rescind Center</div>';
   html += '<div style="font-size:13px;color:var(--slate);margin-bottom:12px;">Build automatic rescind rules or mass rescind matching active offers right now.</div>';
   if (rules.length){
@@ -3282,7 +3296,7 @@ function visitLineForOffer(row){
   if (visits.coach) labels.push('Coach');
   if (visits.campus) labels.push('Campus' + (visits.campusLabel ? ': ' + visits.campusLabel : ''));
   return '<div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;border-top:1px solid var(--hairline);padding:8px 0;font-size:13px;">' +
-    '<span><span class="rb-mono" style="color:var(--slate);">#' + escapeHtml(p.rank || '?') + '</span> <span title="' + escapeHtml(p.name || '') + '">' + escapeHtml(shortText(p.name || 'Unknown prospect', 24)) + '</span> <span class="rb-mono" style="color:var(--slate);">' + escapeHtml(p.position || '') + '</span></span>' +
+    '<span><span class="rb-mono" style="color:var(--slate);">#' + escapeHtml(p.rank || '?') + '</span> <span title="' + escapeHtml(p.name || '') + '">' + renderRecruitName(p.name || 'Unknown prospect', 24) + '</span> <span class="rb-mono" style="color:var(--slate);">' + escapeHtml(p.position || '') + '</span></span>' +
     '<span class="rb-mono" style="color:var(--gold);font-size:11px;">' + escapeHtml(labels.join(' + ')) + '</span>' +
   '</div>';
 }
@@ -3318,9 +3332,9 @@ function renderMyOffers(){
       html += '<span style="min-width:0;display:flex;flex-direction:column;gap:10px;">';
       html += '<span class="rb-my-offer-meta">' +
         '<span class="rb-mono" style="color:var(--slate);flex:0 0 auto;">#' + escapeHtml(p.rank || '?') + '</span>' +
-        '<strong data-open-prospect="' + escapeHtml(row.prospectId) + '" title="' + escapeHtml(p.name || '') + '" style="overflow:hidden;text-overflow:ellipsis;color:var(--chalk);cursor:pointer;">' + escapeHtml(shortText(p.name || 'Unknown prospect', 24)) + '</strong>' +
-        '<span class="rb-mono" style="color:var(--slate);font-size:13px;flex:0 0 auto;">' + escapeHtml(p.position || '') + (p.rating ? ' &middot; ' + escapeHtml(p.rating) : '') + '</span>' +
-        (p.hometown ? '<span class="rb-mono" style="color:var(--slate);font-size:13px;flex:0 0 auto;">&middot;</span><span class="rb-mono" title="' + escapeHtml(p.hometown) + '" style="color:var(--slate);font-size:13px;overflow:hidden;text-overflow:ellipsis;">' + escapeHtml(shortText(p.hometown, 24)) + '</span>' : '') +
+        '<strong data-open-prospect="' + escapeHtml(row.prospectId) + '" title="' + escapeHtml(p.name || '') + '" style="overflow:hidden;text-overflow:ellipsis;color:var(--chalk);cursor:pointer;">' + renderRecruitName(p.name || 'Unknown prospect', 24) + '</strong>' +
+        '<span class="rb-mono" style="color:var(--slate);font-size:13px;flex:0 0 auto;">' + escapeHtml(p.position || '') + (p.rating ? '<span class="rb-desktop-only"> &middot; ' + escapeHtml(p.rating) + '</span>' : '') + '</span>' +
+        (p.hometown ? '<span class="rb-mono rb-desktop-only" style="color:var(--slate);font-size:13px;flex:0 0 auto;">&middot;</span><span class="rb-mono rb-desktop-only" title="' + escapeHtml(p.hometown) + '" style="color:var(--slate);font-size:13px;overflow:hidden;text-overflow:ellipsis;">' + escapeHtml(shortText(p.hometown, 24)) + '</span>' : '') +
       '</span>';
       html += '<span class="rb-my-offer-visits" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">' + visitBadges(o.visits, true) + '</span>';
       html += '</span>';
@@ -3374,12 +3388,12 @@ function renderCommitsForTeam(team, title){
     const promiseSearch = offers.map(function(o){ return (o.promises || []).map(function(pr){ return pr.text || ''; }).join(' '); }).join(' ');
     const bucket = positionBucket(p.position);
     const searchText = [p.rank, '#' + p.rank, p.name, p.hometown, promiseSearch].join(' ').toLowerCase();
-    html += '<div class="rb-card" data-my-commit-card="1" data-position-bucket="' + escapeHtml(bucket) + '" data-search="' + escapeHtml(searchText) + '" style="padding:14px 18px;">';
+    html += '<div class="rb-card rb-mobile-tight" data-my-commit-card="1" data-position-bucket="' + escapeHtml(bucket) + '" data-search="' + escapeHtml(searchText) + '" style="padding:14px 18px;">';
     html += '<details>';
     html += '<summary class="rb-offer-summary" style="list-style:none;cursor:pointer;">';
     html += '<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;">';
-    html += '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;"><span><span class="rb-mono" style="color:var(--slate);">#' + p.rank + '</span> <strong data-open-prospect="' + escapeHtml(p.id) + '" title="' + escapeHtml(p.name) + '" style="color:var(--chalk);cursor:pointer;">' + escapeHtml(shortText(p.name, 24)) + '</strong> <span class="rb-mono" style="color:var(--slate);font-size:13px;">' + escapeHtml(p.position || '') + (p.rating ? ' &middot; ' + escapeHtml(p.rating) : '') + (p.hometown ? ' &middot; <span title="' + escapeHtml(p.hometown) + '">' + escapeHtml(shortText(p.hometown, 24)) + '</span>' : '') + '</span></span></div>';
-    html += '<span style="display:block;min-width:280px;max-width:100%;flex:1 1 360px;">' + renderPromiseChips(offers) + '</span>';
+    html += '<div class="rb-commit-identity" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;"><span class="rb-list-identity"><span class="rb-mono" style="color:var(--slate);">#' + p.rank + '</span> <strong data-open-prospect="' + escapeHtml(p.id) + '" title="' + escapeHtml(p.name) + '" style="color:var(--chalk);cursor:pointer;">' + renderRecruitName(p.name, 24) + '</strong> <span class="rb-mono" style="color:var(--slate);font-size:13px;">' + escapeHtml(p.position || '') + (p.rating ? '<span class="rb-desktop-only"> &middot; ' + escapeHtml(p.rating) + '</span>' : '') + (p.hometown ? '<span class="rb-desktop-only"> &middot; <span title="' + escapeHtml(p.hometown) + '">' + escapeHtml(shortText(p.hometown, 24)) + '</span></span>' : '') + '</span></span></div>';
+    html += '<span class="rb-commit-promises" style="display:block;min-width:280px;max-width:100%;flex:1 1 360px;">' + renderPromiseChips(offers) + '</span><span class="rb-mobile-only rb-commit-expand">Details &rsaquo;</span>';
     html += '</div>';
     html += '</summary>';
     html += '<div style="margin-top:12px;">';
@@ -3432,12 +3446,12 @@ function renderTeamOffers(){
     const searchText = [p.rank, '#' + p.rank, p.name, p.hometown, p.storyline].join(' ').toLowerCase();
     html += '<div class="rb-card" data-my-offer-card="1" data-position-bucket="' + escapeHtml(bucket) + '" data-search="' + escapeHtml(searchText) + '" style="padding:12px 16px;">';
     html += '<details>';
-    html += '<summary class="rb-offer-summary" style="list-style:none;cursor:pointer;display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:14px;">';
+    html += '<summary class="rb-offer-summary rb-team-offer-summary" style="list-style:none;cursor:pointer;display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:14px;">';
     html += '<span style="min-width:0;display:flex;align-items:baseline;gap:10px;white-space:nowrap;overflow:hidden;">' +
       '<span class="rb-mono" style="color:var(--slate);flex:0 0 auto;">#' + escapeHtml(p.rank || '?') + '</span>' +
-      '<strong data-open-prospect="' + escapeHtml(row.prospectId) + '" title="' + escapeHtml(p.name || '') + '" style="overflow:hidden;text-overflow:ellipsis;color:var(--chalk);cursor:pointer;">' + escapeHtml(shortText(p.name || 'Unknown prospect', 24)) + '</strong>' +
-      '<span class="rb-mono" style="color:var(--slate);font-size:13px;flex:0 0 auto;">' + escapeHtml(p.position || '') + (p.rating ? ' &middot; ' + escapeHtml(p.rating) : '') + '</span>' +
-      (p.hometown ? '<span class="rb-mono" style="color:var(--slate);font-size:13px;flex:0 0 auto;">&middot;</span><span class="rb-mono" title="' + escapeHtml(p.hometown) + '" style="color:var(--slate);font-size:13px;overflow:hidden;text-overflow:ellipsis;">' + escapeHtml(shortText(p.hometown, 24)) + '</span>' : '') +
+      '<strong data-open-prospect="' + escapeHtml(row.prospectId) + '" title="' + escapeHtml(p.name || '') + '" style="overflow:hidden;text-overflow:ellipsis;color:var(--chalk);cursor:pointer;">' + renderRecruitName(p.name || 'Unknown prospect', 24) + '</strong>' +
+      '<span class="rb-mono" style="color:var(--slate);font-size:13px;flex:0 0 auto;">' + escapeHtml(p.position || '') + (p.rating ? '<span class="rb-desktop-only"> &middot; ' + escapeHtml(p.rating) + '</span>' : '') + '</span>' +
+      (p.hometown ? '<span class="rb-mono rb-desktop-only" style="color:var(--slate);font-size:13px;flex:0 0 auto;">&middot;</span><span class="rb-mono rb-desktop-only" title="' + escapeHtml(p.hometown) + '" style="color:var(--slate);font-size:13px;overflow:hidden;text-overflow:ellipsis;">' + escapeHtml(shortText(p.hometown, 24)) + '</span>' : '') +
     '</span>';
     html += '<span style="display:flex;align-items:center;justify-content:flex-end;gap:8px;white-space:nowrap;">' + (o.rescinded ? '<span class="rb-mono" style="color:var(--alert);font-size:12px;">rescinded</span>' : visitBadges(o.visits, true)) + '</span>';
     html += '</summary>';
@@ -3617,11 +3631,11 @@ function renderProspectBoardCard(pid, searchAttr, context){
   const commitReturn = currentThread ? { view: 'thread', threadId: currentThread.id, label: currentThread.title } : { view: 'feed', label: 'Prospect Board' };
   let html = '<div class="rb-card rb-mobile-tight" data-prospect-card="1" data-position-bucket="' + escapeHtml(bucket) + '" data-search="' + escapeHtml(searchText) + '" data-open-prospect="' + pid + '" style="padding:14px 18px;cursor:pointer;' + (p.commitTeam ? committedCardStyle(p.commitTeam) : '') + '">';
   html += '<div style="display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:10px;">';
-  html += '<div style="min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' +
+  html += '<div class="rb-list-identity" style="min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' +
     '<span class="rb-mono" style="color:var(--slate);">#' + p.rank + '</span> ' +
-    '<span title="' + escapeHtml(p.name) + '" style="font-weight:600;color:var(--chalk);">' + escapeHtml(shortText(p.name, 24)) + '</span> ' +
-    '<span class="rb-mono" style="color:var(--slate);font-size:13px;">' + escapeHtml(p.position) + (p.rating ? ' &middot; ' + escapeHtml(p.rating) : '') + '</span>' +
-    (p.hometown ? '<span style="color:var(--slate);font-size:13px;"> &middot; <span title="' + escapeHtml(p.hometown) + '">' + escapeHtml(shortText(p.hometown, 28)) + '</span></span>' : '') +
+    '<span title="' + escapeHtml(p.name) + '" style="font-weight:600;color:var(--chalk);">' + renderRecruitName(p.name, 24) + '</span> ' +
+    '<span class="rb-mono" style="color:var(--slate);font-size:13px;">' + escapeHtml(p.position) + (p.rating ? '<span class="rb-desktop-only"> &middot; ' + escapeHtml(p.rating) + '</span>' : '') + '</span>' +
+    (p.hometown ? '<span class="rb-desktop-only" style="color:var(--slate);font-size:13px;"> &middot; <span title="' + escapeHtml(p.hometown) + '">' + escapeHtml(shortText(p.hometown, 28)) + '</span></span>' : '') +
   '</div>';
   html += '<div style="display:flex;align-items:center;gap:8px;white-space:nowrap;">' + (p.commitTeam || ended ? '' : offerCountTag(pid)) + (p.commitTeam ? renderCommittedTag(p.commitTeam, true, commitReturn) : (ended ? freeAgentTag() : '')) + '</div>';
   html += '</div>';
@@ -3874,8 +3888,8 @@ function renderSubmitModal(){
   const locked = !!DB.offersLocked;
   const pitchOffer = recruitingStageConfig().pitchOnly || isPitchRecruit(target);
   const submitHelp = locked ? 'Offers are currently locked. New offers cannot be posted.' :
-    (pitchOffer ? (target ? 'Write or paste a personalized pitch for #' + escapeHtml(target.rank) + ' ' + escapeHtml(target.name) + '. Include up to 3 promises; short pitch-only submissions are fine.' : 'Write or paste a personalized pitch. Include up to 3 promises; short pitch-only submissions are fine.') :
-      (target ? 'Paste one offer sheet as-is. This will post directly to #' + escapeHtml(target.rank) + ' ' + escapeHtml(target.name) + ', detect visits, and file your team name automatically.' : 'Paste one offer sheet as-is. We\'ll match it to the right prospect, detect visits, and file your team name automatically.'));
+    (pitchOffer ? (target ? 'Write or paste a personalized pitch for #' + escapeHtml(target.rank) + ' ' + renderRecruitName(target.name) + '. Include up to 3 promises; short pitch-only submissions are fine.' : 'Write or paste a personalized pitch. Include up to 3 promises; short pitch-only submissions are fine.') :
+      (target ? 'Paste one offer sheet as-is. This will post directly to #' + escapeHtml(target.rank) + ' ' + renderRecruitName(target.name) + ', detect visits, and file your team name automatically.' : 'Paste one offer sheet as-is. We\'ll match it to the right prospect, detect visits, and file your team name automatically.'));
   const placeholder = pitchOffer ? 'Write or paste your pitch here' : 'Paste your auto-offer sheet output here';
   return '<div style="position:fixed;inset:0;background:rgba(0,0,0,0.6);display:flex;align-items:center;justify-content:center;z-index:50;" data-close-modal="1">' +
     '<div class="rb-card" style="padding:24px;width:520px;max-width:90vw;" onclick="event.stopPropagation()">' +
@@ -3902,7 +3916,7 @@ function renderEditOfferModal(){
   return '<div style="position:fixed;inset:0;background:rgba(0,0,0,0.6);display:flex;align-items:center;justify-content:center;z-index:50;" data-close-edit-modal="1">' +
     '<div class="rb-card" style="padding:24px;width:560px;max-width:90vw;" onclick="event.stopPropagation()">' +
       '<div class="rb-h" style="font-size:16px;margin-bottom:4px;">Edit visits</div>' +
-      '<div class="rb-mono" style="font-size:12px;color:var(--slate);margin-bottom:12px;">#' + escapeHtml(prospect.rank || '?') + ' ' + escapeHtml(prospect.name || 'Unknown prospect') + '</div>' +
+      '<div class="rb-mono" style="font-size:12px;color:var(--slate);margin-bottom:12px;">#' + escapeHtml(prospect.rank || '?') + ' ' + renderRecruitName(prospect.name || 'Unknown prospect') + '</div>' +
       '<div style="font-size:12px;color:var(--slate);margin-bottom:10px;">Campus format: <span class="rb-mono">Week X vs. Team Name</span>; no 3-4 letter all-caps abbreviations.</div>' +
       '<div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-top:12px;">' +
         '<label style="display:inline-flex;align-items:center;gap:8px;color:' + (locks.coach ? 'var(--slate)' : 'var(--chalk)') + ';font-size:13px;">' +
@@ -3933,7 +3947,7 @@ function renderVisitConfirmModal(){
   return '<div style="position:fixed;inset:0;background:rgba(0,0,0,0.68);display:flex;align-items:center;justify-content:center;z-index:60;">' +
     '<div class="rb-card" style="padding:24px;width:500px;max-width:90vw;border-color:var(--gold);">' +
       '<div class="rb-h" style="font-size:18px;margin-bottom:8px;">Add ' + escapeHtml(visitText) + '?</div>' +
-      '<div style="font-size:13px;color:var(--slate);line-height:1.5;margin-bottom:18px;">This will use the selected visit for #' + escapeHtml(prospect.rank || '?') + ' ' + escapeHtml(prospect.name || 'this prospect') + ' and cannot be removed later.</div>' +
+      '<div style="font-size:13px;color:var(--slate);line-height:1.5;margin-bottom:18px;">This will use the selected visit for #' + escapeHtml(prospect.rank || '?') + ' ' + renderRecruitName(prospect.name || 'this prospect') + ' and cannot be removed later.</div>' +
       '<div style="display:flex;justify-content:flex-end;gap:8px;flex-wrap:wrap;">' +
         '<button class="rb-btn" id="rb-cancel-visit-confirm">Cancel</button>' +
         '<button class="rb-btn rb-btn-gold" id="rb-confirm-visit">Yes, add visit</button>' +
@@ -4002,7 +4016,7 @@ function renderMassRescindModal(){
       html += '<input type="checkbox" class="rb-mass-rescind-check" data-prospect-id="' + escapeHtml(row.prospectId) + '" data-offer-id="' + escapeHtml(row.offer.id) + '"' + (isChecked ? ' checked' : '') + ' style="accent-color:var(--alert);" />';
       html += '<span style="min-width:0;display:flex;align-items:baseline;gap:8px;white-space:nowrap;overflow:hidden;">' +
         '<span class="rb-mono" style="color:var(--slate);flex:0 0 auto;">#' + escapeHtml(p.rank || '?') + '</span>' +
-        '<strong title="' + escapeHtml(p.name || '') + '" style="overflow:hidden;text-overflow:ellipsis;">' + escapeHtml(p.name || 'Unknown prospect') + '</strong>' +
+        '<strong title="' + escapeHtml(p.name || '') + '" style="overflow:hidden;text-overflow:ellipsis;">' + renderRecruitName(p.name || 'Unknown prospect') + '</strong>' +
         '<span class="rb-mono" style="color:var(--slate);font-size:12px;flex:0 0 auto;">' + escapeHtml(p.position || '') + (p.rating ? ' · ' + escapeHtml(p.rating) : '') + '</span>' +
         (p.hometown ? '<span class="rb-mono" title="' + escapeHtml(p.hometown) + '" style="color:var(--slate);font-size:12px;overflow:hidden;text-overflow:ellipsis;">· ' + escapeHtml(p.hometown) + '</span>' : '') +
       '</span>';
@@ -4043,7 +4057,7 @@ function renderSingleRescindConfirmModal(){
   return '<div style="position:fixed;inset:0;background:rgba(0,0,0,0.72);display:flex;align-items:center;justify-content:center;z-index:65;">' +
     '<div class="rb-card" style="padding:24px;width:520px;max-width:90vw;border-color:#B33A32;">' +
       '<div class="rb-h" style="font-size:20px;margin-bottom:8px;color:#FFF2F1;">Rescind this offer?</div>' +
-      '<div style="font-size:14px;color:var(--text);line-height:1.5;margin-bottom:10px;">' + escapeHtml(offer.team || SESSION.team) + ' will rescind its offer to <strong>#' + escapeHtml(prospect.rank || '?') + ' ' + escapeHtml(prospect.name || 'this recruit') + '</strong>.</div>' +
+      '<div style="font-size:14px;color:var(--text);line-height:1.5;margin-bottom:10px;">' + escapeHtml(offer.team || SESSION.team) + ' will rescind its offer to <strong>#' + escapeHtml(prospect.rank || '?') + ' ' + renderRecruitName(prospect.name || 'this recruit') + '</strong>.</div>' +
       '<div style="font-size:13px;color:var(--alert);line-height:1.45;margin-bottom:18px;">This cannot be undone. The offer will still show on the record as rescinded.</div>' +
       '<div style="display:flex;justify-content:flex-end;gap:8px;flex-wrap:wrap;">' +
         '<button class="rb-btn" id="rb-cancel-single-rescind">Cancel</button>' +
