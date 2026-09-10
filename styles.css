@@ -433,7 +433,7 @@ button, a, input, select, textarea, summary { -webkit-tap-highlight-color: trans
 .rb-brand img { display: block; width: 40px; height: 40px; object-fit: cover; border-radius: 3px; }
 .rb-brand-name { font-family: 'Oswald', sans-serif; font-size: 27px; font-weight: 600; letter-spacing: -.02em; line-height: 1.2; }
 .rb-brand-name > span { color: #A0A3A6; font-weight: 500; }
-.rb-home { min-height: 100vh; min-height: 100svh; display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(400px, 1fr); }
+.rb-home { min-height: 100vh; min-height: 100svh; display: grid; grid-template-columns: minmax(0, 2fr) minmax(360px, 1fr); }
 .rb-home-hero { position: relative; isolation: isolate; overflow: hidden; display: flex; flex-direction: column; justify-content: space-between; padding: 40px clamp(32px, 5vw, 88px); background: #171819; border-top: 5px solid var(--accent); min-width: 0; }
 /* Keep the supplied stadium photograph intact; blend it into the league masthead. */
 .rb-home-hero::before { content: ""; position: absolute; z-index: -2; inset: 20% 0 0; background: url('./assets/wvu-stadium.webp') center 55% / cover no-repeat; filter: saturate(.65); opacity: .8; pointer-events: none; }
@@ -448,7 +448,7 @@ button, a, input, select, textarea, summary { -webkit-tap-highlight-color: trans
 .rb-home-copy { max-width: 355px; color: #B6B8BA; font-size: 16px; line-height: 1.8; margin: 28px 0 0; }
 .rb-home-colophon { display: flex; justify-content: space-between; align-items: center; gap: 16px; padding: 20px 0 24px; border-top: 1px solid rgba(242,242,240,.2); font-size: 12px; color: #A0A3A6; }
 .rb-colophon-mark { font-family: 'Oswald', sans-serif; letter-spacing: .06em; font-weight: 600; font-size: 18px; }
-.rb-home-login { --ink: #fff; --chalk: #202224; --slate: #666A6D; --panel-alt: #EEEFEF; --hairline: #D1D3D4; color-scheme: light; background: #F7F7F5; color: var(--chalk); display: flex; flex-direction: column; justify-content: space-between; padding: 45px clamp(32px, 4.7vw, 88px) 24px; min-width: 0; }
+.rb-home-login { --ink: #fff; --chalk: #202224; --slate: #666A6D; --panel-alt: #EEEFEF; --hairline: #D1D3D4; color-scheme: light; background: #F7F7F5; color: var(--chalk); display: flex; flex-direction: column; justify-content: space-between; padding: 45px clamp(24px, 2.5vw, 48px) 24px; min-width: 0; }
 .rb-login-topline { display: flex; justify-content: space-between; align-items: center; color: var(--slate); gap: 16px; }
 .rb-login-step { font-family: 'IBM Plex Mono', monospace; font-size: 12px; color: #767A7D; }
 .rb-login-content { width: 100%; max-width: 390px; margin: 68px auto 88px; }
@@ -524,7 +524,6 @@ button, a, input, select, textarea, summary { -webkit-tap-highlight-color: trans
 }
 @media (min-width: 1600px) {
   .rb-home-hero { padding-left: max(88px, calc((100vw - 1424px) / 2)); }
-  .rb-home-login { padding-right: max(88px, calc((100vw - 1424px) / 2)); }
 }
 @media (max-width: 900px) {
   .rb-home { grid-template-columns: minmax(0, 1fr) minmax(340px, 1fr); }
