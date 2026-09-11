@@ -10,7 +10,7 @@ const script = page.match(/<script>([\s\S]*?)<\/script>/)[1];
 const boot = script.lastIndexOf('\napplyRoute(routeFromPath(window.location.pathname));');
 assert(boot > 0, 'The app bootstrap must be identifiable without executing network requests.');
 const source = script.slice(0, boot) + `
-  globalThis.app = { DB, UI, renderFeed, renderBoardSearchResults, renderTeamsPage,
+  globalThis.app = { DB, UI, render, renderNav, navigateTo, setReady(){ dbReady = true; sessionReady = true; }, renderFeed, renderBoardSearchResults, renderTeamsPage,
     renderThreadProspectList, renderProspectDetail, builtInTeamBranding, getTeamBranding, activeTeamBrands,
     mobileRecruitName, renderRecruitName, renderMyOffers, renderCommitsForTeam, renderTeamOffers, renderConditionalRescinds, renderRecruitValues, teamBorderColor, bindEvents, applyDefaultClassData, releaseWave1, releaseWave2,
     setSession(value){ SESSION = value; } };
@@ -291,4 +291,37 @@ test('offer and commit lists keep balanced markup and full data with mobile name
       assert.ok(rescind.includes('id="' + prefix + '-' + field + '"'));
     }
   }
+});
+
+
+test('switching tabs preserves the horizontal navigation scroll after replacing the page', () => {
+  const { app, elements } = harness();
+  app.setReady();
+  app.DB.unmatched = [];
+  let markup = '';
+  Object.defineProperty(elements['rb-app'], 'innerHTML', {
+    get(){ return markup; },
+    set(html){
+      markup = html;
+      elements['rb-main-nav'] = { scrollLeft: 0 };
+    }
+  });
+  elements['rb-main-nav'] = { scrollLeft: 137 };
+  app.navigateTo('myoffers');
+  assert.equal(elements['rb-main-nav'].scrollLeft, 137);
+  assert.match(markup, /data-nav="myoffers" aria-current="page"/);
+  elements['rb-main-nav'].scrollLeft = 64;
+  app.navigateTo('mycommits');
+  assert.equal(elements['rb-main-nav'].scrollLeft, 64);
+  app.render();
+  assert.equal(elements['rb-main-nav'].scrollLeft, 64);
+});
+
+test('navigation keeps desktop labels and supplies compact mobile labels', () => {
+  const { app } = harness();
+  const html = app.renderNav();
+  assert.match(html, /rb-desktop-only">My Offers<\/span><span class="rb-mobile-only">Offers/);
+  assert.match(html, /rb-desktop-only">My Commits<\/span><span class="rb-mobile-only">Commits/);
+  assert.match(html, />Prospect Board<\/button>/);
+  assert.match(html, />Teams<\/button>/);
 });

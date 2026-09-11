@@ -2685,6 +2685,8 @@ async function confirmReset(){
 
 function render(){
   const root = document.getElementById('rb-app');
+  const previousNav = document.getElementById('rb-main-nav');
+  const navScrollLeft = previousNav ? previousNav.scrollLeft : 0;
   root.classList.toggle('rb-entry', !dbReady || !sessionReady || !SESSION);
   if (!dbReady || !sessionReady){
     root.innerHTML = renderLoadingPage();
@@ -2722,6 +2724,8 @@ function render(){
   if (UI.confirmReset) html += renderResetConfirmModal();
   html += renderBackTopControl();
   root.innerHTML = html;
+  const nextNav = document.getElementById('rb-main-nav');
+  if (nextNav) nextNav.scrollLeft = navScrollLeft;
   bindEvents();
   scheduleSummaryCountdown();
 }
@@ -2818,9 +2822,9 @@ function renderNav(){
   let html = '<header class="rb-nav-shell"><div class="rb-nav-top">' +
     '<button type="button" class="rb-nav-brand" data-nav="feed" aria-label="RecruitHQ prospect board">' + renderBrand() + '</button>' +
     '<div class="rb-nav-session">' + renderTeamCoachBadge(SESSION.team) + '<span class="rb-session-divider" aria-hidden="true"></span><a href="#" id="rb-logout">Log out</a></div>' +
-    '</div><nav class="rb-nav-actions" aria-label="Main navigation">';
+    '</div><nav id="rb-main-nav" class="rb-nav-actions" aria-label="Main navigation">';
   items.forEach(function(item){
-    html += '<button type="button" class="rb-nav-link" data-nav="' + item[0] + '"' + (activeView === item[0] ? ' aria-current="page"' : '') + '>' + item[1] + '</button>';
+    html += '<button type="button" class="rb-nav-link" data-nav="' + item[0] + '"' + (activeView === item[0] ? ' aria-current="page"' : '') + '>' + (item[0] === 'myoffers' || item[0] === 'mycommits' ? '<span class="rb-desktop-only">' + item[1] + '</span><span class="rb-mobile-only">' + item[1].replace('My ', '') + '</span>' : item[1]) + '</button>';
   });
   return html + '</nav></header>';
 }

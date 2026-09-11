@@ -503,7 +503,7 @@ button, a, input, select, textarea, summary { -webkit-tap-highlight-color: trans
   .rb-nav-top { gap: 16px; padding-bottom: 20px; }
   .rb-nav-session { gap: 12px; }
   .rb-nav-team strong { font-size: 14px; }
-  .rb-nav-actions { gap: 24px; }
+  .rb-nav-actions { gap: 18px; }
   .rb-nav-link { padding: 12px 0 14px; }
   .rb-page-heading { align-items: flex-start; flex-wrap: wrap; gap: 12px; margin-bottom: 20px; }
   .rb-page-heading h1 { font-size: 32px; }
