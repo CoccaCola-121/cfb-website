@@ -579,6 +579,15 @@ function renderTeamCoachBadge(teamName){
   return '<span class="rb-nav-team">' + renderTeamLogo(brand, 28) + '<strong style="color:var(--chalk);line-height:1;"><span class="rb-desktop-only">' + escapeHtml(teamName) + '</span><span class="rb-mobile-only">' + escapeHtml(brand.abbrev || teamName) + '</span></strong></span>';
 }
 
+function recruitNumber(p){ return recruitingStage() === 'transfer' ? '' : '#' + escapeHtml(p.rank || '?'); }
+
+function transferCardStyle(p){
+  if (!p.transferFrom || !p.commitTeam) return committedCardStyle(p.transferFrom || p.commitTeam);
+  const from = teamBorderColor(getTeamBranding(p.transferFrom));
+  const to = teamBorderColor(getTeamBranding(p.commitTeam));
+  return 'border-color:' + from + '88;border-left:4px solid ' + from + ';border-right:4px solid ' + to + ';background:linear-gradient(110deg,' + from + '26,' + to + '26),var(--panel);';
+}
+
 function committedCardStyle(teamName){
   const brand = getTeamBranding(teamName);
   if (!brand || !brand.primary) return 'opacity:0.48;filter:grayscale(0.45);';
@@ -1277,6 +1286,9 @@ function clearRecruitingBoard(){
   DB.offersByProspect = {};
   DB.unmatched = [];
   DB.conditionalRescinds = [];
+  DB.manualCommitOverrides = {};
+  DB.commitSheetUrl = '';
+  UI.transferGrade = ''; UI.transferYears = '';
   DB.commitUpdatedAt = null;
   DB.discordCommitUpdatedAt = null;
   DB.discordCommitChannelId = '';
@@ -1488,7 +1500,8 @@ function commitCellValue(value){
 
 function findProspectFromSheetRow(row, rankIdx, nameIdx){
   const rank = parseInt(cleanCsvCell(row[rankIdx === -1 ? 0 : rankIdx]), 10);
-  let prospect = rank ? DB.prospects['r' + rank] : null;
+  let prospect = recruitingStage() === 'transfer' ? null : (rank ? DB.prospects['r' + rank] : null);
+  if (prospect && nameIdx !== -1 && prospect.name.toLowerCase() !== cleanCsvCell(row[nameIdx]).toLowerCase()) prospect = null;
   if (!prospect && nameIdx !== -1){
     const name = cleanCsvCell(row[nameIdx]).toLowerCase();
     const matches = Object.keys(DB.prospects).map(function(id){ return DB.prospects[id]; }).filter(function(p){
@@ -1532,6 +1545,7 @@ function applyStorylineRows(rows){
 }
 
 function applyCommitRows(rows){
+  NZCFLTransferRules.cleanCommitOverrides(DB);
   let headerIdx = -1;
   for (let i = 0; i < rows.length; i++){
     if (headerIndex(rows[i], ['Name']) !== -1 || headerIndex(rows[i], ['Rank', '#']) !== -1) { headerIdx = i; break; }
@@ -1565,6 +1579,7 @@ function applyCommitRows(rows){
 }
 
 function applyManualCommitOverrides(){
+  NZCFLTransferRules.cleanCommitOverrides(DB);
   const overrides = DB.manualCommitOverrides || {};
   Object.keys(overrides).forEach(function(pid){
     const prospect = DB.prospects && DB.prospects[pid];
@@ -1583,13 +1598,13 @@ function requestManualCommitOverride(){
   UI.commitOverrideError = null;
   UI.commitOverrideStatus = null;
   if (!rank){
-    UI.commitOverrideError = 'Enter the player rank to override.';
+    UI.commitOverrideError = recruitingStage() === 'transfer' ? 'Select the player to override.' : 'Enter the player rank to override.';
     render(); return;
   }
   const pid = 'r' + rank;
   const prospect = DB.prospects && DB.prospects[pid];
   if (!prospect){
-    UI.commitOverrideError = 'No opened prospect exists for rank #' + rank + '.';
+    UI.commitOverrideError = recruitingStage() === 'transfer' ? 'That player is no longer on the open board. Select another player.' : 'No opened prospect exists for rank #' + rank + '.';
     render(); return;
   }
   const team = canonicalTeamName(rawTeam);
@@ -1623,12 +1638,12 @@ async function applyManualCommitOverride(){
     render(); return;
   }
   if (!DB.manualCommitOverrides) DB.manualCommitOverrides = {};
-  DB.manualCommitOverrides[pid] = { team: team, updatedAt: Date.now() };
+  DB.manualCommitOverrides[pid] = { team: team, name: prospect.name, stage: recruitingStage(), updatedAt: Date.now() };
   prospect.commitTeam = team;
   applyConditionalRescinds();
   DB.commitUpdatedAt = Date.now();
   UI.pendingCommitOverride = null;
-  UI.commitOverrideStatus = '#' + prospect.rank + ' ' + prospect.name + ' committed to ' + team + '.';
+  UI.commitOverrideStatus = (recruitNumber(prospect) ? recruitNumber(prospect) + ' ' : '') + prospect.name + ' committed to ' + team + '.';
   await saveDBNow();
   render();
 }
@@ -1640,17 +1655,17 @@ function requestClearCommit(){
   UI.commitOverrideError = null;
   UI.commitOverrideStatus = null;
   if (!rank){
-    UI.commitOverrideError = 'Enter the player rank to clear.';
+    UI.commitOverrideError = recruitingStage() === 'transfer' ? 'Select the player whose commitment you want to clear.' : 'Enter the player rank to clear.';
     render(); return;
   }
   const pid = 'r' + rank;
   const prospect = DB.prospects && DB.prospects[pid];
   if (!prospect){
-    UI.commitOverrideError = 'No opened prospect exists for rank #' + rank + '.';
+    UI.commitOverrideError = recruitingStage() === 'transfer' ? 'That player is no longer on the open board. Select another player.' : 'No opened prospect exists for rank #' + rank + '.';
     render(); return;
   }
   if (!prospect.commitTeam){
-    UI.commitOverrideError = '#' + rank + ' ' + prospect.name + ' is not committed.';
+    UI.commitOverrideError = (recruitNumber(prospect) ? recruitNumber(prospect) + ' ' : '') + prospect.name + ' is not committed.';
     render(); return;
   }
   UI.pendingClearCommit = {
@@ -2596,7 +2611,7 @@ function findProspectFromOffer(text){
   const raw = text || '';
   const offerRank = raw.match(/\boffer\s+#\s*(\d+)\b/i);
   const rank = offerRank ? parseInt(offerRank[1], 10) : null;
-  if (rank && DB.prospects['r' + rank]) return DB.prospects['r' + rank];
+  if (recruitingStage() !== 'transfer' && rank && DB.prospects['r' + rank]) return DB.prospects['r' + rank];
 
   const exactMatches = Object.keys(DB.prospects).map(function(id){ return DB.prospects[id]; }).filter(function(p){
     return p.name && raw.toLowerCase().indexOf(p.name.toLowerCase()) !== -1;
@@ -2605,7 +2620,7 @@ function findProspectFromOffer(text){
 
   const genericRank = raw.match(/#\s*(\d+)\b/);
   const fallbackRank = genericRank ? parseInt(genericRank[1], 10) : null;
-  if (fallbackRank && DB.prospects['r' + fallbackRank]) return DB.prospects['r' + fallbackRank];
+  if (recruitingStage() !== 'transfer' && fallbackRank && DB.prospects['r' + fallbackRank]) return DB.prospects['r' + fallbackRank];
   return null;
 }
 
@@ -3074,6 +3089,7 @@ function renderRescindFilterFields(prefix, includeCount){
   return html;
 }
 
+
 function rulesForTeam(team){
   return normalizeConditionalRules().filter(function(rule){ return rule && teamKey(rule.team) === teamKey(team); });
 }
@@ -3382,7 +3398,7 @@ function visitLineForOffer(row){
   if (visits.coach) labels.push('Coach');
   if (visits.campus) labels.push('Campus' + (visits.campusLabel ? ': ' + visits.campusLabel : ''));
   return '<div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;border-top:1px solid var(--hairline);padding:8px 0;font-size:13px;">' +
-    '<span><span class="rb-mono" style="color:var(--slate);">#' + escapeHtml(p.rank || '?') + '</span> <span title="' + escapeHtml(p.name || '') + '">' + renderRecruitName(p.name || 'Unknown prospect', 24) + '</span> <span class="rb-mono" style="color:var(--slate);">' + escapeHtml(p.position || '') + '</span></span>' +
+    '<span><span class="rb-mono" style="color:var(--slate);">' + recruitNumber(p) + '</span> <span title="' + escapeHtml(p.name || '') + '">' + renderRecruitName(p.name || 'Unknown prospect', 24) + '</span> <span class="rb-mono" style="color:var(--slate);">' + escapeHtml(p.position || '') + '</span></span>' +
     '<span class="rb-mono" style="color:var(--gold);font-size:11px;">' + escapeHtml(labels.join(' + ')) + '</span>' +
   '</div>';
 }
@@ -3399,7 +3415,7 @@ function renderMyOffers(){
   html += '<div style="font-size:13px;color:var(--slate);margin-bottom:12px;">' + rows.length + ' offer' + (rows.length === 1 ? '' : 's') + ' from ' + escapeHtml(SESSION.team) + '.</div>';
   html += renderPositionCounts(rows, function(row){ return row.prospect && row.prospect.position; }, filterKey);
   html += '<div style="margin-bottom:12px;"><button class="rb-btn rb-btn-gold" id="rb-open-submit" ' + (DB.offersLocked ? 'disabled title="Offers are locked"' : '') + '>' + (DB.offersLocked ? 'Offers locked' : 'Submit offer') + '</button></div>';
-  html += '<input class="rb-input" id="rb-my-offer-search" placeholder="Search your offers by recruit name, rank, or hometown" />';
+  html += '<input class="rb-input" id="rb-my-offer-search" placeholder="' + (recruitingStage() === 'transfer' ? 'Search offers by player name' : 'Search your offers by recruit name, rank, or hometown') + '" />';
   if (UI.rescindError) html += '<div style="font-size:12px;color:var(--alert);margin-top:8px;">' + escapeHtml(UI.rescindError) + '</div>';
   html += '</div>';
 
@@ -3417,7 +3433,7 @@ function renderMyOffers(){
       html += '<summary class="rb-offer-summary rb-my-offer-summary-grid" style="list-style:none;cursor:pointer;">';
       html += '<span style="min-width:0;display:flex;flex-direction:column;gap:10px;">';
       html += '<span class="rb-my-offer-meta">' +
-        '<span class="rb-mono" style="color:var(--slate);flex:0 0 auto;">#' + escapeHtml(p.rank || '?') + '</span>' +
+        '<span class="rb-mono" style="color:var(--slate);flex:0 0 auto;">' + recruitNumber(p) + '</span>' +
         '<strong data-open-prospect="' + escapeHtml(row.prospectId) + '" title="' + escapeHtml(p.name || '') + '" style="overflow:hidden;text-overflow:ellipsis;color:var(--chalk);cursor:pointer;">' + renderRecruitName(p.name || 'Unknown prospect', 24) + '</strong>' +
         '<span class="rb-mono" style="color:var(--slate);font-size:13px;flex:0 0 auto;">' + escapeHtml(p.position || '') + (p.rating ? '<span class="rb-recruit-rating"> &middot; ' + escapeHtml(p.rating) + '</span>' : '') + '</span>' +
         (p.hometown ? '<span class="rb-mono rb-desktop-only" style="color:var(--slate);font-size:13px;flex:0 0 auto;">&middot;</span><span class="rb-mono rb-desktop-only" title="' + escapeHtml(p.hometown) + '" style="color:var(--slate);font-size:13px;overflow:hidden;text-overflow:ellipsis;">' + escapeHtml(shortText(p.hometown, 24)) + '</span>' : '') +
@@ -3463,7 +3479,7 @@ function renderCommitsForTeam(team, title){
   html += '<div class="rb-h" style="font-size:18px;margin-bottom:6px;">' + escapeHtml(title) + '</div>';
   html += '<div style="font-size:13px;color:var(--slate);margin-bottom:12px;">' + commits.length + ' commit' + (commits.length === 1 ? '' : 's') + ' for ' + escapeHtml(team) + '.</div>';
   html += renderPositionCounts(commits, function(p){ return p && p.position; }, filterKey);
-  html += '<input class="rb-input" id="rb-my-commit-search" placeholder="Search commits by recruit name, rank, hometown, or promise" />';
+  html += '<input class="rb-input" id="rb-my-commit-search" placeholder="' + (recruitingStage() === 'transfer' ? 'Search commits by player name or promise' : 'Search commits by recruit name, rank, hometown, or promise') + '" />';
   html += '</div>';
   if (!commits.length){
     html += '<div class="rb-card" style="padding:28px;text-align:center;color:var(--slate);">No commits yet.</div>';
@@ -3479,7 +3495,7 @@ function renderCommitsForTeam(team, title){
     html += '<details>';
     html += '<summary class="rb-offer-summary" style="list-style:none;cursor:pointer;">';
     html += '<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;">';
-    html += '<div class="rb-commit-identity" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;"><span class="rb-list-identity"><span class="rb-mono" style="color:var(--slate);">#' + p.rank + '</span> <strong data-open-prospect="' + escapeHtml(p.id) + '" title="' + escapeHtml(p.name) + '" style="color:var(--chalk);cursor:pointer;">' + renderRecruitName(p.name, 24) + '</strong> <span class="rb-mono" style="color:var(--slate);font-size:13px;">' + escapeHtml(p.position || '') + (p.rating ? '<span class="rb-recruit-rating"> &middot; ' + escapeHtml(p.rating) + '</span>' : '') + (p.hometown ? '<span class="rb-desktop-only"> &middot; <span title="' + escapeHtml(p.hometown) + '">' + escapeHtml(shortText(p.hometown, 24)) + '</span></span>' : '') + '</span></span></div>';
+    html += '<div class="rb-commit-identity" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;"><span class="rb-list-identity"><span class="rb-mono" style="color:var(--slate);">' + recruitNumber(p) + '</span> <strong data-open-prospect="' + escapeHtml(p.id) + '" title="' + escapeHtml(p.name) + '" style="color:var(--chalk);cursor:pointer;">' + renderRecruitName(p.name, 24) + '</strong> <span class="rb-mono" style="color:var(--slate);font-size:13px;">' + escapeHtml(p.position || '') + (p.rating ? '<span class="rb-recruit-rating"> &middot; ' + escapeHtml(p.rating) + '</span>' : '') + (p.hometown ? '<span class="rb-desktop-only"> &middot; <span title="' + escapeHtml(p.hometown) + '">' + escapeHtml(shortText(p.hometown, 24)) + '</span></span>' : '') + '</span></span></div>';
     html += '<span class="rb-commit-promises" style="display:block;min-width:280px;max-width:100%;flex:1 1 360px;">' + renderPromiseChips(offers) + '</span><span class="rb-mobile-only rb-commit-expand">Details &rsaquo;</span>';
     html += '</div>';
     html += '</summary>';
@@ -3522,7 +3538,7 @@ function renderTeamOffers(){
   html += '<div class="rb-h" style="font-size:18px;margin-bottom:6px;">' + escapeHtml(team) + ' Offers</div>';
   html += '<div style="font-size:13px;color:var(--slate);margin-bottom:12px;">' + rows.length + ' offer' + (rows.length === 1 ? '' : 's') + ' from ' + escapeHtml(team) + '.</div>';
   html += renderPositionCounts(rows, function(row){ return row.prospect && row.prospect.position; }, filterKey);
-  html += '<input class="rb-input" id="rb-my-offer-search" placeholder="Search offers by recruit name, rank, or hometown" />';
+  html += '<input class="rb-input" id="rb-my-offer-search" placeholder="' + (recruitingStage() === 'transfer' ? 'Search offers by player name' : 'Search offers by recruit name, rank, or hometown') + '" />';
   html += '</div>';
   if (!rows.length) return html + '<div class="rb-card" style="padding:28px;text-align:center;color:var(--slate);">No offers yet.</div>';
   html += '<div style="display:flex;flex-direction:column;gap:10px;">';
@@ -3535,7 +3551,7 @@ function renderTeamOffers(){
     html += '<details>';
     html += '<summary class="rb-offer-summary rb-team-offer-summary" style="list-style:none;cursor:pointer;display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:14px;">';
     html += '<span style="min-width:0;display:flex;align-items:baseline;gap:10px;white-space:nowrap;overflow:hidden;">' +
-      '<span class="rb-mono" style="color:var(--slate);flex:0 0 auto;">#' + escapeHtml(p.rank || '?') + '</span>' +
+      '<span class="rb-mono" style="color:var(--slate);flex:0 0 auto;">' + recruitNumber(p) + '</span>' +
       '<strong data-open-prospect="' + escapeHtml(row.prospectId) + '" title="' + escapeHtml(p.name || '') + '" style="overflow:hidden;text-overflow:ellipsis;color:var(--chalk);cursor:pointer;">' + renderRecruitName(p.name || 'Unknown prospect', 24) + '</strong>' +
       '<span class="rb-mono" style="color:var(--slate);font-size:13px;flex:0 0 auto;">' + escapeHtml(p.position || '') + (p.rating ? '<span class="rb-recruit-rating"> &middot; ' + escapeHtml(p.rating) + '</span>' : '') + '</span>' +
       (p.hometown ? '<span class="rb-mono rb-desktop-only" style="color:var(--slate);font-size:13px;flex:0 0 auto;">&middot;</span><span class="rb-mono rb-desktop-only" title="' + escapeHtml(p.hometown) + '" style="color:var(--slate);font-size:13px;overflow:hidden;text-overflow:ellipsis;">' + escapeHtml(shortText(p.hometown, 24)) + '</span>' : '') +
@@ -3670,7 +3686,7 @@ function renderBoardSearchResults(query){
   DB.threads.forEach(function(t){
     visibleBoardProspectIds(t).forEach(function(pid){
       const p = DB.prospects[pid];
-      const searchText = [p.rank, '#' + p.rank, p.name, p.hometown, p.transferFrom].join(' ').toLowerCase();
+      const searchText = [recruitingStage() === 'transfer' ? '' : p.rank + ' #' + p.rank, p.name, p.hometown, p.transferFrom, p.grade, p.yearsLeft ? p.yearsLeft + ' years left' : '', Number(p.yearsLeft) === 1 ? '1 year left' : ''].join(' ').toLowerCase();
       if (searchText.indexOf(q) !== -1) html += renderProspectBoardCard(pid, searchText, context);
     });
   });
@@ -3688,7 +3704,10 @@ function renderThreadProspectList(t){
   const visibleIds = visibleBoardProspectIds(t);
   if (recruitingStage() === 'transfer') visibleIds.sort(function(a,b){ const pa = DB.prospects[a], pb = DB.prospects[b]; return (pa.sourceOrder ?? pa.rank) - (pb.sourceOrder ?? pb.rank); });
   html += renderPositionCounts(visibleIds, function(pid){ return DB.prospects[pid] && DB.prospects[pid].position; }, filterKey);
-  html += '<input class="rb-input" data-thread-search="' + t.id + '" placeholder="Search recruits by name, rank, hometown or school" />';
+  html += '<input class="rb-input" data-thread-search="' + t.id + '" placeholder="' + (recruitingStage() === 'transfer' ? 'Search transfers by name, school, grade or years left' : 'Search recruits by name, rank, hometown or school') + '" />';
+  if (recruitingStage() === 'transfer') {
+    html += '<div class="rb-transfer-filters"><label>Grade<select class="rb-input" id="rb-transfer-grade"><option value="">All grades</option>' + Array.from(new Set(t.prospectIds.map(function(id){ return DB.prospects[id] && DB.prospects[id].grade || 'Not listed'; }))).map(function(grade){ return '<option' + (UI.transferGrade === grade ? ' selected' : '') + '>' + escapeHtml(grade) + '</option>'; }).join('') + '</select></label><label>Eligibility<select class="rb-input" id="rb-transfer-years"><option value="">Any years left</option>' + [1,2,3,4,5].map(function(years){ return '<option value="' + years + '"' + (String(UI.transferYears) === String(years) ? ' selected' : '') + '>' + years + ' year' + (years === 1 ? '' : 's') + ' left</option>'; }).join('') + '</select></label></div>';
+  }
   const commitFilter = UI.boardCommitFilter || (UI.hideCommittedBoards ? 'uncommitted' : 'all');
   html += '<div class="rb-filter-row"><div class="rb-segmented" aria-label="Commit status filter">';
   [['committed','Committed'], ['all','All'], ['uncommitted','Uncommitted']].forEach(function(option){
@@ -3701,7 +3720,7 @@ function renderThreadProspectList(t){
   visibleIds.forEach(function(pid){
     const p = DB.prospects[pid];
     if (!p) return;
-    const searchText = [p.rank, '#' + p.rank, p.name, p.hometown, p.transferFrom].join(' ').toLowerCase();
+    const searchText = [recruitingStage() === 'transfer' ? '' : p.rank + ' #' + p.rank, p.name, p.hometown, p.transferFrom, p.grade, p.yearsLeft ? p.yearsLeft + ' years left' : '', Number(p.yearsLeft) === 1 ? '1 year left' : ''].join(' ').toLowerCase();
     html += renderProspectBoardCard(pid, searchText, cardContext);
   });
   if (!visibleIds.length) html += '<div class="rb-card" style="padding:28px;text-align:center;color:var(--slate);">No ' + (ended ? 'free agents' : 'uncommitted prospects') + ' on this board.</div>';
@@ -3718,10 +3737,10 @@ function renderProspectBoardCard(pid, searchAttr, context){
   const ended = context ? context.ended : recruitingEndedForCurrentStage();
   const currentThread = context ? context.thread : (UI.view === 'thread' ? DB.threads.find(function(t){ return t.id === UI.threadId; }) : null);
   const commitReturn = currentThread ? { view: 'thread', threadId: currentThread.id, label: currentThread.title } : { view: 'feed', label: 'Prospect Board' };
-  let html = '<div class="rb-card rb-mobile-tight" data-prospect-card="1" data-position-bucket="' + escapeHtml(bucket) + '" data-search="' + escapeHtml(searchText) + '" data-open-prospect="' + pid + '" style="padding:14px 18px;cursor:pointer;' + (p.commitTeam ? committedCardStyle(p.commitTeam) : (p.transferFrom ? committedCardStyle(p.transferFrom) : '')) + '">';
+  let html = '<div class="rb-card rb-mobile-tight" data-prospect-card="1" data-position-bucket="' + escapeHtml(bucket) + '" data-search="' + escapeHtml(searchText) + '" data-open-prospect="' + pid + '" style="padding:14px 18px;cursor:pointer;' + (p.transferFrom ? transferCardStyle(p) : (p.commitTeam ? committedCardStyle(p.commitTeam) : '')) + '">';
   html += '<div style="display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:10px;">';
   html += '<div class="rb-list-identity" style="min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' +
-    '<span class="rb-mono" style="color:var(--slate);">#' + p.rank + '</span> ' +
+    '<span class="rb-mono" style="color:var(--slate);">' + recruitNumber(p) + '</span> ' +
     '<span title="' + escapeHtml(p.name) + '" style="font-weight:600;color:var(--chalk);">' + renderRecruitName(p.name, 24) + '</span> ' +
     '<span class="rb-mono" style="color:var(--slate);font-size:13px;">' + escapeHtml(p.position) + (p.rating ? '<span class="rb-recruit-rating"> &middot; ' + escapeHtml(p.rating) + '</span>' : '') + '</span>' +
     (p.hometown ? '<span class="rb-desktop-only" style="color:var(--slate);font-size:13px;"> &middot; <span title="' + escapeHtml(p.hometown) + '">' + escapeHtml(shortText(p.hometown, 28)) + '</span></span>' : '') +
@@ -3807,8 +3826,9 @@ function renderClassSetup(){
   }
   html += '<div style="border-top:1px solid var(--hairline);margin-top:14px;padding-top:14px;">';
   html += '<div class="rb-mono" style="font-size:12px;color:var(--slate);margin-bottom:10px;">Manual commit override</div>';
+  if (recruitingStage() === 'transfer') html += '<p class="rb-transfer-limit">Choose a player by name. Select their new team to apply a commitment, or use Clear commit to remove it.</p>';
   html += '<div class="rb-commit-override-grid">';
-  html += '<input class="rb-input" id="rb-commit-override-rank" inputmode="numeric" placeholder="Rank" value="' + escapeHtml(UI.commitOverrideRank || '') + '" />';
+  html += recruitingStage() === 'transfer' ? '<select class="rb-input" id="rb-commit-override-rank" aria-label="Player"><option value="">Select player</option>' + Object.values(DB.prospects).sort(function(a,b){ return a.name.localeCompare(b.name); }).map(function(p){ return '<option value="' + p.rank + '"' + (String(UI.commitOverrideRank) === String(p.rank) ? ' selected' : '') + '>' + escapeHtml(p.name + (p.transferFrom ? ' — ' + p.transferFrom : '')) + '</option>'; }).join('') + '</select>' : '<input class="rb-input" id="rb-commit-override-rank" inputmode="numeric" placeholder="Rank" value="' + escapeHtml(UI.commitOverrideRank || '') + '" />';
   html += '<input class="rb-input" id="rb-commit-override-team" placeholder="Committed team" value="' + escapeHtml(UI.commitOverrideTeam || '') + '" list="rb-commit-override-team-options" />';
   html += '<button class="rb-btn rb-btn-gold" id="rb-apply-commit-override">Apply</button>';
   html += '<button class="rb-btn rb-btn-danger" id="rb-clear-commit-override">Clear commit</button>';
@@ -3895,11 +3915,11 @@ function renderProspectDetail(){
   const returnView = UI.prospectReturnView || 'feed';
   const returnLabel = returnView === 'myoffers' ? 'Back to My Offers' : (returnView === 'mycommits' ? 'Back to My Commits' : (returnView === 'teamcommits' ? 'Back to Team Commits' : (returnView === 'teamoffers' ? 'Back to Team Offers' : 'Back to board')));
   let html = '<div style="margin-bottom:16px;"><button class="rb-btn" data-nav="' + escapeHtml(returnView) + '">&larr; ' + escapeHtml(returnLabel) + '</button></div>';
-  html += '<div class="rb-card" style="padding:18px 20px;margin-bottom:14px;' + (p.commitTeam ? committedCardStyle(p.commitTeam) : '') + '">';
+  html += '<div class="rb-card" style="padding:18px 20px;margin-bottom:14px;' + (p.transferFrom ? transferCardStyle(p) : (p.commitTeam ? committedCardStyle(p.commitTeam) : '')) + '">';
   html += '<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;">';
   html += '<div style="min-width:0;flex:1 1 420px;">';
   if (ownCommit) html += '<div class="rb-own-commit"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="m3 8 3 3 7-7"/></svg><span>Committed to your team</span></div>';
-  html += '<div class="rb-h' + (ownCommit ? ' rb-prospect-title-owned' : '') + '" style="font-size:22px;">#' + p.rank + ' ' + escapeHtml(p.name) + '</div>';
+  html += '<div class="rb-h' + (ownCommit ? ' rb-prospect-title-owned' : '') + '" style="font-size:22px;">' + (recruitNumber(p) ? recruitNumber(p) + ' ' : '') + escapeHtml(p.name) + '</div>';
   html += '<div class="rb-mono" style="font-size:13px;color:var(--slate);margin-top:4px;">' + escapeHtml(p.position) + (p.rating ? ' &middot; ' + escapeHtml(p.rating) : '') + (p.hometown ? ' &middot; ' + escapeHtml(p.hometown) : '') + '</div>';
   html += '</div>';
   html += '<div style="display:flex;align-items:center;justify-content:flex-end;gap:10px;flex-wrap:wrap;">' +
@@ -3987,8 +4007,8 @@ function renderSubmitModal(){
   const locked = !!DB.offersLocked;
   const pitchOffer = recruitingStageConfig().pitchOnly || isPitchRecruit(target);
   const submitHelp = locked ? 'Offers are currently locked. New offers cannot be posted.' :
-    (pitchOffer ? (target ? 'Write or paste a personalized pitch for #' + escapeHtml(target.rank) + ' ' + renderRecruitName(target.name) + '. Include up to 3 promises; short pitch-only submissions are fine.' : 'Write or paste a personalized pitch. Include up to 3 promises; short pitch-only submissions are fine.') :
-      (target ? 'Paste one offer sheet as-is. This will post directly to #' + escapeHtml(target.rank) + ' ' + renderRecruitName(target.name) + ', detect visits, and file your team name automatically.' : 'Paste one offer sheet as-is. We\'ll match it to the right prospect, detect visits, and file your team name automatically.'));
+    (pitchOffer ? (target ? 'Write or paste a personalized pitch for ' + (recruitNumber(target) ? recruitNumber(target) + ' ' : '') + renderRecruitName(target.name) + '. Include up to 3 promises; short pitch-only submissions are fine.' : 'Write or paste a personalized pitch. Include up to 3 promises; short pitch-only submissions are fine.') :
+      (target ? 'Paste one offer sheet as-is. This will post directly to ' + (recruitNumber(target) ? recruitNumber(target) + ' ' : '') + renderRecruitName(target.name) + ', detect visits, and file your team name automatically.' : 'Paste one offer sheet as-is. We\'ll match it to the right prospect, detect visits, and file your team name automatically.'));
   const placeholder = pitchOffer ? 'Write or paste your pitch here' : 'Paste your auto-offer sheet output here';
   return '<div style="position:fixed;inset:0;background:rgba(0,0,0,0.6);display:flex;align-items:center;justify-content:center;z-index:50;" data-close-modal="1">' +
     '<div class="rb-card" style="padding:24px;width:520px;max-width:90vw;" onclick="event.stopPropagation()">' +
@@ -4016,7 +4036,7 @@ function renderEditOfferModal(){
   return '<div style="position:fixed;inset:0;background:rgba(0,0,0,0.6);display:flex;align-items:center;justify-content:center;z-index:50;" data-close-edit-modal="1">' +
     '<div class="rb-card" style="padding:24px;width:560px;max-width:90vw;" onclick="event.stopPropagation()">' +
       '<div class="rb-h" style="font-size:16px;margin-bottom:4px;">Edit visits</div>' +
-      '<div class="rb-mono" style="font-size:12px;color:var(--slate);margin-bottom:12px;">#' + escapeHtml(prospect.rank || '?') + ' ' + renderRecruitName(prospect.name || 'Unknown prospect') + '</div>' +
+      '<div class="rb-mono" style="font-size:12px;color:var(--slate);margin-bottom:12px;">' + (recruitNumber(prospect) ? recruitNumber(prospect) + ' ' : '') + renderRecruitName(prospect.name || 'Unknown prospect') + '</div>' +
       '<div style="font-size:12px;color:var(--slate);margin-bottom:10px;">Campus format: <span class="rb-mono">Week X vs. Team Name</span>; no 3-4 letter all-caps abbreviations.</div>' +
       '<div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-top:12px;">' +
         '<label style="display:inline-flex;align-items:center;gap:8px;color:' + (locks.coach ? 'var(--slate)' : 'var(--chalk)') + ';font-size:13px;">' +
@@ -4047,7 +4067,7 @@ function renderVisitConfirmModal(){
   return '<div style="position:fixed;inset:0;background:rgba(0,0,0,0.68);display:flex;align-items:center;justify-content:center;z-index:60;">' +
     '<div class="rb-card" style="padding:24px;width:500px;max-width:90vw;border-color:var(--gold);">' +
       '<div class="rb-h" style="font-size:18px;margin-bottom:8px;">Add ' + escapeHtml(visitText) + '?</div>' +
-      '<div style="font-size:13px;color:var(--slate);line-height:1.5;margin-bottom:18px;">This will use the selected visit for #' + escapeHtml(prospect.rank || '?') + ' ' + renderRecruitName(prospect.name || 'this prospect') + ' and cannot be removed later.</div>' +
+      '<div style="font-size:13px;color:var(--slate);line-height:1.5;margin-bottom:18px;">This will use the selected visit for ' + (recruitNumber(prospect) ? recruitNumber(prospect) + ' ' : '') + renderRecruitName(prospect.name || 'this prospect') + ' and cannot be removed later.</div>' +
       '<div style="display:flex;justify-content:flex-end;gap:8px;flex-wrap:wrap;">' +
         '<button class="rb-btn" id="rb-cancel-visit-confirm">Cancel</button>' +
         '<button class="rb-btn rb-btn-gold" id="rb-confirm-visit">Yes, add visit</button>' +
@@ -4066,7 +4086,7 @@ function renderCommitOverrideConfirmModal(){
   return '<div style="position:fixed;inset:0;background:rgba(0,0,0,0.68);display:flex;align-items:center;justify-content:center;z-index:60;">' +
     '<div class="rb-card" style="padding:24px;width:520px;max-width:90vw;border-color:var(--gold);">' +
       '<div class="rb-h" style="font-size:18px;margin-bottom:8px;">Confirm commit</div>' +
-      '<div class="rb-mono" style="font-size:12px;color:var(--slate);margin-bottom:10px;">#' + escapeHtml(pending.rank || '?') + ' ' + escapeHtml(pending.name || 'Unknown prospect') + '</div>' +
+      '<div class="rb-mono" style="font-size:12px;color:var(--slate);margin-bottom:10px;">' + (recruitNumber(pending) ? recruitNumber(pending) + ' ' : '') + escapeHtml(pending.name || 'Unknown prospect') + '</div>' +
       '<div style="font-size:14px;color:var(--chalk);line-height:1.5;margin-bottom:18px;">' + escapeHtml(actionText) + '</div>' +
       '<div style="display:flex;justify-content:flex-end;gap:8px;flex-wrap:wrap;">' +
         '<button class="rb-btn" id="rb-cancel-commit-override-confirm">Cancel</button>' +
@@ -4081,7 +4101,7 @@ function renderClearCommitConfirmModal(){
   return '<div style="position:fixed;inset:0;background:rgba(0,0,0,0.72);display:flex;align-items:center;justify-content:center;z-index:60;">' +
     '<div class="rb-card" style="padding:24px;width:520px;max-width:90vw;border-color:#B33A32;">' +
       '<div class="rb-h" style="font-size:18px;margin-bottom:8px;color:#FFF2F1;">Clear commitment?</div>' +
-      '<div class="rb-mono" style="font-size:12px;color:var(--slate);margin-bottom:10px;">#' + escapeHtml(pending.rank || '?') + ' ' + escapeHtml(pending.name || 'Unknown prospect') + '</div>' +
+      '<div class="rb-mono" style="font-size:12px;color:var(--slate);margin-bottom:10px;">' + (recruitNumber(pending) ? recruitNumber(pending) + ' ' : '') + escapeHtml(pending.name || 'Unknown prospect') + '</div>' +
       '<div style="font-size:14px;color:var(--chalk);line-height:1.5;margin-bottom:18px;">This will remove ' + escapeHtml(pending.team || 'the committed team') + ' from this player.</div>' +
       '<div style="display:flex;justify-content:flex-end;gap:8px;flex-wrap:wrap;">' +
         '<button class="rb-btn" id="rb-cancel-clear-commit">Cancel</button>' +
@@ -4115,7 +4135,7 @@ function renderMassRescindModal(){
       html += '<label class="rb-card" style="padding:10px 12px;background:var(--panel-alt);display:grid;grid-template-columns:auto minmax(0,1fr);gap:10px;align-items:center;cursor:pointer;">';
       html += '<input type="checkbox" class="rb-mass-rescind-check" data-prospect-id="' + escapeHtml(row.prospectId) + '" data-offer-id="' + escapeHtml(row.offer.id) + '"' + (isChecked ? ' checked' : '') + ' style="accent-color:var(--alert);" />';
       html += '<span style="min-width:0;display:flex;align-items:baseline;gap:8px;white-space:nowrap;overflow:hidden;">' +
-        '<span class="rb-mono" style="color:var(--slate);flex:0 0 auto;">#' + escapeHtml(p.rank || '?') + '</span>' +
+        '<span class="rb-mono" style="color:var(--slate);flex:0 0 auto;">' + recruitNumber(p) + '</span>' +
         '<strong title="' + escapeHtml(p.name || '') + '" style="overflow:hidden;text-overflow:ellipsis;">' + renderRecruitName(p.name || 'Unknown prospect') + '</strong>' +
         '<span class="rb-mono" style="color:var(--slate);font-size:12px;flex:0 0 auto;">' + escapeHtml(p.position || '') + (p.rating ? ' · ' + escapeHtml(p.rating) : '') + '</span>' +
         (p.hometown ? '<span class="rb-mono" title="' + escapeHtml(p.hometown) + '" style="color:var(--slate);font-size:12px;overflow:hidden;text-overflow:ellipsis;">· ' + escapeHtml(p.hometown) + '</span>' : '') +
@@ -4157,7 +4177,7 @@ function renderSingleRescindConfirmModal(){
   return '<div style="position:fixed;inset:0;background:rgba(0,0,0,0.72);display:flex;align-items:center;justify-content:center;z-index:65;">' +
     '<div class="rb-card" style="padding:24px;width:520px;max-width:90vw;border-color:#B33A32;">' +
       '<div class="rb-h" style="font-size:20px;margin-bottom:8px;color:#FFF2F1;">Rescind this offer?</div>' +
-      '<div style="font-size:14px;color:var(--text);line-height:1.5;margin-bottom:10px;">' + escapeHtml(offer.team || SESSION.team) + ' will rescind its offer to <strong>#' + escapeHtml(prospect.rank || '?') + ' ' + renderRecruitName(prospect.name || 'this recruit') + '</strong>.</div>' +
+      '<div style="font-size:14px;color:var(--text);line-height:1.5;margin-bottom:10px;">' + escapeHtml(offer.team || SESSION.team) + ' will rescind its offer to <strong>' + (recruitNumber(prospect) ? recruitNumber(prospect) + ' ' : '') + renderRecruitName(prospect.name || 'this recruit') + '</strong>.</div>' +
       '<div style="font-size:13px;color:var(--alert);line-height:1.45;margin-bottom:18px;">This cannot be undone. The offer will still show on the record as rescinded.</div>' +
       '<div style="display:flex;justify-content:flex-end;gap:8px;flex-wrap:wrap;">' +
         '<button class="rb-btn" id="rb-cancel-single-rescind">Cancel</button>' +
@@ -4429,7 +4449,9 @@ function bindEvents(){
         if (!activeKeys[key]) return;
         if ((UI.positionFilters[key] || {})[bucket]) hiddenByPosition = true;
       });
-      card.style.display = (!q || haystack.indexOf(q) !== -1) && !hiddenByPosition ? '' : 'none';
+      const p = kind === 'board' && recruitingStage() === 'transfer' ? DB.prospects[card.getAttribute('data-open-prospect')] : null;
+      const eligible = !p || ((!UI.transferGrade || (p.grade || 'Not listed') === UI.transferGrade) && (!UI.transferYears || String(p.yearsLeft) === String(UI.transferYears)));
+      card.style.display = (!q || haystack.indexOf(q) !== -1) && !hiddenByPosition && eligible ? '' : 'none';
     });
   }
 
@@ -4477,6 +4499,7 @@ function bindEvents(){
     };
   });
 
+  [['rb-transfer-grade','transferGrade'],['rb-transfer-years','transferYears']].forEach(function(pair){ const input = document.getElementById(pair[0]); if (input) input.onchange = function(){ UI[pair[1]] = input.value; applyPositionListFilters('board'); }; });
   const myOfferSearch = document.getElementById('rb-my-offer-search');
   if (myOfferSearch) myOfferSearch.oninput = function(){
     applyPositionListFilters('offers');

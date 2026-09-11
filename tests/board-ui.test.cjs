@@ -10,7 +10,7 @@ const script = page.match(/<script>([\s\S]*?)<\/script>/)[1];
 const boot = script.lastIndexOf('\napplyRoute(routeFromPath(window.location.pathname));');
 assert(boot > 0, 'The app bootstrap must be identifiable without executing network requests.');
 const source = script.slice(0, boot) + `
-  globalThis.app = { DB, UI, parseFullClass, prospectFromRosterRow, confirmTransferImport, releaseSingleStageBoard, addOfferDirect, render, renderNav, navigateTo, setReady(){ dbReady = true; sessionReady = true; }, renderFeed, renderBoardSearchResults, renderTeamsPage,
+  globalThis.app = { DB, UI, renderClassSetup, requestManualCommitOverride, applyManualCommitOverride, requestClearCommit, clearManualCommitOverride, applyManualCommitOverrides, clearRecruitingBoard, findProspectFromSheetRow, transferCardStyle, parseFullClass, prospectFromRosterRow, confirmTransferImport, releaseSingleStageBoard, addOfferDirect, render, renderNav, navigateTo, setReady(){ dbReady = true; sessionReady = true; }, renderFeed, renderBoardSearchResults, renderTeamsPage,
     renderThreadProspectList, renderProspectDetail, builtInTeamBranding, getTeamBranding, activeTeamBrands,
     mobileRecruitName, renderRecruitName, renderMyOffers, renderCommitsForTeam, renderTeamOffers, renderConditionalRescinds, renderRecruitValues, teamBorderColor, bindEvents, applyDefaultClassData, releaseWave1, releaseWave2,
     setSession(value){ SESSION = value; } };
@@ -361,4 +361,64 @@ test('transfer roster metadata survives release and oversized pitches never ente
   assert.equal(result.ok, false);
   assert.match(result.error, /801 words/);
   assert.equal(app.DB.offersByProspect.r9, undefined);
+});
+
+
+test('transfer overrides cannot leak from a previous season with reused IDs', () => {
+  const { app } = harness();
+  app.DB.recruitingStage = 'transfer';
+  app.DB.prospects.r1.commitTeam = 'Michigan State';
+  app.DB.manualCommitOverrides = {r1:{team:'Michigan State'}};
+  app.applyManualCommitOverrides();
+  assert.equal(app.DB.prospects.r1.commitTeam, undefined);
+  assert.equal(app.DB.manualCommitOverrides.r1, undefined);
+  app.DB.manualCommitOverrides.r1 = {team:'Michigan State',name:'Jordan Able',stage:'transfer'};
+  app.applyManualCommitOverrides();
+  assert.equal(app.DB.prospects.r1.commitTeam,'Michigan State');
+  app.clearRecruitingBoard();
+  assert.equal(Object.keys(app.DB.manualCommitOverrides).length,0);
+});
+
+test('transfer display hides rank numbers and searches eligibility with grade filters', () => {
+  const { app } = harness();
+  app.DB.recruitingStage = 'transfer';
+  Object.assign(app.DB.prospects.r1,{grade:'RS JR',yearsLeft:2,transferFrom:'South Carolina'});
+  const html=app.renderFeed();
+  assert.match(html,/id="rb-transfer-grade"/);
+  assert.match(html,/id="rb-transfer-years"/);
+  assert.doesNotMatch(html,/>#1<|placeholder="[^"]*rank/);
+  app.UI.prospectId='r1';
+  assert.doesNotMatch(app.renderProspectDetail(),/>#1 /);
+  assert.deepEqual(prospectIDs(app.renderBoardSearchResults('rs jr')),['r1']);
+  assert.deepEqual(prospectIDs(app.renderBoardSearchResults('2 years left')),['r1']);
+  assert.equal(app.findProspectFromSheetRow(['1','Wrong Name'],0,1),null);
+  assert.equal(app.findProspectFromSheetRow(['999','Jordan Able'],0,1).id,'r1');
+  assert.match(app.transferCardStyle({transferFrom:'South Carolina',commitTeam:'Michigan State'}),/linear-gradient/);
+});
+
+
+test('transfer settings select players by name and apply/clear the selected commitment', async () => {
+  const {app,elements} = harness();
+  app.DB.recruitingStage = 'transfer';
+  app.setSession({team:'Michigan State',accessLevel:'commissioner'});
+  app.DB.prospects.r2.transferFrom = 'South Carolina';
+  app.UI.commitOverrideRank = '2';
+  const html = app.renderClassSetup();
+  assert.match(html, /<select[^>]*id="rb-commit-override-rank"/);
+  assert.match(html, /value="2" selected>Morgan Baker — South Carolina/);
+  elements['rb-commit-override-rank'] = {...element(),value:'2'};
+  elements['rb-commit-override-team'] = {...element(),value:'Michigan State'};
+  app.requestManualCommitOverride();
+  assert.equal(app.UI.pendingCommitOverride.name,'Morgan Baker');
+  await app.applyManualCommitOverride();
+  assert.equal(app.DB.prospects.r2.commitTeam,'Michigan State');
+  assert.equal(app.DB.manualCommitOverrides.r2.name,'Morgan Baker');
+  app.requestClearCommit();
+  assert.equal(app.UI.pendingClearCommit.name,'Morgan Baker');
+  await app.clearManualCommitOverride();
+  assert.equal(app.DB.prospects.r2.commitTeam,'');
+  assert.equal(app.DB.manualCommitOverrides.r2,undefined);
+  elements['rb-commit-override-rank'].value='';
+  app.requestClearCommit();
+  assert.match(app.UI.commitOverrideError,/Select the player/);
 });

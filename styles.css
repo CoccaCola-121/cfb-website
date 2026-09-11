@@ -638,3 +638,8 @@ button, a, input, select, textarea, summary { -webkit-tap-highlight-color: trans
   .rb-transfer-import-fields { grid-template-columns: minmax(0, 1fr); }
   .rb-transfer-import-fields input, .rb-transfer-import-fields textarea { font-size: 16px; }
 }
+.rb-transfer-filters { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; margin-top:12px; }
+.rb-transfer-filters label { min-width:0; font-size:12px; color:var(--slate); }
+.rb-transfer-filters select { margin-top:5px; }
+.rb-list-identity > span:empty { display:none; }
+@media (max-width:720px) { .rb-transfer-filters select { font-size:16px; padding:10px 8px; } }

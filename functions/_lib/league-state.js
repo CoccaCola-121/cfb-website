@@ -1,3 +1,4 @@
+import '../../transfer-rules.js';
 import { teamKey } from './teams-util.js';
 
 export const STATE_KEY = 'league:state';
@@ -36,11 +37,12 @@ export function sanitizeState(input) {
 }
 
 export async function readLeagueState(env) {
-  return (await env.AUTH_KV.get(STATE_KEY, 'json')) || null;
+  const state = (await env.AUTH_KV.get(STATE_KEY, 'json')) || null;
+  return state ? globalThis.NZCFLTransferRules.cleanCommitOverrides(state) : null;
 }
 
 export async function writeLeagueState(env, state) {
-  const clean = sanitizeState(state || {});
+  const clean = sanitizeState(globalThis.NZCFLTransferRules.cleanCommitOverrides(state || {}));
   await env.AUTH_KV.put(STATE_KEY, JSON.stringify(clean));
   return clean;
 }

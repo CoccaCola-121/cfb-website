@@ -138,6 +138,7 @@ async function fetchDiscordMessages(env) {
 }
 
 export function applyDiscordCommits(state, commits) {
+  globalThis.NZCFLTransferRules.cleanCommitOverrides(state);
   const prospects = state.prospects || {};
   let updated = 0;
   let unchanged = 0;
@@ -145,9 +146,15 @@ export function applyDiscordCommits(state, commits) {
   const seen = new Set();
 
   commits.forEach((commit) => {
-    if (seen.has(commit.prospectId)) return;
-    seen.add(commit.prospectId);
-    const prospect = prospects[commit.prospectId];
+    let prospect = prospects[commit.prospectId];
+    if (state.recruitingStage === 'transfer') {
+      const start = Math.min(...(state.threads || []).map(t => Number(t.createdAt)).filter(Number.isFinite));
+      if (!commit.timestamp || Date.parse(commit.timestamp) < start) return;
+      const matches = Object.values(prospects).filter(p => p.name && p.name.toLowerCase() === String(commit.name || '').toLowerCase());
+      prospect = matches.length === 1 ? matches[0] : null;
+    } else if (prospect && commit.name && prospect.name.toLowerCase() !== commit.name.toLowerCase()) prospect = null;
+    if (prospect && seen.has(prospect.id)) return;
+    if (prospect) seen.add(prospect.id);
     if (!prospect) {
       unmatched.push(commit);
       return;
@@ -157,6 +164,7 @@ export function applyDiscordCommits(state, commits) {
       return;
     }
     prospect.commitTeam = commit.team;
+    prospect.commitSource = { type: 'discord', name: prospect.name, messageId: commit.messageId, timestamp: commit.timestamp };
     updated++;
   });
 

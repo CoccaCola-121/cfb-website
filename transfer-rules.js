@@ -15,5 +15,17 @@
     const count = pitchWordCount(text, prospect);
     return count > 800 ? 'Transfer pitches allow 800 words, excluding a standalone offer header. This pitch has ' + count + ' words.' : '';
   }
-  root.NZCFLTransferRules = Object.freeze({ pitchWordCount, pitchLimitError });
+  function cleanCommitOverrides(state){
+    const overrides = state.manualCommitOverrides || {};
+    for (const [id, override] of Object.entries(overrides)) {
+      const p = (state.prospects || {})[id];
+      const matches = p && override.name === p.name && override.stage === state.recruitingStage;
+      if ((state.recruitingStage === 'transfer' || override.name) && !matches) {
+        if (p && p.commitTeam === override.team && !p.commitSource) delete p.commitTeam;
+        delete overrides[id];
+      }
+    }
+    return state;
+  }
+  root.NZCFLTransferRules = Object.freeze({ pitchWordCount, pitchLimitError, cleanCommitOverrides });
 })(globalThis);

@@ -1,3 +1,4 @@
+import { applyDiscordCommits } from '../functions/api/commits/discord.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { parseTransferLines } from '../transfer-import.mjs';
@@ -68,4 +69,15 @@ test('server accepts exactly 800 words plus header and unchanged historical pitc
   const response = await onRequestPut({env, request:new Request('https://example.test/api/league/state',{method:'PUT',body:JSON.stringify({state:incoming})}),waitUntil(){}});
   assert.equal(response.status,200);
   assert.equal(stored.offersByProspect.r1.length,2);
+});
+
+
+test('Discord transfer commits match player names and reject older-season messages', () => {
+  const state={recruitingStage:'transfer',threads:[{createdAt:2000}],prospects:{r42:{id:'r42',name:'Marquis Small'}},manualCommitOverrides:{r42:{team:'Michigan State'}}};
+  applyDiscordCommits(state,[{prospectId:'r42',name:'Other Player',team:'Michigan State',timestamp:new Date(3000).toISOString()}]);
+  assert.equal(state.prospects.r42.commitTeam,undefined);
+  applyDiscordCommits(state,[{prospectId:'r42',name:'Marquis Small',team:'Michigan State',timestamp:new Date(1000).toISOString()}]);
+  assert.equal(state.prospects.r42.commitTeam,undefined);
+  applyDiscordCommits(state,[{prospectId:'r900',name:'Marquis Small',team:'Michigan State',timestamp:new Date(3000).toISOString()}]);
+  assert.equal(state.prospects.r42.commitTeam,'Michigan State');
 });
