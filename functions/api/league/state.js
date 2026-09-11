@@ -1,3 +1,4 @@
+import '../../../transfer-rules.js';
 import { json } from '../../_lib/auth.js';
 import { queueLeagueBackup } from '../../_lib/backup.js';
 import { readLeagueState, writeLeagueState } from '../../_lib/league-state.js';
@@ -9,7 +10,24 @@ export async function onRequestGet({ env }) {
 
 export async function onRequestPut({ request, env, waitUntil }) {
   const body = await request.json().catch(() => ({}));
-  const state = await writeLeagueState(env, body.state || body);
+  const incoming = body.state || body;
+  const previous = incoming.recruitingStage === 'transfer' ? await readLeagueState(env) : null;
+  for (const [pid, offers] of Object.entries(incoming.offersByProspect || {})) {
+    const prospect = (incoming.prospects || {})[pid];
+    for (const offer of (Array.isArray(offers) ? offers : [])) {
+      const old = ((previous && previous.offersByProspect || {})[pid] || []).find(item => item.id === offer.id);
+      if (old && old.text === offer.text) continue;
+      const error = globalThis.NZCFLTransferRules.pitchLimitError(offer.text, prospect, incoming.recruitingStage);
+      if (error) return json({ ok: false, error }, { status: 400 });
+    }
+  }
+  for (const item of (incoming.unmatched || [])) {
+    const old = (previous && previous.unmatched || []).find(old => old.id === item.id);
+    if (old && old.offerText === item.offerText) continue;
+    const error = globalThis.NZCFLTransferRules.pitchLimitError(item.offerText, null, incoming.recruitingStage);
+    if (error) return json({ ok: false, error }, { status: 400 });
+  }
+  const state = await writeLeagueState(env, incoming);
   queueLeagueBackup(env, state, waitUntil, { source: 'league-state-save' });
   return json({ ok: true, state });
 }

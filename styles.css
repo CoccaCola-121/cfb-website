@@ -614,3 +614,27 @@ button, a, input, select, textarea, summary { -webkit-tap-highlight-color: trans
   .rb-rescind-center #rb-add-conditional, .rb-rescind-center #rb-preview-mass-rescind { width: 100%; min-height: 42px; }
   .rb-rescind-center [data-delete-conditional] { flex-shrink: 0; padding: 8px; }
 }
+
+/* Transfer profiles retain the source school's identity and eligibility. */
+.rb-transfer-profile { margin-top: 12px; border-top: 1px solid var(--hairline); padding-top: 12px; }
+.rb-transfer-origin { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: 14px; }
+.rb-transfer-eligibility { color: var(--slate); margin-left: auto; font-size: 13px; }
+.rb-transfer-promise { margin: 12px 0; color: var(--slate); font-size: 13px; line-height: 1.6; overflow-wrap: anywhere; }
+.rb-transfer-promise > strong, .rb-transfer-prompt > strong { display: block; color: var(--chalk); font-size: 12px; font-weight: 600; margin-bottom: 4px; }
+.rb-transfer-prompt p { margin: 0; font-size: 14px; line-height: 1.75; white-space: pre-wrap; overflow-wrap: anywhere; }
+.rb-transfer-prompt-preview p { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.rb-transfer-read { display: block; margin-top: 10px; color: var(--slate); font-size: 12px; }
+.rb-transfer-limit { font-size: 12px; color: var(--slate); line-height: 1.5; margin-top: 12px; }
+.rb-transfer-import { margin-top: 20px; }
+.rb-transfer-import > p { font-size: 13px; color: var(--slate); line-height: 1.5; }
+.rb-transfer-import details { padding: 12px 0; border-top: 1px solid var(--hairline); }
+.rb-transfer-import summary { cursor: pointer; font-size: 14px; }
+.rb-transfer-import-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-top: 16px; }
+.rb-transfer-import-fields label { min-width: 0; font-size: 12px; color: var(--slate); }
+.rb-transfer-import-fields label:nth-last-child(-n+2) { grid-column: 1 / -1; }
+.rb-transfer-import-fields input, .rb-transfer-import-fields textarea { margin-top: 6px; }
+@media (max-width: 720px) {
+  .rb-transfer-eligibility { margin-left: 0; flex-basis: 100%; }
+  .rb-transfer-import-fields { grid-template-columns: minmax(0, 1fr); }
+  .rb-transfer-import-fields input, .rb-transfer-import-fields textarea { font-size: 16px; }
+}

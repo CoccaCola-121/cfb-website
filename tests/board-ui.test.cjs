@@ -10,7 +10,7 @@ const script = page.match(/<script>([\s\S]*?)<\/script>/)[1];
 const boot = script.lastIndexOf('\napplyRoute(routeFromPath(window.location.pathname));');
 assert(boot > 0, 'The app bootstrap must be identifiable without executing network requests.');
 const source = script.slice(0, boot) + `
-  globalThis.app = { DB, UI, render, renderNav, navigateTo, setReady(){ dbReady = true; sessionReady = true; }, renderFeed, renderBoardSearchResults, renderTeamsPage,
+  globalThis.app = { DB, UI, parseFullClass, prospectFromRosterRow, confirmTransferImport, releaseSingleStageBoard, addOfferDirect, render, renderNav, navigateTo, setReady(){ dbReady = true; sessionReady = true; }, renderFeed, renderBoardSearchResults, renderTeamsPage,
     renderThreadProspectList, renderProspectDetail, builtInTeamBranding, getTeamBranding, activeTeamBrands,
     mobileRecruitName, renderRecruitName, renderMyOffers, renderCommitsForTeam, renderTeamOffers, renderConditionalRescinds, renderRecruitValues, teamBorderColor, bindEvents, applyDefaultClassData, releaseWave1, releaseWave2,
     setSession(value){ SESSION = value; } };
@@ -61,6 +61,7 @@ function harness() {
     fetch(){ throw new Error('Regression checks must not contact a live API.'); }
   });
   vm.runInContext(fs.readFileSync(path.join(rootDir, 'team-branding.js'), 'utf8'), context);
+  vm.runInContext(fs.readFileSync(path.join(rootDir, 'transfer-rules.js'), 'utf8'), context);
   vm.runInContext(source, context);
   const { app } = context;
   app.setSession({ team: 'Michigan State', username: 'Test coach', discordId: 'fixture', accessLevel: 'coach' });
@@ -324,4 +325,40 @@ test('navigation keeps desktop labels and supplies compact mobile labels', () =>
   assert.match(html, /rb-desktop-only">My Commits<\/span><span class="rb-mobile-only">Commits/);
   assert.match(html, />Prospect Board<\/button>/);
   assert.match(html, />Teams<\/button>/);
+});
+
+
+test('transfer board opens directly in source order with metadata and no values or tiers', () => {
+  const { app } = harness();
+  app.DB.recruitingStage = 'transfer';
+  app.DB.prospects.r1 = { ...app.DB.prospects.r1, transferFrom: 'UAB', grade: 'RS JR', yearsLeft: 2, brokenPromise: 'Start every game', prompt: 'Explain your plan.', sourceOrder: 0, values: {coach: 0.9} };
+  app.DB.prospects.r2 = { ...app.DB.prospects.r2, transferFrom: 'Baylor', sourceOrder: 1 };
+  app.DB.prospects.r3 = { ...app.DB.prospects.r3, transferFrom: 'Missouri', sourceOrder: 2 };
+  const html = app.renderFeed();
+  assert.deepEqual(prospectIDs(html), ['r1','r2','r3']);
+  assert.doesNotMatch(html, /data-open-thread=/);
+  assert.match(html, /From <strong>UAB/);
+  assert.match(html, /RS JR · 2 years left/);
+  assert.match(html, /Start every game/);
+  app.UI.prospectId = 'r1';
+  const detail = app.renderProspectDetail();
+  assert.match(detail, /Explain your plan\./);
+  assert.doesNotMatch(detail, /rb-values-grid|rb-star/);
+});
+
+test('transfer roster metadata survives release and oversized pitches never enter offers', () => {
+  const { app } = harness();
+  app.DB.recruitingStage = 'transfer';
+  const p = app.prospectFromRosterRow({rank: 9, name: 'John Smith', transferFrom: 'UAB', grade: 'SR', yearsLeft: 1, brokenPromise: 'Stay', prompt: 'Tell me why', sourceOrder: 3}, 'r9');
+  assert.equal(p.transferFrom, 'UAB');
+  assert.equal(p.grade, 'SR');
+  assert.equal(p.yearsLeft, 1);
+  assert.equal(p.prompt, 'Tell me why');
+  assert.equal(p.stars, null);
+  app.DB.prospects.r9 = p;
+  app.DB.offersLocked = false;
+  const result = app.addOfferDirect('r9', 'Michigan State', 'Coach', 'word '.repeat(801), [], {});
+  assert.equal(result.ok, false);
+  assert.match(result.error, /801 words/);
+  assert.equal(app.DB.offersByProspect.r9, undefined);
 });

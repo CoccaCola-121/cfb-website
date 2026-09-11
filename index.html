@@ -45,6 +45,7 @@
 
 <script src="team-branding.js"></script>
 <script src="default-class-2062.js"></script>
+<script src="/transfer-rules.js" onerror="this.onerror=null;this.src='transfer-rules.js'"></script>
 <script>
 (function(){
 
@@ -989,10 +990,16 @@ function prospectFromRosterRow(p, id){
     potential: p.potential || 0,
     hometown: p.hometown,
     legacySchool: p.legacySchool || '',
+    transferFrom: p.transferFrom || '',
+    grade: p.grade || '',
+    yearsLeft: p.yearsLeft == null ? null : p.yearsLeft,
+    brokenPromise: p.brokenPromise || '',
+    prompt: p.prompt || '',
+    sourceOrder: p.sourceOrder == null ? p.rank : p.sourceOrder,
     storyline: p.storyline || '',
     offerMode: p.offerMode || (recruitingStageConfig().pitchOnly ? 'pitch' : 'values'),
     values: p.values || {},
-    stars: starsForRank(p.rank)
+    stars: recruitingStage() === 'transfer' ? null : starsForRank(p.rank)
   };
 }
 
@@ -1074,7 +1081,7 @@ function parseFullClass(text, options){
   const list = [];
   for (let i = headerIdx + 1; i < rows.length; i++){
     const r = rows[i];
-    const rank = parseInt(cleanCsvCell(r[rankIdx === -1 ? 0 : rankIdx]), 10);
+    const rank = rankIdx === -1 && stage === 'transfer' ? list.length + 1 : parseInt(cleanCsvCell(r[rankIdx === -1 ? 0 : rankIdx]), 10);
     if (!rank) continue;
     const name = cleanCsvCell(r[nameIdx]);
     if (!name) continue;
@@ -1089,10 +1096,16 @@ function parseFullClass(text, options){
       hometown: cleanCsvCell(r[hometownIdx]),
       legacySchool: cleanCsvCell(r[legacySchoolIdx]),
       storyline: cleanCsvCell(r[storylineIdx]),
+      transferFrom: stage === 'transfer' ? cleanCsvCell(r[headerIndex(header, ['Transferring From', 'Transfer From', 'Previous Team', 'Team'])]) : '',
+      grade: cleanCsvCell(r[headerIndex(header, ['Grade', 'Class'])]),
+      yearsLeft: cleanCsvCell(r[headerIndex(header, ['Years Left', 'Eligibility'])]),
+      brokenPromise: cleanCsvCell(r[headerIndex(header, ['Broken Promise'])]),
+      prompt: cleanCsvCell(r[headerIndex(header, ['Prompt'])]),
+      sourceOrder: list.length,
       values: stage === 'hs' ? parseRecruitValues(r, header) : {}
     });
   }
-  list.sort(function(a,b){ return a.rank - b.rank; });
+  if (stage !== 'transfer') list.sort(function(a,b){ return a.rank - b.rank; });
   return applyRecruitingStageProfile(list, stage);
 }
 
@@ -1113,6 +1126,10 @@ function loadClassData(raw){
     UI.classError = 'Could not find a class in that CSV. Make sure it includes Name and Pos. columns.';
     render(); return;
   }
+  if (recruitingStage() === 'transfer') {
+    if (DB.wave1Released) { UI.classError = 'Reset the current class before replacing an open transfer board.'; render(); return; }
+    UI.transferDraft = list; UI.classError = null; render(); return;
+  }
   DB.fullRoster = list;
   DB.defaultClassLoaded = false;
   DB.commitSeasonEnded = null;
@@ -1121,10 +1138,12 @@ function loadClassData(raw){
   saveDB(); render();
 }
 
-function loadClassFile(file){
+async function loadClassFile(file){
+  if (file && /\.pdf$/i.test(file.name || '')) return loadTransferPdf(file);
   if (!file) return;
   const reader = new FileReader();
   reader.onload = function(){
+    UI.transferDraft = null;
     UI.classFileName = file.name || '';
     loadClassData(String(reader.result || ''));
   };
@@ -1133,6 +1152,56 @@ function loadClassFile(file){
     render();
   };
   reader.readAsText(file);
+}
+
+async function loadTransferPdf(file){
+  if (!canViewSettings() || recruitingStage() !== 'transfer') return;
+  if (DB.wave1Released) { UI.classError = 'Reset the current class before replacing an open transfer board.'; render(); return; }
+  UI.classError = null;
+  UI.transferDraft = null;
+  UI.classFileName = file.name;
+  UI.transferLoading = true;
+  render();
+  try {
+    const importer = await import('./transfer-import.mjs');
+    const lines = await importer.extractTransferPdfLines(new Uint8Array(await file.arrayBuffer()));
+    const schools = activeTeamBrands().flatMap(function(b){ return [b.region, b.abbrev, b.displayName].filter(Boolean); });
+    const rows = importer.parseTransferLines(lines, schools);
+    if (recruitingStage() !== 'transfer') return;
+    UI.transferDraft = rows;
+  } catch (e) { UI.classError = e.message || 'Could not read the transfer PDF.'; }
+  finally { UI.transferLoading = false; render(); }
+}
+
+function confirmTransferImport(){
+  if (!canViewSettings() || recruitingStage() !== 'transfer' || DB.wave1Released || !UI.transferDraft) return;
+  const rows = UI.transferDraft;
+  const invalid = rows.find(function(p){ return !p.name.trim() || !p.position.trim() || !p.transferFrom.trim() || !p.prompt.trim() || !p.brokenPromise.trim() || !Number.isInteger(Number(p.yearsLeft)) || Number(p.yearsLeft) < 1 || Number(p.yearsLeft) > 5 || !/^\d{1,2}\/\d{1,2}$/.test(p.rating); });
+  if (invalid) { UI.classError = 'Check the name, position, school, OVR/POT, eligibility, promise and prompt for ' + (invalid.name || 'this player') + '.'; render(); return; }
+  DB.fullRoster = rows.map(function(p, index){
+    const ratings = p.rating.split('/').map(Number);
+    return Object.assign({}, p, { rank: index + 1, overall: ratings[0], potential: ratings[1], yearsLeft: Number(p.yearsLeft), offerMode: 'pitch', values: {}, stars: null });
+  });
+  DB.defaultClassLoaded = false;
+  UI.transferDraft = null;
+  UI.classError = null;
+  saveDB(); render();
+}
+
+function renderTransferImportPreview(){
+  if (UI.transferLoading) return '<p role="status">Reading transfer PDF…</p>';
+  if (!UI.transferDraft) return '';
+  const fields = [['name','Player'],['position','Position'],['transferFrom','Transferring from'],['rating','OVR/POT'],['grade','Grade (blank if not listed)'],['yearsLeft','Years left'],['brokenPromise','Broken promise'],['prompt','Pitch prompt']];
+  let html = '<div class="rb-transfer-import"><h3>Review ' + UI.transferDraft.length + ' transfers</h3><p>Check the extracted details before loading. Missing grades are left blank; they are not inferred.</p>';
+  UI.transferDraft.forEach(function(p,index){
+    html += '<details><summary>' + escapeHtml(p.name) + ' · ' + escapeHtml(p.transferFrom) + (p.grade ? '' : ' · Grade not listed') + '</summary><div class="rb-transfer-import-fields">';
+    fields.forEach(function(field){
+      const attrs = ' data-transfer-index="' + index + '" data-transfer-field="' + field[0] + '"';
+      html += '<label>' + field[1] + (field[0] === 'prompt' || field[0] === 'brokenPromise' ? '<textarea class="rb-textarea" rows="' + (field[0] === 'prompt' ? '6' : '2') + '"' + attrs + '>' + escapeHtml(p[field[0]]) + '</textarea>' : '<input class="rb-input"' + attrs + ' value="' + escapeHtml(p[field[0]] == null ? '' : p[field[0]]) + '" />') + '</label>';
+    });
+    html += '</div></details>';
+  });
+  return html + '<button class="rb-btn rb-btn-gold" id="rb-confirm-transfer-import">Load reviewed transfer class</button></div>';
 }
 
 async function fileToText(file){
@@ -1216,6 +1285,7 @@ function clearRecruitingBoard(){
   UI.threadId = null;
   UI.prospectId = null;
   UI.classFileName = '';
+  UI.transferDraft = null;
   UI.classError = null;
   UI.commitStatus = null;
   UI.commitError = null;
@@ -2243,6 +2313,8 @@ function confirmSingleRescind(){
 function addOfferDirect(prospectId, team, coach, text, promises, visits){
   if (DB.offersLocked) return { ok: false, error: 'Offer denied: offers are locked.' };
   const prospect = DB.prospects[prospectId];
+  const pitchError = NZCFLTransferRules.pitchLimitError(text, prospect, recruitingStage());
+  if (pitchError) return { ok: false, error: pitchError };
   if (prospect && prospect.commitTeam) return { ok: false, error: 'Offer denied: #' + prospect.rank + ' ' + prospect.name + ' has committed to ' + prospect.commitTeam + '.' };
   const priorOffer = findAnyOfferForTeam(prospectId, team);
   if (priorOffer){
@@ -2498,6 +2570,8 @@ function saveOfferEdit(form, confirmedVisits){
   let nextText = offer.text || '';
   nextText = syncCampusVisitText(nextText, newVisits);
   nextText = syncCoachVisitText(nextText, newVisits);
+  const pitchError = NZCFLTransferRules.pitchLimitError(nextText, prospect, recruitingStage());
+  if (pitchError) { UI.editError = pitchError; render(); return; }
   const changes = [];
   if (oldVisits.coach !== newVisits.coach) changes.push(visitChangeLine('coach', oldVisits, newVisits));
   if (oldVisits.campus !== newVisits.campus || oldVisits.campusLabel !== newVisits.campusLabel){
@@ -2554,6 +2628,13 @@ async function submitOfferSheet(rawText){
     UI.showSubmitModal = false;
     UI.submitTargetId = null;
     render(); return;
+  }
+  const target = DB.prospects[UI.submitTargetId] || findProspectFromOffer(rawText);
+  const pitchError = NZCFLTransferRules.pitchLimitError(rawText, target, recruitingStage());
+  if (pitchError) {
+    const status = document.getElementById('rb-pitch-count');
+    if (status) { status.textContent = pitchError; status.style.color = 'var(--alert)'; }
+    return;
   }
   UI.submitting = true; render();
   try {
@@ -3541,6 +3622,7 @@ function renderTeamsPage(){
 }
 
 function renderFeed(){
+  if (recruitingStage() === 'transfer' && DB.threads.length) return renderThreadProspectList({ id: DB.threads[0].id, title: 'Transfer Board', prospectIds: Array.from(new Set(DB.threads.flatMap(function(t){ return t.prospectIds; }))), stars: null });
   if (!DB.threads.length){
     return '<div class="rb-card" style="padding:40px;text-align:center;">' +
       '<div class="rb-h" style="font-size:18px;margin-bottom:8px;">The board is empty</div>' +
@@ -3588,7 +3670,7 @@ function renderBoardSearchResults(query){
   DB.threads.forEach(function(t){
     visibleBoardProspectIds(t).forEach(function(pid){
       const p = DB.prospects[pid];
-      const searchText = [p.rank, '#' + p.rank, p.name, p.hometown].join(' ').toLowerCase();
+      const searchText = [p.rank, '#' + p.rank, p.name, p.hometown, p.transferFrom].join(' ').toLowerCase();
       if (searchText.indexOf(q) !== -1) html += renderProspectBoardCard(pid, searchText, context);
     });
   });
@@ -3601,11 +3683,12 @@ function renderThreadProspectList(t){
   const ended = recruitingEndedForCurrentStage();
   const cardContext = { ended: ended, thread: UI.view === 'thread' ? t : null };
   let html = '<div class="rb-h" style="font-size:20px;margin-bottom:4px;">' + escapeHtml(t.title) + '</div>';
-  html += '<div style="font-size:13px;color:var(--slate);margin-bottom:18px;">' + rankRangeForThread(t) + ' on the board. Offers from every team stay visible here.</div>';
+  html += '<div style="font-size:13px;color:var(--slate);margin-bottom:18px;">' + (recruitingStage() === 'transfer' ? 'Transfers in class-sheet order. 800-word pitches; offer headers excluded.' : rankRangeForThread(t) + ' on the board. Offers from every team stay visible here.') + '</div>';
   html += '<div class="rb-card" style="padding:14px 16px;margin-bottom:14px;">';
   const visibleIds = visibleBoardProspectIds(t);
+  if (recruitingStage() === 'transfer') visibleIds.sort(function(a,b){ const pa = DB.prospects[a], pb = DB.prospects[b]; return (pa.sourceOrder ?? pa.rank) - (pb.sourceOrder ?? pb.rank); });
   html += renderPositionCounts(visibleIds, function(pid){ return DB.prospects[pid] && DB.prospects[pid].position; }, filterKey);
-  html += '<input class="rb-input" data-thread-search="' + t.id + '" placeholder="Search recruits by name, rank or hometown" />';
+  html += '<input class="rb-input" data-thread-search="' + t.id + '" placeholder="Search recruits by name, rank, hometown or school" />';
   const commitFilter = UI.boardCommitFilter || (UI.hideCommittedBoards ? 'uncommitted' : 'all');
   html += '<div class="rb-filter-row"><div class="rb-segmented" aria-label="Commit status filter">';
   [['committed','Committed'], ['all','All'], ['uncommitted','Uncommitted']].forEach(function(option){
@@ -3618,7 +3701,7 @@ function renderThreadProspectList(t){
   visibleIds.forEach(function(pid){
     const p = DB.prospects[pid];
     if (!p) return;
-    const searchText = [p.rank, '#' + p.rank, p.name, p.hometown].join(' ').toLowerCase();
+    const searchText = [p.rank, '#' + p.rank, p.name, p.hometown, p.transferFrom].join(' ').toLowerCase();
     html += renderProspectBoardCard(pid, searchText, cardContext);
   });
   if (!visibleIds.length) html += '<div class="rb-card" style="padding:28px;text-align:center;color:var(--slate);">No ' + (ended ? 'free agents' : 'uncommitted prospects') + ' on this board.</div>';
@@ -3635,7 +3718,7 @@ function renderProspectBoardCard(pid, searchAttr, context){
   const ended = context ? context.ended : recruitingEndedForCurrentStage();
   const currentThread = context ? context.thread : (UI.view === 'thread' ? DB.threads.find(function(t){ return t.id === UI.threadId; }) : null);
   const commitReturn = currentThread ? { view: 'thread', threadId: currentThread.id, label: currentThread.title } : { view: 'feed', label: 'Prospect Board' };
-  let html = '<div class="rb-card rb-mobile-tight" data-prospect-card="1" data-position-bucket="' + escapeHtml(bucket) + '" data-search="' + escapeHtml(searchText) + '" data-open-prospect="' + pid + '" style="padding:14px 18px;cursor:pointer;' + (p.commitTeam ? committedCardStyle(p.commitTeam) : '') + '">';
+  let html = '<div class="rb-card rb-mobile-tight" data-prospect-card="1" data-position-bucket="' + escapeHtml(bucket) + '" data-search="' + escapeHtml(searchText) + '" data-open-prospect="' + pid + '" style="padding:14px 18px;cursor:pointer;' + (p.commitTeam ? committedCardStyle(p.commitTeam) : (p.transferFrom ? committedCardStyle(p.transferFrom) : '')) + '">';
   html += '<div style="display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:10px;">';
   html += '<div class="rb-list-identity" style="min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' +
     '<span class="rb-mono" style="color:var(--slate);">#' + p.rank + '</span> ' +
@@ -3645,7 +3728,8 @@ function renderProspectBoardCard(pid, searchAttr, context){
   '</div>';
   html += '<div style="display:flex;align-items:center;gap:8px;white-space:nowrap;">' + (p.commitTeam || ended ? '' : offerCountTag(pid)) + (p.commitTeam ? renderCommittedTag(p.commitTeam, true, commitReturn) : (ended ? freeAgentTag() : '')) + '</div>';
   html += '</div>';
-  if (!p.commitTeam) html += renderStorylineLine(p.storyline, 'margin-top:6px;');
+  if (recruitingStage() === 'transfer') html += renderTransferProfile(p, false);
+  else if (!p.commitTeam) html += renderStorylineLine(p.storyline, 'margin-top:6px;');
   if (offers.length && !p.commitTeam){
     html += '<div style="margin-top:10px;border-top:1px solid var(--hairline);padding-top:10px;display:flex;flex-direction:column;gap:10px;">';
     offers.forEach(function(o){ html += renderOfferBlock(o, { collapsed: true }); });
@@ -3679,17 +3763,18 @@ function renderClassSetup(){
   });
   html += '</div>';
   html += '<div class="rb-h" style="font-size:18px;margin-bottom:14px;">' + escapeHtml(stageConfig.setupLabel) + '</div>';
-  html += '<div class="rb-mono" style="font-size:12px;color:var(--slate);margin-bottom:12px;">' + (stageConfig.usesDefaultClass ? 'Default: ' + escapeHtml(DEFAULT_CLASS_NAME) : 'Upload this stage&apos;s player CSV before opening the board.') + '</div>';
-  html += '<input class="rb-file-input" type="file" id="rb-class-file" accept=".csv,text/csv" />';
-  html += '<label class="rb-file-label" for="rb-class-file">Replace CSV file</label>';
+  html += '<div class="rb-mono" style="font-size:12px;color:var(--slate);margin-bottom:12px;">' + (stageConfig.usesDefaultClass ? 'Default: ' + escapeHtml(DEFAULT_CLASS_NAME) : (stage === 'transfer' ? 'Upload the transfer PDF, review the extracted players, then open the board. CSV is also supported.' : 'Upload this stage&apos;s player CSV before opening the board.')) + '</div>';
+  html += '<input class="rb-file-input" type="file" id="rb-class-file" accept="' + (stage === 'transfer' ? '.pdf,application/pdf,' : '') + '.csv,text/csv"' + (UI.transferLoading ? ' disabled' : '') + ' />';
+  html += '<label class="rb-file-label" for="rb-class-file">Upload class file</label>';
   html += '<span class="rb-mono" style="font-size:12px;color:var(--slate);margin-left:10px;">' + escapeHtml(UI.classFileName || (DB.fullRoster.length ? (stageConfig.usesDefaultClass && DB.defaultClassLoaded ? DEFAULT_CLASS_NAME : stageConfig.label + ' CSV') : 'No file selected')) + '</span>';
+  if (stage === 'transfer') html += renderTransferImportPreview();
   if (UI.classError) html += '<div style="font-size:12px;color:var(--alert);margin-top:8px;">' + escapeHtml(UI.classError) + '</div>';
   html += '</div>';
 
   if (DB.fullRoster.length && (!DB.wave1Released || !DB.wave2Released)){
     const maxRank = DB.fullRoster[DB.fullRoster.length - 1].rank;
     html += '<div class="rb-card" style="padding:20px 24px;max-width:640px;margin-top:14px;">';
-    html += '<div class="rb-mono" style="font-size:12px;color:var(--slate);margin-bottom:12px;">' + DB.fullRoster.length + ' prospects loaded, ranked #1&ndash;#' + maxRank + '</div>';
+    html += '<div class="rb-mono" style="font-size:12px;color:var(--slate);margin-bottom:12px;">' + (stage === 'transfer' ? DB.fullRoster.length + ' transfers loaded in document order' : DB.fullRoster.length + ' prospects loaded, ranked #1&ndash;#' + maxRank) + '</div>';
     html += '<div style="display:flex;gap:10px;flex-wrap:wrap;">';
     if (stageConfig.usesWaves){
       if (!DB.wave1Released) html += '<button class="rb-btn rb-btn-gold" id="rb-release-1">Open class (#1&ndash;500)</button>';
@@ -3795,6 +3880,11 @@ function renderThread(){
   return html + renderThreadProspectList(t);
 }
 
+function renderTransferProfile(p, full){
+  const brand = getTeamBranding(p.transferFrom);
+  return '<div class="rb-transfer-profile"><div class="rb-transfer-origin">' + renderTeamLogo(brand, 28) + '<span>From <strong>' + escapeHtml(p.transferFrom || 'School not listed') + '</strong></span><span class="rb-transfer-eligibility">' + escapeHtml(p.grade || 'Grade not listed') + ' · ' + escapeHtml(p.yearsLeft || '?') + ' year' + (Number(p.yearsLeft) === 1 ? '' : 's') + ' left</span></div><p class="rb-transfer-promise"><strong>Broken promise</strong> ' + escapeHtml(p.brokenPromise || 'Not listed') + '</p><div class="rb-transfer-prompt' + (full ? '' : ' rb-transfer-prompt-preview') + '"><strong>Pitch prompt</strong><p>' + escapeHtml(p.prompt || p.storyline || 'Not listed') + '</p></div>' + (full ? '' : '<span class="rb-transfer-read">Read prompt &amp; submit pitch →</span>') + '</div>';
+}
+
 function renderProspectDetail(){
   const p = DB.prospects[UI.prospectId];
   if (!p) return '<div style="color:var(--slate);">Prospect not found.</div>';
@@ -3815,11 +3905,14 @@ function renderProspectDetail(){
   html += '<div style="display:flex;align-items:center;justify-content:flex-end;gap:10px;flex-wrap:wrap;">' +
     (SESSION && !p.commitTeam ? (sessionOffer ? '<button class="rb-btn" disabled title="Your team already has an offer on this recruit">Offer submitted</button>' : (DB.offersLocked ? '<button class="rb-btn" disabled title="Offers are locked">Offers locked</button>' : '<button class="rb-btn rb-btn-gold" data-open-submit="' + escapeHtml(p.id) + '">Submit offer</button>')) : '') +
     (p.commitTeam ? renderCommittedTag(p.commitTeam, true, { view: 'prospect', prospectId: p.id, label: p.name }) : '') +
-    '<span>' + starsOrLabel(p.stars) + '</span></div>';
+    '<span>' + (recruitingStage() === 'transfer' ? '<span class="rb-tag">Transfer</span>' : starsOrLabel(p.stars)) + '</span></div>';
   html += '</div>';
-  html += renderStorylineLine(p.storyline, 'margin-top:8px;');
+  if (recruitingStage() === 'transfer') html += renderTransferProfile(p, true);
+  else html += renderStorylineLine(p.storyline, 'margin-top:8px;');
   html += renderLegacySchoolLine(p.legacySchool, 'margin-top:8px;');
-  if (isPitchRecruit(p)){
+  if (recruitingStage() === 'transfer'){
+    html += '<p class="rb-transfer-limit">800-word pitch limit. A standalone offer header does not count.</p>';
+  } else if (isPitchRecruit(p)){
     html += '<div class="rb-mono" style="font-size:10px;color:var(--slate);margin-top:8px;line-height:1.2;"><span style="color:var(--gold);">Pitch recruit:</span> personalized offer, up to 3 promises.</div>';
   } else {
     html += renderRecruitValues(p.values);
@@ -3904,6 +3997,7 @@ function renderSubmitModal(){
         submitHelp +
       '</div>' +
       '<textarea class="rb-textarea rb-scrollbar" id="rb-sheet-text" rows="10" placeholder="' + escapeHtml(placeholder) + '" ' + (locked ? 'disabled' : '') + '></textarea>' +
+      (recruitingStage() === 'transfer' ? '<div id="rb-pitch-count" role="status" class="rb-transfer-limit">0 / 800 words · standalone offer header excluded</div>' : '') +
       '<div style="display:flex;justify-content:flex-end;gap:8px;margin-top:14px;">' +
         '<button class="rb-btn" data-close-modal="1">Cancel</button>' +
         '<button class="rb-btn rb-btn-gold" id="rb-submit-sheet-btn" ' + (UI.submitting || locked ? 'disabled' : '') + '>' + (locked ? 'Offers locked' : (UI.submitting ? 'Posting...' : 'Post offer')) + '</button>' +
@@ -4194,6 +4288,13 @@ function bindEvents(){
     };
   });
 
+  const pitchInput = document.getElementById('rb-sheet-text');
+  if (pitchInput && recruitingStage() === 'transfer') pitchInput.oninput = function(){
+    const prospect = DB.prospects[UI.submitTargetId] || findProspectFromOffer(pitchInput.value);
+    const count = NZCFLTransferRules.pitchWordCount(pitchInput.value, prospect);
+    const status = document.getElementById('rb-pitch-count');
+    if (status) { status.textContent = count + ' / 800 words · standalone offer header excluded'; status.style.color = count > 800 ? 'var(--alert)' : 'var(--slate)'; }
+  };
   const submitSheetBtn = document.getElementById('rb-submit-sheet-btn');
   if (submitSheetBtn) submitSheetBtn.onclick = function(){
     const text = document.getElementById('rb-sheet-text').value;
@@ -4583,6 +4684,11 @@ function bindEvents(){
     };
   });
 
+  document.querySelectorAll('[data-transfer-field]').forEach(function(el){ el.oninput = function(){
+    if (UI.transferDraft) UI.transferDraft[Number(el.getAttribute('data-transfer-index'))][el.getAttribute('data-transfer-field')] = el.value;
+  }; });
+  const confirmTransfer = document.getElementById('rb-confirm-transfer-import');
+  if (confirmTransfer) confirmTransfer.onclick = confirmTransferImport;
   const classFile = document.getElementById('rb-class-file');
   if (classFile) classFile.onchange = function(){ loadClassFile(classFile.files && classFile.files[0]); };
   const brandingFile = document.getElementById('rb-branding-file');
