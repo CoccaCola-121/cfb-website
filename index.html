@@ -3839,7 +3839,7 @@ function renderThreadProspectList(t){
   html += renderPositionCounts(visibleIds, function(pid){ return DB.prospects[pid] && DB.prospects[pid].position; }, filterKey);
   html += '<input class="rb-input" data-thread-search="' + t.id + '" placeholder="' + (recruitingStage() === 'transfer' ? 'Search transfers by name, school, grade or years left' : 'Search recruits by name, rank, hometown or school') + '" />';
   if (recruitingStage() === 'transfer') {
-    html += '<div id="rb-transfer-filter-controls">' + renderTransferFilters() + '</div>';
+    html += '<div class="rb-transfer-filter-row"><div id="rb-transfer-filter-controls">' + renderTransferFilters() + '</div>';
   }
   const commitFilter = UI.boardCommitFilter || (UI.hideCommittedBoards ? 'uncommitted' : 'all');
   html += '<div class="rb-filter-row"><div class="rb-segmented" aria-label="Commit status filter">';
@@ -3847,9 +3847,10 @@ function renderThreadProspectList(t){
     html += '<button type="button" data-board-commit-filter="' + option[0] + '" aria-pressed="' + (commitFilter === option[0] ? 'true' : 'false') + '">' + option[1] + '</button>';
   });
   html += '</div></div>';
+  if (recruitingStage() === 'transfer') html += '</div>';
   html += '</div>';
 
-  html += '<div style="display:flex;flex-direction:column;gap:10px;">';
+  html += '<div class="' + (recruitingStage() === 'transfer' ? 'rb-transfer-results' : '') + '" style="display:flex;flex-direction:column;gap:10px;">';
   visibleIds.forEach(function(pid){
     const p = DB.prospects[pid];
     if (!p) return;

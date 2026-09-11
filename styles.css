@@ -638,13 +638,27 @@ button, a, input, select, textarea, summary { -webkit-tap-highlight-color: trans
   .rb-transfer-import-fields { grid-template-columns: minmax(0, 1fr); }
   .rb-transfer-import-fields input, .rb-transfer-import-fields textarea { font-size: 16px; }
 }
-.rb-transfer-filters { margin-top:16px; max-width:540px; }
+/* Keep filtering from removing the scrollbar or clamping the page below the controls. */
+html { scrollbar-gutter: stable; }
+.rb-transfer-results { min-height:100vh; overflow-anchor:none; }
+.rb-transfer-filter-row { display:flex; align-items:center; flex-wrap:wrap; gap:16px 32px; margin-top:14px; }
+#rb-transfer-filter-controls { flex:1 1 300px; max-width:440px; min-width:0; }
+.rb-transfer-filter-row > .rb-filter-row { margin:0 0 0 auto; }
+.rb-transfer-filters { width:100%; }
 .rb-transfer-filter-heading, .rb-transfer-slider-heading { display:flex; align-items:center; justify-content:space-between; gap:12px; }
-.rb-transfer-slider-heading { margin-top:16px; font-size:13px; }
+.rb-transfer-filter-heading .rb-segmented button { font-size:12px; padding:6px 10px; }
+.rb-transfer-slider-heading { margin-top:8px; font-size:11px; }
 .rb-transfer-slider-heading output { color:var(--slate); }
-.rb-transfer-filter-reset { border:0; background:none; color:var(--slate); font:inherit; font-size:12px; cursor:pointer; padding:10px 0 10px 12px; }
-.rb-transfer-slider { display:block; width:100%; margin:8px 0 0; height:32px; accent-color:var(--accent); cursor:pointer; }
-.rb-transfer-slider-ticks { display:flex; justify-content:space-between; font-family:'IBM Plex Mono',monospace; font-size:11px; color:var(--slate); }
+.rb-transfer-filter-reset { border:0; background:none; color:var(--slate); font:inherit; font-size:11px; cursor:pointer; padding:8px; }
+.rb-transfer-filter-reset:hover { color:var(--chalk); }
+.rb-transfer-slider { appearance:none; -webkit-appearance:none; display:block; box-sizing:border-box; width:100%; margin:2px 0; height:24px; background:transparent; cursor:pointer; }
+.rb-transfer-slider::-webkit-slider-runnable-track { height:4px; background:var(--hairline); border-radius:4px; }
+.rb-transfer-slider::-moz-range-track { height:4px; background:var(--hairline); border-radius:4px; }
+.rb-transfer-slider::-webkit-slider-thumb { appearance:none; -webkit-appearance:none; width:12px; height:12px; margin-top:-4px; border:2px solid var(--panel); border-radius:50%; background:var(--accent); box-shadow:0 0 0 1px var(--accent); }
+.rb-transfer-slider::-moz-range-thumb { width:8px; height:8px; border:2px solid var(--panel); border-radius:50%; background:var(--accent); box-shadow:0 0 0 1px var(--accent); }
+.rb-transfer-slider:focus-visible { outline:2px solid var(--accent); outline-offset:3px; border-radius:4px; }
+.rb-transfer-slider-ticks { display:flex; justify-content:space-between; font-family:'IBM Plex Mono',monospace; font-size:10px; color:var(--slate); }
+@media (max-width:720px) { .rb-transfer-filter-row { gap:14px; } #rb-transfer-filter-controls { max-width:none; } .rb-transfer-filter-row > .rb-filter-row { margin-left:0; } }
 .rb-transfer-tick-active { color:var(--chalk); font-weight:700; }
 .rb-list-identity > span:empty { display:none; }
 .rb-settings-save { position:sticky; top:0; z-index:12; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px; background:var(--panel); border:1px solid var(--hairline); padding:16px 20px; margin-bottom:18px; border-radius:8px; }
