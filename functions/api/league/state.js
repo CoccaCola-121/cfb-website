@@ -11,7 +11,8 @@ export async function onRequestGet({ env }) {
 export async function onRequestPut({ request, env, waitUntil }) {
   const body = await request.json().catch(() => ({}));
   const incoming = body.state || body;
-  const previous = incoming.recruitingStage === 'transfer' ? await readLeagueState(env) : null;
+  const previous = incoming.recruitingStage === 'transfer' || Object.prototype.hasOwnProperty.call(body,'expectedUpdatedAt') ? await readLeagueState(env) : null;
+  if (Object.prototype.hasOwnProperty.call(body,'expectedUpdatedAt') && (previous && previous.updatedAt || null) !== body.expectedUpdatedAt) return json({ok:false,error:'The league changed before saving. Your draft is intact; try Save again.'},{status:409});
   for (const [pid, offers] of Object.entries(incoming.offersByProspect || {})) {
     const prospect = (incoming.prospects || {})[pid];
     for (const offer of (Array.isArray(offers) ? offers : [])) {

@@ -647,3 +647,11 @@ button, a, input, select, textarea, summary { -webkit-tap-highlight-color: trans
 .rb-transfer-slider-ticks { display:flex; justify-content:space-between; font-family:'IBM Plex Mono',monospace; font-size:11px; color:var(--slate); }
 .rb-transfer-tick-active { color:var(--chalk); font-weight:700; }
 .rb-list-identity > span:empty { display:none; }
+.rb-settings-save { position:sticky; top:0; z-index:12; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px; background:var(--panel); border:1px solid var(--hairline); padding:16px 20px; margin-bottom:18px; border-radius:8px; }
+.rb-settings-save p { font-size:12px; color:var(--slate); margin:4px 0 0; max-width:640px; }
+.rb-transfer-commit-controls { grid-template-columns:minmax(0,1fr) minmax(0,1fr); }
+.rb-transfer-commit-controls > select { grid-column:1 / -1; min-width:0; width:100%; }
+.rb-transfer-commit-controls > input { grid-column:1 / -1; }
+.rb-transfer-commit-controls > button { min-width:0; }
+@media (max-width:720px) { .rb-settings-save { padding:12px; } .rb-settings-save > button { width:100%; } .rb-transfer-commit-controls { grid-template-columns:repeat(2,minmax(0,1fr)); } }
+.rb-settings-fields { min-width:0; border:0; margin:0; padding:0; }

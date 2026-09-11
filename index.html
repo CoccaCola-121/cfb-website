@@ -262,7 +262,7 @@ function syncBrowserRoute(replace){
 
 function navigateTo(view, options){
   options = options || {};
-  if (!canLeaveTeamsPage()) return;
+  if (!canLeaveTeamsPage() || !canLeaveSettings(view)) return;
   const nextThreadId = options.threadId != null ? options.threadId : (view === 'thread' ? UI.threadId : null);
   if (shouldResetBoardFilters(view, nextThreadId)) resetBoardFilters();
   UI.view = view;
@@ -585,7 +585,7 @@ function transferCardStyle(p){
   if (!p.transferFrom || !p.commitTeam) return committedCardStyle(p.transferFrom || p.commitTeam);
   const from = teamBorderColor(getTeamBranding(p.transferFrom));
   const to = teamBorderColor(getTeamBranding(p.commitTeam));
-  return 'border-color:' + from + '88;border-left:4px solid ' + from + ';border-right:4px solid ' + to + ';background:linear-gradient(110deg,' + from + '26,' + to + '26),var(--panel);';
+  return 'border-top-color:transparent;border-bottom-color:transparent;border-left:4px solid ' + from + ';border-right:4px solid ' + to + ';background:linear-gradient(90deg,' + from + '38 0%,' + from + '38 45%,' + to + '38 55%,' + to + '38 100%),var(--panel);';
 }
 
 function committedCardStyle(teamName){
@@ -745,7 +745,104 @@ async function loadTeamAvailability(){
   } catch (e) { /* non-blocking */ }
 }
 
+let settingsDraft = null;
+let settingsSaving = false;
+function copySettings(value){ return value === undefined ? undefined : JSON.parse(JSON.stringify(value)); }
+function resetCommitFields(){ UI.commitOverrideRank = ''; UI.commitOverrideTeam = ''; UI.pendingCommitOverride = null; UI.pendingClearCommit = null; }
+function beginSettingsDraft(){
+  if (settingsDraft || settingsSaving || !canViewSettings()) return;
+  if (remoteSaveTimer) { clearTimeout(remoteSaveTimer); remoteSaveTimer = null; saveDBRemote(); }
+  settingsDraft = { base: copySettings(DB), payload: copySettings(leagueStatePayload()), actions: {}, typed: false };
+}
+function hasSettingsChanges(){
+  return !!(settingsDraft && (settingsDraft.typed || UI.transferDraft || Object.keys(settingsDraft.actions).length || JSON.stringify(settingsDraft.payload) !== JSON.stringify(leagueStatePayload())));
+}
+function restoreSettingsDraft(){
+  if (settingsDraft) { Object.keys(DB).forEach(function(key){ delete DB[key]; }); Object.assign(DB, copySettings(settingsDraft.base)); }
+  settingsDraft = null;
+  UI.transferDraft = null;
+  UI.classError = null; UI.classFileName = ''; UI.commitStatus = null; UI.commitError = null;
+  UI.brandingStatus = null; UI.brandingError = null; UI.commitEditing = false;
+  UI.commitOverrideStatus = null; UI.commitOverrideError = null;
+  UI.settingsStatus = null; UI.settingsError = null;
+  resetCommitFields();
+}
+function canLeaveSettings(nextView){
+  if (UI.view !== 'setup' || nextView === 'setup') return true;
+  if (settingsSaving) return false;
+  if (hasSettingsChanges() && !window.confirm('You have unsaved settings changes. Leave and discard them? Choose Cancel to stay and press Save settings changes.')) return false;
+  restoreSettingsDraft();
+  return true;
+}
+function mergeSettingsValue(base, draft, live, path){
+  const same = (a,b) => JSON.stringify(a) === JSON.stringify(b);
+  if (same(base, draft)) return copySettings(live);
+  if (same(base, live) || same(draft, live)) return copySettings(draft);
+  if (base && draft && live && typeof base === 'object' && typeof draft === 'object' && typeof live === 'object' && !Array.isArray(base) && !Array.isArray(draft) && !Array.isArray(live)) {
+    const result = {};
+    new Set([...Object.keys(base), ...Object.keys(draft), ...Object.keys(live)]).forEach(function(key){
+      const value = mergeSettingsValue(base[key], draft[key], live[key], (path || 'settings') + '.' + key);
+      if (value !== undefined) result[key] = value;
+    });
+    return result;
+  }
+  throw new Error('The league changed while you were editing (' + (path || 'settings') + '). Your draft was kept. Discard and reopen Settings to use the latest data.');
+}
+function queueSettingsAction(kind){
+  if (!settingsDraft || settingsSaving) return false;
+  settingsDraft.actions[kind] = true;
+  UI.settingsStatus = 'Action queued. Press Save settings changes to publish it.';
+  render();
+  return true;
+}
+async function saveSettingsChanges(){
+  if (!settingsDraft || settingsSaving || !canViewSettings()) return;
+  if (UI.transferLoading || UI.transferDraft) { UI.settingsError = 'Finish reviewing and loading the transfer class before saving.'; render(); return; }
+  const sheet = document.getElementById('rb-commit-sheet-url');
+  if (sheet) DB.commitSheetUrl = sheet.value.trim();
+  settingsSaving = true; UI.settingsError = null; UI.settingsStatus = null;
+  const transaction = settingsDraft;
+  render();
+  try {
+    let payload = leagueStatePayload();
+    if (apiAvailable()) {
+      const response = await fetch('/api/league/state', { credentials: 'include' });
+      if (!response.ok) throw new Error('Could not check current league data. Your draft is still here.');
+      const current = (await response.json()).state || {};
+      payload = mergeSettingsValue(transaction.payload, payload, current);
+      const saved = await fetch('/api/league/state', { method:'PUT', credentials:'include', headers:{'content-type':'application/json'}, body:JSON.stringify({state:payload, expectedUpdatedAt:current.updatedAt || null}) });
+      const result = await saved.json().catch(function(){ return {}; });
+      if (!saved.ok) throw new Error(result.error || 'Settings could not be saved. Your draft is still here.');
+      payload = result.state || payload;
+    }
+    Object.assign(DB, payload);
+    transaction.base = copySettings(DB); transaction.payload = copySettings(leagueStatePayload()); transaction.typed = false;
+    setStored(DB_KEY, JSON.stringify(DB), true);
+    lastLocalChangeAt = Date.now();
+    if (transaction.actions.branding) {
+      const response = await fetch('/api/admin/team-branding', {method:'POST',credentials:'include',headers:{'content-type':'application/json'},body:JSON.stringify({teams:transaction.actions.branding})});
+      if (!response.ok) throw new Error('Settings saved, but the branding update failed. Press Save to retry.');
+      delete transaction.actions.branding;
+    }
+    if (transaction.actions.commits) {
+      await updateCommitsFromSheet();
+      if (UI.commitError) throw new Error('Settings saved, but commit sync failed: ' + UI.commitError);
+      delete transaction.actions.commits;
+    }
+    if (transaction.actions.backup) {
+      await runBackupNow();
+      if (UI.backupError) throw new Error('Settings saved, but backup failed: ' + UI.backupError);
+      delete transaction.actions.backup;
+    }
+    settingsDraft = null;
+    resetCommitFields();
+    UI.settingsStatus = 'Settings changes saved.';
+  } catch (error) { UI.settingsError = error.message || 'Save failed. Your draft is still here.'; }
+  finally { settingsSaving = false; render(); }
+}
+
 function saveDB(){
+  if (settingsDraft && !settingsSaving) return;
   lastLocalChangeAt = Date.now();
   setStored(DB_KEY, JSON.stringify(DB), true);
   queueRemoteSave();
@@ -778,6 +875,7 @@ function leagueStatePayload(){
 }
 
 function mergeLeagueState(state){
+  if (settingsDraft && !settingsSaving) return false;
   if (!state || typeof state !== 'object') return false;
   const before = JSON.stringify({
     offersByProspect: DB.offersByProspect,
@@ -804,6 +902,7 @@ function mergeLeagueState(state){
 }
 
 async function syncLeagueState(renderAfter, options){
+  if (settingsDraft && !settingsSaving) return false;
   if (!apiAvailable()) return false;
   options = options || {};
   if (!options.force && Date.now() - lastLocalChangeAt < 2500) return false;
@@ -831,6 +930,7 @@ function queueRemoteSave(){
 }
 
 async function saveDBRemote(){
+  if (settingsDraft && !settingsSaving) return;
   if (!apiAvailable()) return;
   const payload = leagueStatePayload();
   const localStamp = Date.now();
@@ -1150,13 +1250,16 @@ function loadClassData(raw){
 async function loadClassFile(file){
   if (file && /\.pdf$/i.test(file.name || '')) return loadTransferPdf(file);
   if (!file) return;
+  const draftAtStart = settingsDraft;
   const reader = new FileReader();
   reader.onload = function(){
+    if (draftAtStart && settingsDraft !== draftAtStart) return;
     UI.transferDraft = null;
     UI.classFileName = file.name || '';
     loadClassData(String(reader.result || ''));
   };
   reader.onerror = function(){
+    if (draftAtStart && settingsDraft !== draftAtStart) return;
     UI.classError = 'Could not read that CSV file. Try pasting the export instead.';
     render();
   };
@@ -1164,6 +1267,7 @@ async function loadClassFile(file){
 }
 
 async function loadTransferPdf(file){
+  const draftAtStart = settingsDraft;
   if (!canViewSettings() || recruitingStage() !== 'transfer') return;
   if (DB.wave1Released) { UI.classError = 'Reset the current class before replacing an open transfer board.'; render(); return; }
   UI.classError = null;
@@ -1176,7 +1280,7 @@ async function loadTransferPdf(file){
     const lines = await importer.extractTransferPdfLines(new Uint8Array(await file.arrayBuffer()));
     const schools = activeTeamBrands().flatMap(function(b){ return [b.region, b.abbrev, b.displayName].filter(Boolean); });
     const rows = importer.parseTransferLines(lines, schools);
-    if (recruitingStage() !== 'transfer') return;
+    if (recruitingStage() !== 'transfer' || (draftAtStart && settingsDraft !== draftAtStart)) return;
     UI.transferDraft = rows;
   } catch (e) { UI.classError = e.message || 'Could not read the transfer PDF.'; }
   finally { UI.transferLoading = false; render(); }
@@ -1224,6 +1328,7 @@ async function fileToText(file){
 }
 
 async function loadTeamBrandingFile(file){
+  const draftAtStart = settingsDraft;
   if (!file) return;
   UI.brandingFileName = file.name || '';
   UI.brandingError = null;
@@ -1231,6 +1336,7 @@ async function loadTeamBrandingFile(file){
   render();
   try {
     const text = await fileToText(file);
+    if (draftAtStart && settingsDraft !== draftAtStart) return;
     const data = JSON.parse(text);
     if (!data || !Array.isArray(data.teams)) throw new Error('No teams array found in that export.');
     const branding = Object.assign({}, DB.teamBranding || {});
@@ -1253,7 +1359,8 @@ async function loadTeamBrandingFile(file){
       count++;
     });
     DB.teamBranding = branding;
-    if (apiAvailable()){
+    if (settingsDraft && !settingsSaving && apiAvailable()) settingsDraft.actions.branding = activeBrands;
+    else if (apiAvailable()){
       const res = await fetch('/api/admin/team-branding', {
         method: 'POST',
         credentials: 'include',
@@ -1642,8 +1749,9 @@ async function applyManualCommitOverride(){
   prospect.commitTeam = team;
   applyConditionalRescinds();
   DB.commitUpdatedAt = Date.now();
-  UI.pendingCommitOverride = null;
+  resetCommitFields();
   UI.commitOverrideStatus = (recruitNumber(prospect) ? recruitNumber(prospect) + ' ' : '') + prospect.name + ' committed to ' + team + '.';
+  if (settingsDraft && !settingsSaving) UI.commitOverrideStatus += ' Pending Save settings changes.';
   await saveDBNow();
   render();
 }
@@ -1695,14 +1803,15 @@ async function clearManualCommitOverride(){
   prospect.commitTeam = '';
   applyConditionalRescinds();
   DB.commitUpdatedAt = Date.now();
-  UI.pendingClearCommit = null;
-  UI.commitOverrideTeam = '';
-  UI.commitOverrideStatus = 'Commitment cleared for #' + prospect.rank + ' ' + prospect.name + '.';
+  resetCommitFields();
+  UI.commitOverrideStatus = 'Commitment cleared for ' + prospect.name + '.';
+  if (settingsDraft && !settingsSaving) UI.commitOverrideStatus += ' Pending Save settings changes.';
   await saveDBNow();
   render();
 }
 
 async function updateCommitsFromSheet(){
+  if (queueSettingsAction('commits')) return;
   const input = document.getElementById('rb-commit-sheet-url');
   const rawUrl = (input ? input.value : DB.commitSheetUrl || '').trim();
   if (!apiAvailable() && !rawUrl){
@@ -1772,6 +1881,7 @@ async function loadBackupStatus(renderAfter){
 }
 
 async function runBackupNow(){
+  if (queueSettingsAction('backup')) return;
   if (!apiAvailable() || !canViewSettings() || UI.backingUp) return;
   UI.backingUp = true;
   UI.backupError = null;
@@ -1861,6 +1971,7 @@ function resetLoginFlow(){
 }
 
 async function logout(){
+  if (!canLeaveSettings('feed')) return;
   if (apiAvailable()) {
     try { await fetch('/api/auth/logout', { method: 'POST', credentials: 'include' }); } catch (e) {}
   }
@@ -1991,7 +2102,7 @@ function stageAccessLevelChange(discordId, accessLevel){
 }
 
 async function savePendingTeamChanges(){
-  if (!hasPendingTeamChanges()) return;
+  if (!hasPendingTeamChanges() && !hasSettingsChanges() && !settingsSaving) return;
   const pending = UI.teamPending || { unlinks: {}, switches: {}, roles: {} };
   UI.adminActionError = null;
   UI.adminActionStatus = 'Saving team changes...';
@@ -3781,7 +3892,8 @@ function renderProspectBoardCard(pid, searchAttr, context){
 }
 
 function renderClassSetup(){
-  let html = '';
+  beginSettingsDraft();
+  let html = '<div class="rb-settings-save"><div><strong>Settings</strong><p>Changes stay in draft until you save.</p>' + (UI.settingsStatus ? '<p role="status">' + escapeHtml(UI.settingsStatus) + '</p>' : '') + (UI.settingsError ? '<p role="alert" style="color:var(--alert)">' + escapeHtml(UI.settingsError) + '</p>' : '') + '</div><button class="rb-btn rb-btn-gold" id="rb-save-settings"' + (settingsSaving ? ' disabled' : '') + '>' + (settingsSaving ? 'Saving…' : 'Save settings changes') + '</button></div>';
   if (!canViewSettings()) return renderAccessDenied();
   const stage = recruitingStage();
   const stageConfig = recruitingStageConfig();
@@ -3848,8 +3960,8 @@ function renderClassSetup(){
   }
   html += '<div style="border-top:1px solid var(--hairline);margin-top:14px;padding-top:14px;">';
   html += '<div class="rb-mono" style="font-size:12px;color:var(--slate);margin-bottom:10px;">Manual commit override</div>';
-  if (recruitingStage() === 'transfer') html += '<p class="rb-transfer-limit">Choose a player by name. Select their new team to apply a commitment, or use Clear commit to remove it.</p>';
-  html += '<div class="rb-commit-override-grid">';
+  if (recruitingStage() === 'transfer') html += '<p class="rb-transfer-limit">Choose a player by name and use Apply or Clear commit to stage the change. Publish it with Save settings changes.</p>';
+  html += '<div class="rb-commit-override-grid' + (stage === 'transfer' ? ' rb-transfer-commit-controls' : '') + '">';
   html += recruitingStage() === 'transfer' ? '<select class="rb-input" id="rb-commit-override-rank" aria-label="Player"><option value="">Select player</option>' + Object.values(DB.prospects).sort(function(a,b){ return a.name.localeCompare(b.name); }).map(function(p){ return '<option value="' + p.rank + '"' + (String(UI.commitOverrideRank) === String(p.rank) ? ' selected' : '') + '>' + escapeHtml(p.name + (p.transferFrom ? ' — ' + p.transferFrom : '')) + '</option>'; }).join('') + '</select>' : '<input class="rb-input" id="rb-commit-override-rank" inputmode="numeric" placeholder="Rank" value="' + escapeHtml(UI.commitOverrideRank || '') + '" />';
   html += '<input class="rb-input" id="rb-commit-override-team" placeholder="Committed team" value="' + escapeHtml(UI.commitOverrideTeam || '') + '" list="rb-commit-override-team-options" />';
   html += '<button class="rb-btn rb-btn-gold" id="rb-apply-commit-override">Apply</button>';
@@ -3912,7 +4024,7 @@ function renderClassSetup(){
     html += '</div>';
     html += '</div>';
   }
-  return html;
+  return '<fieldset class="rb-settings-fields"' + (settingsSaving ? ' disabled' : '') + '>' + html + '</fieldset>';
 }
 
 function renderThread(){
@@ -4268,6 +4380,14 @@ function renderResetConfirmModal(){
 // ---------- Events ----------
 
 function bindEvents(){
+  const saveSettings = document.getElementById('rb-save-settings');
+  if (saveSettings) saveSettings.onclick = saveSettingsChanges;
+  const commitPlayerField = document.getElementById('rb-commit-override-rank');
+  if (commitPlayerField) commitPlayerField.onchange = function(){ UI.commitOverrideRank = commitPlayerField.value; };
+  const commitTeamField = document.getElementById('rb-commit-override-team');
+  if (commitTeamField) commitTeamField.oninput = function(){ UI.commitOverrideTeam = commitTeamField.value; };
+  const draftSheet = document.getElementById('rb-commit-sheet-url');
+  if (draftSheet && settingsDraft) draftSheet.oninput = function(){ settingsDraft.typed = true; DB.commitSheetUrl = draftSheet.value.trim(); };
   const backTopBtn = document.getElementById('rb-back-top');
   if (backTopBtn) backTopBtn.onclick = function(){ scrollPageTop(true); };
   updateBackTopControl();
@@ -4792,7 +4912,7 @@ applyRoute(routeFromPath(window.location.pathname));
 render();
 window.addEventListener('scroll', updateBackTopControl, { passive: true });
 window.addEventListener('popstate', function(){
-  if (!canLeaveTeamsPage()){
+  if (!canLeaveTeamsPage() || !canLeaveSettings(routeFromPath(window.location.pathname).view)){
     syncBrowserRoute(true);
     return;
   }
@@ -4802,7 +4922,7 @@ window.addEventListener('popstate', function(){
   scrollPageTop();
 });
 window.addEventListener('beforeunload', function(e){
-  if (!hasPendingTeamChanges()) return;
+  if (!hasPendingTeamChanges() && !hasSettingsChanges() && !settingsSaving) return;
   e.preventDefault();
   e.returnValue = '';
 });

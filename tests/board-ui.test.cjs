@@ -10,7 +10,7 @@ const script = page.match(/<script>([\s\S]*?)<\/script>/)[1];
 const boot = script.lastIndexOf('\napplyRoute(routeFromPath(window.location.pathname));');
 assert(boot > 0, 'The app bootstrap must be identifiable without executing network requests.');
 const source = script.slice(0, boot) + `
-  globalThis.app = { DB, UI, setTransferFilter, renderTransferFilters, renderClassSetup, requestManualCommitOverride, applyManualCommitOverride, requestClearCommit, clearManualCommitOverride, applyManualCommitOverrides, clearRecruitingBoard, findProspectFromSheetRow, transferCardStyle, parseFullClass, prospectFromRosterRow, confirmTransferImport, releaseSingleStageBoard, addOfferDirect, render, renderNav, navigateTo, setReady(){ dbReady = true; sessionReady = true; }, renderFeed, renderBoardSearchResults, renderTeamsPage,
+  globalThis.app = { DB, UI, beginSettingsDraft, hasSettingsChanges, canLeaveSettings, saveSettingsChanges, saveDBNow, leagueStatePayload, mergeSettingsValue, updateCommitsFromSheet, runBackupNow, setTransferFilter, renderTransferFilters, renderClassSetup, requestManualCommitOverride, applyManualCommitOverride, requestClearCommit, clearManualCommitOverride, applyManualCommitOverrides, clearRecruitingBoard, findProspectFromSheetRow, transferCardStyle, parseFullClass, prospectFromRosterRow, confirmTransferImport, releaseSingleStageBoard, addOfferDirect, render, renderNav, navigateTo, setReady(){ dbReady = true; sessionReady = true; }, renderFeed, renderBoardSearchResults, renderTeamsPage,
     renderThreadProspectList, renderProspectDetail, builtInTeamBranding, getTeamBranding, activeTeamBrands,
     mobileRecruitName, renderRecruitName, renderMyOffers, renderCommitsForTeam, renderTeamOffers, renderConditionalRescinds, renderRecruitValues, teamBorderColor, bindEvents, applyDefaultClassData, releaseWave1, releaseWave2,
     setSession(value){ SESSION = value; } };
@@ -413,6 +413,8 @@ test('transfer settings select players by name and apply/clear the selected comm
   await app.applyManualCommitOverride();
   assert.equal(app.DB.prospects.r2.commitTeam,'Michigan State');
   assert.equal(app.DB.manualCommitOverrides.r2.name,'Morgan Baker');
+  assert.equal(app.UI.commitOverrideRank,'');
+  assert.equal(app.UI.commitOverrideTeam,'');
   app.requestClearCommit();
   assert.equal(app.UI.pendingClearCommit.name,'Morgan Baker');
   await app.clearManualCommitOverride();
@@ -441,4 +443,73 @@ test('transfer sliders use fixed stops and only one eligibility filter at a time
   app.setTransferFilter('years',null);
   assert.equal(app.UI.transferGrade,'');
   assert.equal(app.UI.transferYears,'');
+});
+
+
+test('settings drafts make no writes and leaving can cancel or discard all changes', async () => {
+  const {app,context} = harness();
+  app.setSession({team:'Michigan State',accessLevel:'commissioner'});
+  app.UI.view='setup';
+  const original=app.DB.offersLocked;
+  app.beginSettingsDraft();
+  app.DB.offersLocked=!original;
+  let writes=0;
+  context.window.localStorage.setItem=()=>{writes++;};
+  context.window.location.protocol='https:';
+  context.fetch=()=>{throw Error('No requests allowed before Save');};
+  await app.saveDBNow();
+  await app.updateCommitsFromSheet();
+  await app.runBackupNow();
+  assert.equal(writes,0);
+  assert.equal(app.hasSettingsChanges(),true);
+  context.window.confirm=()=>false;
+  assert.equal(app.canLeaveSettings('feed'),false);
+  assert.equal(app.DB.offersLocked,!original);
+  context.window.confirm=()=>true;
+  app.UI.commitOverrideRank='1'; app.UI.commitOverrideTeam='Michigan State';
+  assert.equal(app.canLeaveSettings('feed'),true);
+  assert.equal(app.DB.offersLocked,original);
+  assert.equal(app.UI.commitOverrideRank,'');
+  assert.equal(app.UI.commitOverrideTeam,'');
+  assert.equal(writes,0);
+});
+
+test('Save settings is the write boundary and keeps drafts after a server failure', async () => {
+  const {app,context} = harness();
+  app.setSession({team:'Michigan State',accessLevel:'commissioner'});
+  app.UI.view='setup';
+  app.setReady();
+  app.beginSettingsDraft();
+  const live=JSON.parse(JSON.stringify(app.leagueStatePayload()));
+  app.DB.offersLocked=true;
+  context.window.location.protocol='https:';
+  let puts=0;
+  context.fetch=async(url,options={})=>{
+    if(options.method==='PUT') { puts++; return {ok:false,json:async()=>({error:'Test save failed'})}; }
+    return {ok:true,json:async()=>({state:live})};
+  };
+  await app.saveSettingsChanges();
+  assert.equal(puts,1);
+  assert.equal(app.hasSettingsChanges(),true);
+  assert.match(app.UI.settingsError,/Test save failed/);
+  context.fetch=async(url,options={})=>{
+    if(options.method==='PUT') { puts++; return {ok:true,json:async()=>({state:JSON.parse(options.body).state})}; }
+    return {ok:true,json:async()=>({state:live})};
+  };
+  await app.saveSettingsChanges();
+  assert.equal(puts,2);
+  assert.equal(app.hasSettingsChanges(),false);
+  assert.equal(app.DB.offersLocked,true);
+});
+
+test('settings merge preserves unrelated live changes and rejects conflicting edits', () => {
+  const {app}=harness();
+  const base={offersLocked:false,prospects:{r1:{commitTeam:''},r2:{commitTeam:''}}};
+  const draft={offersLocked:true,prospects:{r1:{commitTeam:''},r2:{commitTeam:''}}};
+  const live={offersLocked:false,prospects:{r1:{commitTeam:'UAB'},r2:{commitTeam:''}}};
+  const result=app.mergeSettingsValue(base,draft,live);
+  assert.equal(result.offersLocked,true);
+  assert.equal(result.prospects.r1.commitTeam,'UAB');
+  draft.prospects.r1.commitTeam='Michigan State';
+  assert.throws(()=>app.mergeSettingsValue(base,draft,live),/league changed/);
 });
