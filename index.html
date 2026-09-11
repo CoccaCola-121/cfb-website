@@ -3960,7 +3960,7 @@ function renderClassSetup(){
   }
   html += '<div style="border-top:1px solid var(--hairline);margin-top:14px;padding-top:14px;">';
   html += '<div class="rb-mono" style="font-size:12px;color:var(--slate);margin-bottom:10px;">Manual commit override</div>';
-  if (recruitingStage() === 'transfer') html += '<p class="rb-transfer-limit">Choose a player by name and use Apply or Clear commit to stage the change. Publish it with Save settings changes.</p>';
+  if (recruitingStage() === 'transfer') html += '<p class="rb-transfer-limit">Apply or clear a commitment, then save settings to publish.</p>';
   html += '<div class="rb-commit-override-grid' + (stage === 'transfer' ? ' rb-transfer-commit-controls' : '') + '">';
   html += recruitingStage() === 'transfer' ? '<select class="rb-input" id="rb-commit-override-rank" aria-label="Player"><option value="">Select player</option>' + Object.values(DB.prospects).sort(function(a,b){ return a.name.localeCompare(b.name); }).map(function(p){ return '<option value="' + p.rank + '"' + (String(UI.commitOverrideRank) === String(p.rank) ? ' selected' : '') + '>' + escapeHtml(p.name + (p.transferFrom ? ' — ' + p.transferFrom : '')) + '</option>'; }).join('') + '</select>' : '<input class="rb-input" id="rb-commit-override-rank" inputmode="numeric" placeholder="Rank" value="' + escapeHtml(UI.commitOverrideRank || '') + '" />';
   html += '<input class="rb-input" id="rb-commit-override-team" placeholder="Committed team" value="' + escapeHtml(UI.commitOverrideTeam || '') + '" list="rb-commit-override-team-options" />';
