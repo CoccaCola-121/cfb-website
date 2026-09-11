@@ -81,3 +81,19 @@ test('Discord transfer commits match player names and reject older-season messag
   applyDiscordCommits(state,[{prospectId:'r900',name:'Marquis Small',team:'Michigan State',timestamp:new Date(3000).toISOString()}]);
   assert.equal(state.prospects.r42.commitTeam,'Michigan State');
 });
+
+test('capitalized wrapped promise lines stay in the bold header until paragraph gap', () => {
+  const rows = parseTransferLines([
+    {text:'Raymond Molinari LB Appalachian State 47/63 SR 1 year left- Beat JMU and',font:'bold',height:12,y:700,page:1},
+    {text:'Georgia State yearly',font:'bold',height:12,y:686,page:1},
+    {text:'Raymond started his career as a happy man.',font:'regular',height:12,y:672,page:1},
+    {text:'Mike Milburn OL Appalachian State 42/58 SR 1 year left- Beat JMU and Georgia',font:'bold',height:12,y:630,page:1},
+    {text:'State yearly',font:'bold',height:12,y:616,page:1},
+    {text:'A new paragraph can also be bold.',font:'bold',height:12,y:588,page:1},
+    {text:'Continue the pitch here.',font:'regular',height:12,y:574,page:1},
+  ]);
+  assert.equal(rows[0].brokenPromise,'Beat JMU and Georgia State yearly');
+  assert.equal(rows[0].prompt,'Raymond started his career as a happy man.');
+  assert.equal(rows[1].brokenPromise,'Beat JMU and Georgia State yearly');
+  assert.equal(rows[1].prompt,'A new paragraph can also be bold. Continue the pitch here.');
+});

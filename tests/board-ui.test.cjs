@@ -10,7 +10,7 @@ const script = page.match(/<script>([\s\S]*?)<\/script>/)[1];
 const boot = script.lastIndexOf('\napplyRoute(routeFromPath(window.location.pathname));');
 assert(boot > 0, 'The app bootstrap must be identifiable without executing network requests.');
 const source = script.slice(0, boot) + `
-  globalThis.app = { DB, UI, renderClassSetup, requestManualCommitOverride, applyManualCommitOverride, requestClearCommit, clearManualCommitOverride, applyManualCommitOverrides, clearRecruitingBoard, findProspectFromSheetRow, transferCardStyle, parseFullClass, prospectFromRosterRow, confirmTransferImport, releaseSingleStageBoard, addOfferDirect, render, renderNav, navigateTo, setReady(){ dbReady = true; sessionReady = true; }, renderFeed, renderBoardSearchResults, renderTeamsPage,
+  globalThis.app = { DB, UI, setTransferFilter, renderTransferFilters, renderClassSetup, requestManualCommitOverride, applyManualCommitOverride, requestClearCommit, clearManualCommitOverride, applyManualCommitOverrides, clearRecruitingBoard, findProspectFromSheetRow, transferCardStyle, parseFullClass, prospectFromRosterRow, confirmTransferImport, releaseSingleStageBoard, addOfferDirect, render, renderNav, navigateTo, setReady(){ dbReady = true; sessionReady = true; }, renderFeed, renderBoardSearchResults, renderTeamsPage,
     renderThreadProspectList, renderProspectDetail, builtInTeamBranding, getTeamBranding, activeTeamBrands,
     mobileRecruitName, renderRecruitName, renderMyOffers, renderCommitsForTeam, renderTeamOffers, renderConditionalRescinds, renderRecruitValues, teamBorderColor, bindEvents, applyDefaultClassData, releaseWave1, releaseWave2,
     setSession(value){ SESSION = value; } };
@@ -384,8 +384,8 @@ test('transfer display hides rank numbers and searches eligibility with grade fi
   app.DB.recruitingStage = 'transfer';
   Object.assign(app.DB.prospects.r1,{grade:'RS JR',yearsLeft:2,transferFrom:'South Carolina'});
   const html=app.renderFeed();
-  assert.match(html,/id="rb-transfer-grade"/);
-  assert.match(html,/id="rb-transfer-years"/);
+  assert.match(html,/data-transfer-filter-mode="grade"/);
+  assert.match(html,/id="rb-transfer-slider"/);
   assert.doesNotMatch(html,/>#1<|placeholder="[^"]*rank/);
   app.UI.prospectId='r1';
   assert.doesNotMatch(app.renderProspectDetail(),/>#1 /);
@@ -421,4 +421,24 @@ test('transfer settings select players by name and apply/clear the selected comm
   elements['rb-commit-override-rank'].value='';
   app.requestClearCommit();
   assert.match(app.UI.commitOverrideError,/Select the player/);
+});
+
+
+test('transfer sliders use fixed stops and only one eligibility filter at a time', () => {
+  const {app} = harness();
+  app.setTransferFilter('years',4);
+  assert.equal(app.UI.transferYears,'4');
+  assert.equal(app.UI.transferGrade,'');
+  assert.match(app.renderTransferFilters(),/type="range" min="1" max="4"/);
+  app.setTransferFilter('grade',null);
+  assert.equal(app.UI.transferYears,'');
+  const html = app.renderTransferFilters();
+  assert.equal((html.match(/type="range"/g)||[]).length,1);
+  for(const grade of ['RS FR','SO','RS SO','JR','RS JR','SR','RS SR']) assert.ok(html.includes('>'+grade+'</span>'));
+  app.setTransferFilter('grade',4);
+  assert.equal(app.UI.transferGrade,'RS JR');
+  assert.equal(app.UI.transferYears,'');
+  app.setTransferFilter('years',null);
+  assert.equal(app.UI.transferGrade,'');
+  assert.equal(app.UI.transferYears,'');
 });

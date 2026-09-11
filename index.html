@@ -1288,7 +1288,7 @@ function clearRecruitingBoard(){
   DB.conditionalRescinds = [];
   DB.manualCommitOverrides = {};
   DB.commitSheetUrl = '';
-  UI.transferGrade = ''; UI.transferYears = '';
+  UI.transferGrade = ''; UI.transferYears = ''; UI.transferFilterMode = 'years';
   DB.commitUpdatedAt = null;
   DB.discordCommitUpdatedAt = null;
   DB.discordCommitChannelId = '';
@@ -3693,6 +3693,28 @@ function renderBoardSearchResults(query){
   return html || '<div class="rb-card" style="padding:28px;text-align:center;color:var(--slate);" role="status">No recruits match that search.</div>';
 }
 
+const TRANSFER_GRADES = ['RS FR', 'SO', 'RS SO', 'JR', 'RS JR', 'SR', 'RS SR'];
+
+function setTransferFilter(mode, value){
+  UI.transferFilterMode = mode === 'grade' ? 'grade' : 'years';
+  UI.transferGrade = ''; UI.transferYears = '';
+  if (value == null) return;
+  if (UI.transferFilterMode === 'grade') UI.transferGrade = TRANSFER_GRADES[Math.max(0, Math.min(6, Math.round(value)))] || '';
+  else UI.transferYears = String(Math.max(1, Math.min(4, Math.round(value))));
+}
+
+function transferFilterLabel(){
+  return UI.transferFilterMode === 'grade' ? (UI.transferGrade || 'All grades') : (UI.transferYears ? UI.transferYears + ' year' + (UI.transferYears === '1' ? '' : 's') + ' left' : 'All years');
+}
+
+function renderTransferFilters(){
+  const gradeMode = UI.transferFilterMode === 'grade';
+  const ticks = gradeMode ? TRANSFER_GRADES : ['1','2','3','4'];
+  const selected = gradeMode ? UI.transferGrade : UI.transferYears;
+  const value = gradeMode ? Math.max(0, TRANSFER_GRADES.indexOf(selected)) : (Number(selected) || 1);
+  return '<div class="rb-transfer-filters"><div class="rb-transfer-filter-heading"><div class="rb-segmented" aria-label="Filter by">' + [['years','Years left'],['grade','Grade']].map(function(item){ return '<button type="button" data-transfer-filter-mode="' + item[0] + '" aria-pressed="' + ((gradeMode ? 'grade' : 'years') === item[0]) + '">' + item[1] + '</button>'; }).join('') + '</div><button type="button" class="rb-transfer-filter-reset" id="rb-transfer-filter-reset">Show all</button></div><div class="rb-transfer-slider-heading"><label for="rb-transfer-slider">' + (gradeMode ? 'Grade' : 'Years left') + '</label><output id="rb-transfer-slider-value" for="rb-transfer-slider">' + transferFilterLabel() + '</output></div><input id="rb-transfer-slider" class="rb-transfer-slider" type="range" min="' + (gradeMode ? 0 : 1) + '" max="' + (gradeMode ? 6 : 4) + '" step="1" value="' + value + '" aria-valuetext="' + transferFilterLabel() + '" /><div class="rb-transfer-slider-ticks" style="--tick-count:' + ticks.length + '">' + ticks.map(function(tick,i){ return '<span data-transfer-slider-tick="' + (gradeMode ? i : i+1) + '" class="' + (selected && value === (gradeMode ? i : i+1) ? 'rb-transfer-tick-active' : '') + '">' + tick + '</span>'; }).join('') + '</div></div>';
+}
+
 function renderThreadProspectList(t){
   if (!t) return '<div style="color:var(--slate);">Thread not found.</div>';
   const filterKey = positionFilterKey('board', t.id);
@@ -3706,7 +3728,7 @@ function renderThreadProspectList(t){
   html += renderPositionCounts(visibleIds, function(pid){ return DB.prospects[pid] && DB.prospects[pid].position; }, filterKey);
   html += '<input class="rb-input" data-thread-search="' + t.id + '" placeholder="' + (recruitingStage() === 'transfer' ? 'Search transfers by name, school, grade or years left' : 'Search recruits by name, rank, hometown or school') + '" />';
   if (recruitingStage() === 'transfer') {
-    html += '<div class="rb-transfer-filters"><label>Grade<select class="rb-input" id="rb-transfer-grade"><option value="">All grades</option>' + Array.from(new Set(t.prospectIds.map(function(id){ return DB.prospects[id] && DB.prospects[id].grade || 'Not listed'; }))).map(function(grade){ return '<option' + (UI.transferGrade === grade ? ' selected' : '') + '>' + escapeHtml(grade) + '</option>'; }).join('') + '</select></label><label>Eligibility<select class="rb-input" id="rb-transfer-years"><option value="">Any years left</option>' + [1,2,3,4,5].map(function(years){ return '<option value="' + years + '"' + (String(UI.transferYears) === String(years) ? ' selected' : '') + '>' + years + ' year' + (years === 1 ? '' : 's') + ' left</option>'; }).join('') + '</select></label></div>';
+    html += '<div id="rb-transfer-filter-controls">' + renderTransferFilters() + '</div>';
   }
   const commitFilter = UI.boardCommitFilter || (UI.hideCommittedBoards ? 'uncommitted' : 'all');
   html += '<div class="rb-filter-row"><div class="rb-segmented" aria-label="Commit status filter">';
@@ -4499,7 +4521,26 @@ function bindEvents(){
     };
   });
 
-  [['rb-transfer-grade','transferGrade'],['rb-transfer-years','transferYears']].forEach(function(pair){ const input = document.getElementById(pair[0]); if (input) input.onchange = function(){ UI[pair[1]] = input.value; applyPositionListFilters('board'); }; });
+  function bindTransferFilters(){
+    const controls = document.getElementById('rb-transfer-filter-controls');
+    if (!controls) return;
+    function refresh(){ controls.innerHTML = renderTransferFilters(); bindTransferFilters(); applyPositionListFilters('board'); }
+    document.querySelectorAll('[data-transfer-filter-mode]').forEach(function(button){ button.onclick = function(){ setTransferFilter(button.getAttribute('data-transfer-filter-mode'), null); refresh(); }; });
+    const reset = document.getElementById('rb-transfer-filter-reset');
+    if (reset) reset.onclick = function(){ setTransferFilter(UI.transferFilterMode || 'years', null); refresh(); };
+    const slider = document.getElementById('rb-transfer-slider');
+    if (slider) slider.oninput = function(){
+      setTransferFilter(UI.transferFilterMode || 'years', Number(slider.value));
+      const label = transferFilterLabel();
+      slider.setAttribute('aria-valuetext', label);
+      const output = document.getElementById('rb-transfer-slider-value');
+      if (output) output.textContent = label;
+      document.querySelectorAll('[data-transfer-slider-tick]').forEach(function(tick){ tick.classList.toggle('rb-transfer-tick-active', Number(tick.getAttribute('data-transfer-slider-tick')) === Number(slider.value)); });
+      applyPositionListFilters('board');
+    };
+    if (slider) { slider.onchange = slider.oninput; slider.onclick = slider.oninput; }
+  }
+  bindTransferFilters();
   const myOfferSearch = document.getElementById('rb-my-offer-search');
   if (myOfferSearch) myOfferSearch.oninput = function(){
     applyPositionListFilters('offers');
