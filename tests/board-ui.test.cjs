@@ -513,3 +513,40 @@ test('settings merge preserves unrelated live changes and rejects conflicting ed
   draft.prospects.r1.commitTeam='Michigan State';
   assert.throws(()=>app.mergeSettingsValue(base,draft,live),/league changed/);
 });
+
+test('transfer position counts follow slider changes and restore on Show all', () => {
+  const {app, context, elements, results, getCards} = harness();
+  app.DB.recruitingStage = 'transfer';
+  Object.assign(app.DB.prospects.r1, {grade:'JR', yearsLeft:2});
+  Object.assign(app.DB.prospects.r2, {grade:'RS SO', yearsLeft:3});
+  const key = 'board:wave1';
+  const chips = ['QB','WR'].map(pos => {
+    const chip = element({'data-position-filter':key, 'data-position-bucket':pos});
+    chip.count = {};
+    chip.querySelector = () => chip.count;
+    return chip;
+  });
+  results.innerHTML = app.renderThreadProspectList(app.DB.threads[0]);
+  const original = context.document.querySelectorAll;
+  context.document.querySelectorAll = selector => selector === '[data-position-filter]' ? chips : original(selector);
+  elements['rb-transfer-filter-controls'] = element();
+  elements['rb-transfer-slider'] = element();
+  elements['rb-transfer-filter-reset'] = element();
+  app.bindEvents();
+  const counts = () => chips.map(chip => chip.count.textContent);
+  assert.deepEqual(counts(), ['1','1']);
+  app.setTransferFilter('grade',null);
+  elements['rb-transfer-slider'].value = '3';
+  elements['rb-transfer-slider'].oninput();
+  assert.deepEqual(counts(), ['1','0']);
+  elements['rb-transfer-slider'].value = '2';
+  elements['rb-transfer-slider'].oninput();
+  assert.deepEqual(counts(), ['0','1']);
+  assert.equal(getCards()[0].style.display,'none');
+  app.setTransferFilter('years',null);
+  elements['rb-transfer-slider'].value = '4';
+  elements['rb-transfer-slider'].oninput();
+  assert.deepEqual(counts(), ['0','0']);
+  elements['rb-transfer-filter-reset'].onclick();
+  assert.deepEqual(counts(), ['1','1']);
+});

@@ -4584,6 +4584,7 @@ function bindEvents(){
       if (filterKey && key !== filterKey) return;
       if (key.indexOf(kind + ':') === 0) activeKeys[key] = true;
     });
+    const filteredCounts = {};
     document.querySelectorAll(selector).forEach(function(card){
       const haystack = card.getAttribute('data-search') || '';
       const bucket = card.getAttribute('data-position-bucket') || '';
@@ -4594,8 +4595,17 @@ function bindEvents(){
       });
       const p = kind === 'board' && recruitingStage() === 'transfer' ? DB.prospects[card.getAttribute('data-open-prospect')] : null;
       const eligible = !p || ((!UI.transferGrade || (p.grade || 'Not listed') === UI.transferGrade) && (!UI.transferYears || String(p.yearsLeft) === String(UI.transferYears)));
-      card.style.display = (!q || haystack.indexOf(q) !== -1) && !hiddenByPosition && eligible ? '' : 'none';
+      const matches = (!q || haystack.indexOf(q) !== -1) && eligible;
+      if (matches) filteredCounts[bucket] = (filteredCounts[bucket] || 0) + 1;
+      card.style.display = matches && !hiddenByPosition ? '' : 'none';
     });
+    if (kind === 'board' && recruitingStage() === 'transfer') {
+      document.querySelectorAll('[data-position-filter]').forEach(function(chip){
+        if (!activeKeys[chip.getAttribute('data-position-filter')]) return;
+        const count = chip.querySelector('span');
+        if (count) count.textContent = String(filteredCounts[chip.getAttribute('data-position-bucket')] || 0);
+      });
+    }
   }
 
   document.querySelectorAll('[data-position-filter]').forEach(function(el){
