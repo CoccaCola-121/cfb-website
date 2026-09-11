@@ -539,8 +539,9 @@ function teamMatchesForQuery(query){
 function renderTeamLogo(brand){
   if (!brand || !brand.logoUrl) return '';
   const size = arguments.length > 1 ? Number(arguments[1]) : 22;
-  const imgSize = Math.max(14, size - 5);
-  return '<span style="width:' + size + 'px;height:' + size + 'px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;background:rgba(226,230,239,0.18);border:1px solid rgba(226,230,239,0.24);flex:0 0 auto;"><img src="' + escapeHtml(brand.logoUrl) + '" alt="" style="width:' + imgSize + 'px;height:' + imgSize + 'px;object-fit:contain;display:block;" /></span>';
+  // Fit the entire image box inside the circle, including square logo corners.
+  const imgSize = Math.floor((size - 2) / Math.SQRT2);
+  return '<span style="width:' + size + 'px;height:' + size + 'px;border-radius:50%;overflow:hidden;display:inline-flex;align-items:center;justify-content:center;background:rgba(226,230,239,0.18);border:1px solid rgba(226,230,239,0.24);flex:0 0 auto;"><img src="' + escapeHtml(brand.logoUrl) + '" alt="" style="width:' + imgSize + 'px;height:' + imgSize + 'px;object-fit:contain;display:block;" /></span>';
 }
 
 function renderLegacySchoolLine(legacySchool, extraStyle){
