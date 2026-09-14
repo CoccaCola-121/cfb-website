@@ -3566,7 +3566,7 @@ function renderMyOffers(){
       html += '<span class="rb-my-offer-actions" style="display:flex;align-items:center;justify-content:flex-end;gap:8px;white-space:nowrap;">' + (o.rescinded ? '<span class="rb-mono" style="color:var(--alert);font-size:12px;">rescinded</span>' : (p.commitTeam ? '<span class="rb-mono" style="color:var(--slate);font-size:12px;">committed</span>' : '<button class="rb-btn" data-edit-offer="' + escapeHtml(row.prospectId) + ':' + escapeHtml(o.id) + '">Edit</button><button class="rb-btn" data-rescind-offer="' + escapeHtml(row.prospectId) + ':' + escapeHtml(o.id) + '">Rescind</button>')) + '</span>';
       html += '<span class="rb-mobile-only rb-offer-expand" aria-hidden="true">' + renderArrow() + '</span>';
       html += '</summary>';
-      html += '<div style="margin-top:10px;">' + renderOfferBlock(o, p.commitTeam ? { collapsed: true } : { expanded: true }) + '</div>';
+      html += '<div style="margin-top:10px;">' + renderOfferBlock(o, p.commitTeam ? { collapsed: true, prospect: p } : { expanded: true, prospect: p }) + '</div>';
       html += '</details>';
       html += '</div>';
     });
@@ -3624,7 +3624,7 @@ function renderCommitsForTeam(team, title){
     html += '</summary>';
     html += '<div style="margin-top:12px;">';
     if (offers.length){
-      offers.forEach(function(o){ html += renderOfferBlock(o, { expanded: true, fullText: true, hideHeader: true }); });
+      offers.forEach(function(o){ html += renderOfferBlock(o, { prospect: p, expanded: true, fullText: true, hideHeader: true }); });
     } else {
       html += '<div style="font-size:13px;color:var(--slate);">No offer from your school is recorded for this commit.</div>';
     }
@@ -3681,7 +3681,7 @@ function renderTeamOffers(){
     '</span>';
     html += '<span style="display:flex;align-items:center;justify-content:flex-end;gap:8px;white-space:nowrap;">' + (o.rescinded ? '<span class="rb-mono" style="color:var(--alert);font-size:12px;">rescinded</span>' : visitBadges(o.visits, true)) + '</span>';
     html += '</summary>';
-    html += '<div style="margin-top:8px;">' + renderOfferBlock(o, { expanded: true }) + '</div>';
+    html += '<div style="margin-top:8px;">' + renderOfferBlock(o, { prospect: p, expanded: true }) + '</div>';
     html += '</details></div>';
   });
   html += '</div>';
@@ -3899,7 +3899,7 @@ function renderProspectBoardCard(pid, searchAttr, context){
   else if (!p.commitTeam) html += renderStorylineLine(p.storyline, 'margin-top:6px;');
   if (offers.length && !p.commitTeam){
     html += '<div style="margin-top:10px;border-top:1px solid var(--hairline);padding-top:10px;display:flex;flex-direction:column;gap:10px;">';
-    offers.forEach(function(o){ html += renderOfferBlock(o, { collapsed: true }); });
+    offers.forEach(function(o){ html += renderOfferBlock(o, { prospect: p, collapsed: true }); });
     html += '</div>';
   }
   html += '</div>';
@@ -4094,7 +4094,7 @@ function renderProspectDetail(){
     return html;
   }
   html += '<div style="display:flex;flex-direction:column;gap:12px;">';
-  offers.forEach(function(o){ html += renderOfferBlock(o, { expanded: true, fullText: true }); });
+  offers.forEach(function(o){ html += renderOfferBlock(o, { prospect: p, expanded: true, fullText: true }); });
   html += '</div>';
   return html;
 }
@@ -4102,10 +4102,11 @@ function renderProspectDetail(){
 function renderOfferBlock(o, opts){
   opts = opts || {};
   const badges = visitBadges(o.visits, !!opts.collapsed);
+  const wordCount = recruitingStage() === 'transfer' && !o.rescinded ? '<span class="rb-offer-word-count">' + NZCFLTransferRules.pitchWordCount(o.text, opts.prospect) + ' / 800 words</span>' : '';
   const header = '<div class="rb-offer-block-header" style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:' + (opts.collapsed ? 'nowrap' : 'wrap') + ';min-width:0;">' +
     '<span style="font-weight:600;font-size:13px;">' + escapeHtml(o.team) + '</span>' +
     '<span class="rb-offer-visit-wrap" style="display:flex;gap:6px;flex-wrap:' + (opts.collapsed ? 'nowrap' : 'wrap') + ';align-items:center;min-width:0;overflow:hidden;">' +
-      (badges || '') +
+      wordCount + (badges || '') +
       '<span class="rb-mono" style="font-size:11px;color:var(--slate);">' + escapeHtml(o.coach || '') + '</span>' +
     '</span>' +
   '</div>';
@@ -4117,6 +4118,7 @@ function renderOfferBlock(o, opts){
   } else {
     html += '<div style="background:var(--panel-alt);border-radius:8px;padding:10px 14px;">';
     if (!opts.hideHeader) html += header;
+    else html += wordCount;
   }
   if (o.rescinded){
     html += '<div style="margin-top:8px;"><span class="rb-tag" style="display:inline-block;margin:0;color:var(--alert);border-color:#6F1D1B;background:rgba(111,29,27,0.18);font-weight:600;">Rescinded</span></div>';

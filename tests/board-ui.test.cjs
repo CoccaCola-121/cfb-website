@@ -10,7 +10,7 @@ const script = page.match(/<script>([\s\S]*?)<\/script>/)[1];
 const boot = script.lastIndexOf('\napplyRoute(routeFromPath(window.location.pathname));');
 assert(boot > 0, 'The app bootstrap must be identifiable without executing network requests.');
 const source = script.slice(0, boot) + `
-  globalThis.app = { DB, UI, renderRescindFilterFields, renderVisitLedger, visibleBoardProspectIds, setRecruitingStage, requestReset, approveDangerReset, beginSettingsDraft, hasSettingsChanges, canLeaveSettings, saveSettingsChanges, saveDBNow, leagueStatePayload, mergeSettingsValue, updateCommitsFromSheet, runBackupNow, setTransferFilter, renderTransferFilters, renderClassSetup, requestManualCommitOverride, applyManualCommitOverride, requestClearCommit, clearManualCommitOverride, applyManualCommitOverrides, clearRecruitingBoard, findProspectFromSheetRow, transferCardStyle, parseFullClass, prospectFromRosterRow, confirmTransferImport, releaseSingleStageBoard, addOfferDirect, render, renderNav, navigateTo, setReady(){ dbReady = true; sessionReady = true; }, renderFeed, renderBoardSearchResults, renderTeamsPage,
+  globalThis.app = { DB, UI, renderOfferBlock, renderRescindFilterFields, renderVisitLedger, visibleBoardProspectIds, setRecruitingStage, requestReset, approveDangerReset, beginSettingsDraft, hasSettingsChanges, canLeaveSettings, saveSettingsChanges, saveDBNow, leagueStatePayload, mergeSettingsValue, updateCommitsFromSheet, runBackupNow, setTransferFilter, renderTransferFilters, renderClassSetup, requestManualCommitOverride, applyManualCommitOverride, requestClearCommit, clearManualCommitOverride, applyManualCommitOverrides, clearRecruitingBoard, findProspectFromSheetRow, transferCardStyle, parseFullClass, prospectFromRosterRow, confirmTransferImport, releaseSingleStageBoard, addOfferDirect, render, renderNav, navigateTo, setReady(){ dbReady = true; sessionReady = true; }, renderFeed, renderBoardSearchResults, renderTeamsPage,
     renderThreadProspectList, renderProspectDetail, builtInTeamBranding, getTeamBranding, activeTeamBrands,
     mobileRecruitName, renderRecruitName, renderMyOffers, renderCommitsForTeam, renderTeamOffers, renderConditionalRescinds, renderRecruitValues, teamBorderColor, bindEvents, applyDefaultClassData, releaseWave1, releaseWave2,
     setSession(value){ SESSION = value; } };
@@ -599,4 +599,21 @@ test('stage controls and own offer filtering match each recruiting stage', () =>
     app.UI.boardCommitFilter = 'committed';
     assert.equal(app.visibleBoardProspectIds(app.DB.threads[0]).length,0);
   }
+});
+
+test('public transfer offer counts exclude headers and update with pitch text', () => {
+  const {app} = harness();
+  app.DB.recruitingStage = 'transfer';
+  const prospect = {name:'Bob Jones'};
+  const offer = {team:'Michigan State',text:'Michigan State offers Bob Jones\nScholarship\nHello Bob'};
+  for (const opts of [{collapsed:true},{expanded:true},{hideHeader:true}]) {
+    assert.match(app.renderOfferBlock(offer,{...opts,prospect}),/2 \/ 800 words/);
+  }
+  offer.text += ' welcome';
+  assert.match(app.renderOfferBlock(offer,{prospect}),/3 \/ 800 words/);
+  offer.rescinded = true;
+  assert.doesNotMatch(app.renderOfferBlock(offer,{prospect}),/800 words/);
+  offer.rescinded = false;
+  app.DB.recruitingStage = 'hs';
+  assert.doesNotMatch(app.renderOfferBlock(offer,{prospect}),/800 words/);
 });

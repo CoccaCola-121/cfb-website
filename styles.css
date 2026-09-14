@@ -687,3 +687,5 @@ html { scrollbar-gutter: stable; }
 .rb-board-status-filters .rb-segmented { display:grid; grid-template-columns:minmax(0,1fr) 48px minmax(0,1fr); width:100%; box-sizing:border-box; }
 .rb-board-status-filters .rb-segmented button { min-width:0; padding-left:8px; padding-right:8px; }
 @media (max-width:720px) { .rb-board-status-filters { width:100%; align-items:stretch; } }
+
+.rb-offer-word-count { color:var(--slate); font-size:11px; white-space:nowrap; font-variant-numeric:tabular-nums; }
