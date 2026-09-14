@@ -97,3 +97,12 @@ test('capitalized wrapped promise lines stay in the bold header until paragraph 
   assert.equal(rows[1].brokenPromise,'Beat JMU and Georgia State yearly');
   assert.equal(rows[1].prompt,'A new paragraph can also be bold. Continue the pitch here.');
 });
+
+test('PDF headers accept dotted mixed-case grades and normalize slider grades', () => {
+  for (const [input, expected] of [['So.','SO'],['Jr.','JR'],['RS So.','RS SO'],['RSSr.','RS SR']]) {
+    const [row] = parseTransferLines([{text:`Jake Hollis DL Alabama 41/65 ${input} 3 years left- Coach won’t leave`,font:'bold'}, {text:'Jake wants a fresh start.',font:'regular'}]);
+    assert.equal(row.grade,expected);
+    assert.equal(row.brokenPromise,'Coach won’t leave');
+    assert.equal(row.yearsLeft,3);
+  }
+});

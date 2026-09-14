@@ -1250,6 +1250,7 @@ function loadClassData(raw){
 async function loadClassFile(file){
   if (file && /\.pdf$/i.test(file.name || '')) return loadTransferPdf(file);
   if (!file) return;
+  if (recruitingStage() === 'transfer') { UI.classError = 'Upload the transfer class as a PDF.'; render(); return; }
   const draftAtStart = settingsDraft;
   const reader = new FileReader();
   reader.onload = function(){
@@ -1411,13 +1412,13 @@ function clearRecruitingBoard(){
   UI.lastSummary = null;
 }
 
+// Temporarily allow one commissioner to confirm destructive actions during testing.
+const REQUIRED_DANGER_APPROVALS = 1;
+
 function setRecruitingStage(stage){
+  if (!canUseDangerZone()) return;
   if (!RECRUITING_STAGES[stage] || stage === recruitingStage()) return;
-  const currentHasBoard = DB.fullRoster.length || Object.keys(DB.prospects || {}).length || DB.threads.length || Object.keys(DB.offersByProspect || {}).length;
-  if (currentHasBoard && !window.confirm('Switch recruiting stage? This clears the current board and offers because stages do not overlap.')) return;
-  clearRecruitingBoard();
-  DB.recruitingStage = stage;
-  saveDB(); render();
+  requestReset('stage:' + stage);
 }
 
 function releaseSingleStageBoard(){
@@ -2843,7 +2844,7 @@ async function approveDangerReset(){
   };
   DB.dangerApprovals[kind] = current;
   const approvals = Object.keys(current.approvals);
-  if (approvals.length < 2){
+  if (approvals.length < REQUIRED_DANGER_APPROVALS){
     await saveDBNow();
     render();
     return;
@@ -2852,7 +2853,13 @@ async function approveDangerReset(){
 }
 
 async function confirmReset(){
-  if (UI.confirmReset === 'offers'){
+  if (!canUseDangerZone()) return;
+  if (UI.confirmReset && UI.confirmReset.startsWith('stage:')) {
+    const stage = UI.confirmReset.slice(6);
+    if (!RECRUITING_STAGES[stage]) return;
+    clearRecruitingBoard();
+    DB.recruitingStage = stage;
+  } else if (UI.confirmReset === 'offers'){
     DB.offersByProspect = {};
     DB.unmatched = [];
     DB.conditionalRescinds = [];
@@ -3917,10 +3924,10 @@ function renderClassSetup(){
   });
   html += '</div>';
   html += '<div class="rb-h" style="font-size:18px;margin-bottom:14px;">' + escapeHtml(stageConfig.setupLabel) + '</div>';
-  html += '<div class="rb-mono" style="font-size:12px;color:var(--slate);margin-bottom:12px;">' + (stageConfig.usesDefaultClass ? 'Default: ' + escapeHtml(DEFAULT_CLASS_NAME) : (stage === 'transfer' ? 'Upload the transfer PDF, review the extracted players, then open the board. CSV is also supported.' : 'Upload this stage&apos;s player CSV before opening the board.')) + '</div>';
-  html += '<input class="rb-file-input" type="file" id="rb-class-file" accept="' + (stage === 'transfer' ? '.pdf,application/pdf,' : '') + '.csv,text/csv"' + (UI.transferLoading ? ' disabled' : '') + ' />';
+  html += '<div class="rb-mono" style="font-size:12px;color:var(--slate);margin-bottom:12px;">' + (stageConfig.usesDefaultClass ? 'Default: ' + escapeHtml(DEFAULT_CLASS_NAME) : (stage === 'transfer' ? 'Upload the transfer PDF, review the extracted players, then open the board.' : 'Upload this stage&apos;s player CSV before opening the board.')) + '</div>';
+  html += '<input class="rb-file-input" type="file" id="rb-class-file" accept="' + (stage === 'transfer' ? '.pdf,application/pdf' : '.csv,text/csv') + '"' + (UI.transferLoading ? ' disabled' : '') + ' />';
   html += '<label class="rb-file-label" for="rb-class-file">Upload class file</label>';
-  html += '<span class="rb-mono" style="font-size:12px;color:var(--slate);margin-left:10px;">' + escapeHtml(UI.classFileName || (DB.fullRoster.length ? (stageConfig.usesDefaultClass && DB.defaultClassLoaded ? DEFAULT_CLASS_NAME : stageConfig.label + ' CSV') : 'No file selected')) + '</span>';
+  html += '<span class="rb-mono" style="font-size:12px;color:var(--slate);margin-left:10px;">' + escapeHtml(UI.classFileName || (DB.fullRoster.length ? (stageConfig.usesDefaultClass && DB.defaultClassLoaded ? DEFAULT_CLASS_NAME : stageConfig.label + (stage === 'transfer' ? ' PDF' : ' CSV')) : 'No file selected')) + '</span>';
   if (stage === 'transfer') html += renderTransferImportPreview();
   if (UI.classError) html += '<div style="font-size:12px;color:var(--alert);margin-top:8px;">' + escapeHtml(UI.classError) + '</div>';
   html += '</div>';
@@ -4021,7 +4028,7 @@ function renderClassSetup(){
     html += '<div class="rb-h" style="font-size:14px;margin-bottom:12px;color:#FFF2F1;">Danger Zone</div>';
     html += '<div style="display:flex;gap:10px;flex-wrap:wrap;">';
     html += '<button class="rb-btn rb-btn-danger" data-reset-request="offers">Reset all offers</button>';
-    html += '<button class="rb-btn rb-btn-danger" data-reset-request="class">Reset CSV file</button>';
+    html += '<button class="rb-btn rb-btn-danger" data-reset-request="class">Reset class file</button>';
     html += '</div>';
     html += '</div>';
   }
@@ -4355,19 +4362,20 @@ function renderTeamAdminModal(){
 
 function renderResetConfirmModal(){
   const isClass = UI.confirmReset === 'class';
-  const title = isClass ? 'Reset CSV file?' : 'Reset all offers?';
-  const body = isClass ?
+  const isStage = UI.confirmReset && UI.confirmReset.startsWith('stage:');
+  const title = isStage ? 'Switch recruiting stage?' : isClass ? 'Reset class file?' : 'Reset all offers?';
+  const body = isStage ? 'This will clear the current class, board and offers to switch to ' + RECRUITING_STAGES[UI.confirmReset.slice(6)].label + '. Save settings changes to publish.' : isClass ?
     'This will remove the loaded class, all prospect boards, all offers, rescinded offers, visits, and unmatched review items.' :
     'This will remove every posted offer, rescinded offer, visit usage record, and unmatched review item while keeping the loaded class and boards.';
   const approvals = dangerApprovalList(UI.confirmReset);
-  const hasApproved = !!(SESSION && approvals.some(function(row){ return row.discordId === SESSION.discordId; }));
-  const btn = approvals.length >= 1 && !hasApproved ? 'Approve and execute' : (hasApproved ? 'Approved' : 'Approve reset');
+  const hasApproved = REQUIRED_DANGER_APPROVALS > 1 && !!(SESSION && approvals.some(function(row){ return row.discordId === SESSION.discordId; }));
+  const btn = REQUIRED_DANGER_APPROVALS === 1 ? 'Confirm change' : approvals.length >= 1 && !hasApproved ? 'Approve and execute' : (hasApproved ? 'Approved' : 'Approve reset');
   return '<div style="position:fixed;inset:0;background:rgba(0,0,0,0.68);display:flex;align-items:center;justify-content:center;z-index:60;">' +
     '<div class="rb-card" style="padding:24px;width:520px;max-width:90vw;border-color:#B33A32;">' +
       '<div class="rb-h" style="font-size:18px;margin-bottom:8px;color:#FFF2F1;">' + escapeHtml(title) + '</div>' +
       '<div style="font-size:13px;color:var(--slate);line-height:1.5;margin-bottom:18px;">' + escapeHtml(body) + '</div>' +
       '<div class="rb-card" style="padding:10px 12px;margin-bottom:14px;background:var(--ink);">' +
-        '<div class="rb-mono" style="font-size:12px;color:var(--gold);margin-bottom:6px;">Commissioner approvals: ' + approvals.length + '/2</div>' +
+        '<div class="rb-mono" style="font-size:12px;color:var(--gold);margin-bottom:6px;">Commissioner approvals: ' + approvals.length + '/' + REQUIRED_DANGER_APPROVALS + '</div>' +
         (approvals.length ? approvals.map(function(row){ return '<div style="font-size:12px;color:var(--slate);">' + escapeHtml(row.name || row.team || 'Commissioner') + '</div>'; }).join('') : '<div style="font-size:12px;color:var(--slate);">No commissioner has approved this yet.</div>') +
       '</div>' +
       '<div style="display:flex;justify-content:flex-end;gap:8px;flex-wrap:wrap;">' +

@@ -25,15 +25,15 @@ export async function extractTransferPdfLines(data) {
 }
 
 const positionPattern = /\s(QB|RB|FB|WR|TE|OL|OT|OG|C|DL|DE|DT|LB|ILB|OLB|CB|DB|FS|SS|S|K|P)(?=\s|[-–—]|$)/;
-const headerPattern = /^(.*?)\s+(\d{1,2})\s*\/\s*(\d{1,2})\s+((?:RS\s*)?(?:FR|SO|JR|SR)\s+)?(\d)\s*(?:years?|yrs?)\s+left\s*[-–—:]\s*(.*)$/i;
+const headerPattern = /^(.*?)\s+(\d{1,2})\s*\/\s*(\d{1,2})\s+((?:RS\s*)?(?:FR|SO|JR|SR)\.?\s+)?(\d)\s*(?:years?|yrs?)\s+left\s*[-–—:]\s*(.*)$/i;
 
 function parseHeader(text, schools) {
   const m = text.match(headerPattern);
   if (!m) return null;
   let identity = m[1].trim();
-  let grade = (m[4] || '').trim().toUpperCase();
+  let grade = (m[4] || '').replace(/\./g, '').trim().toUpperCase().replace(/^RS\s*/, 'RS ');
   // Some exports place grade before OVR/POT.
-  identity = identity.replace(/\s+((?:RS\s*)?(?:FR|SO|JR|SR))$/i, (_, value) => { grade = value.toUpperCase(); return ''; });
+  identity = identity.replace(/\s+((?:RS\s*)?(?:FR|SO|JR|SR)\.?)$/i, (_, value) => { grade = value.replace(/\./g, '').toUpperCase().replace(/^RS\s*/, 'RS '); return ''; });
   const position = identity.match(positionPattern);
   if (!position) throw new Error('Position could not be read: ' + text);
   const before = identity.slice(0, position.index).trim();

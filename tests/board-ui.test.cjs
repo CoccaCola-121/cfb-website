@@ -10,7 +10,7 @@ const script = page.match(/<script>([\s\S]*?)<\/script>/)[1];
 const boot = script.lastIndexOf('\napplyRoute(routeFromPath(window.location.pathname));');
 assert(boot > 0, 'The app bootstrap must be identifiable without executing network requests.');
 const source = script.slice(0, boot) + `
-  globalThis.app = { DB, UI, beginSettingsDraft, hasSettingsChanges, canLeaveSettings, saveSettingsChanges, saveDBNow, leagueStatePayload, mergeSettingsValue, updateCommitsFromSheet, runBackupNow, setTransferFilter, renderTransferFilters, renderClassSetup, requestManualCommitOverride, applyManualCommitOverride, requestClearCommit, clearManualCommitOverride, applyManualCommitOverrides, clearRecruitingBoard, findProspectFromSheetRow, transferCardStyle, parseFullClass, prospectFromRosterRow, confirmTransferImport, releaseSingleStageBoard, addOfferDirect, render, renderNav, navigateTo, setReady(){ dbReady = true; sessionReady = true; }, renderFeed, renderBoardSearchResults, renderTeamsPage,
+  globalThis.app = { DB, UI, setRecruitingStage, requestReset, approveDangerReset, beginSettingsDraft, hasSettingsChanges, canLeaveSettings, saveSettingsChanges, saveDBNow, leagueStatePayload, mergeSettingsValue, updateCommitsFromSheet, runBackupNow, setTransferFilter, renderTransferFilters, renderClassSetup, requestManualCommitOverride, applyManualCommitOverride, requestClearCommit, clearManualCommitOverride, applyManualCommitOverrides, clearRecruitingBoard, findProspectFromSheetRow, transferCardStyle, parseFullClass, prospectFromRosterRow, confirmTransferImport, releaseSingleStageBoard, addOfferDirect, render, renderNav, navigateTo, setReady(){ dbReady = true; sessionReady = true; }, renderFeed, renderBoardSearchResults, renderTeamsPage,
     renderThreadProspectList, renderProspectDetail, builtInTeamBranding, getTeamBranding, activeTeamBrands,
     mobileRecruitName, renderRecruitName, renderMyOffers, renderCommitsForTeam, renderTeamOffers, renderConditionalRescinds, renderRecruitValues, teamBorderColor, bindEvents, applyDefaultClassData, releaseWave1, releaseWave2,
     setSession(value){ SESSION = value; } };
@@ -549,4 +549,22 @@ test('transfer position counts follow slider changes and restore on Show all', (
   assert.deepEqual(counts(), ['0','0']);
   elements['rb-transfer-filter-reset'].onclick();
   assert.deepEqual(counts(), ['1','1']);
+});
+
+ test('one commissioner can stage resets and stage switches while coaches cannot', async () => {
+  const {app} = harness();
+  app.setRecruitingStage('transfer');
+  assert.ok(!app.UI.confirmReset);
+  app.setSession({accessLevel:'commissioner',discordId:'test'});
+  app.beginSettingsDraft();
+  app.setRecruitingStage('transfer');
+  assert.equal(app.UI.confirmReset,'stage:transfer');
+  await app.approveDangerReset();
+  assert.equal(app.DB.recruitingStage,'transfer');
+  assert.equal(Object.keys(app.DB.prospects).length,0);
+  assert.equal(app.hasSettingsChanges(),true);
+  app.DB.offersByProspect = {r1:[{team:'Test'}]};
+  app.requestReset('offers');
+  await app.approveDangerReset();
+  assert.equal(Object.keys(app.DB.offersByProspect).length,0);
 });
