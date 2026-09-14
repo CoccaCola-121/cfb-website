@@ -620,7 +620,7 @@ button, a, input, select, textarea, summary { -webkit-tap-highlight-color: trans
 .rb-transfer-origin { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: 14px; }
 .rb-transfer-eligibility { color: var(--slate); margin-left: auto; font-size: 13px; }
 .rb-transfer-promise { margin: 12px 0; color: var(--slate); font-size: 13px; line-height: 1.6; overflow-wrap: anywhere; }
-.rb-transfer-promise > strong, .rb-transfer-prompt > strong { display: block; color: var(--chalk); font-size: 12px; font-weight: 600; margin-bottom: 4px; }
+.rb-transfer-promise > strong { display: inline; color: var(--chalk); font-size: inherit; font-weight: 600; }
 .rb-transfer-prompt p { margin: 0; font-size: 14px; line-height: 1.75; white-space: pre-wrap; overflow-wrap: anywhere; }
 .rb-transfer-prompt-preview p { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
 .rb-transfer-read { display: block; margin-top: 10px; color: var(--slate); font-size: 12px; }
@@ -673,4 +673,4 @@ html { scrollbar-gutter: stable; }
 
 @media (max-width:720px) { .rb-transfer-commit-controls > .rb-input { font-size:16px; } }
 
-.rb-transfer-origin-label { color:var(--slate); font-size:11px; margin-right:4px; }
+.rb-transfer-origin-label { color:var(--slate); font-size:inherit; margin-right:2px; }
