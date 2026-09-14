@@ -4069,7 +4069,7 @@ function renderProspectDetail(){
   html += '<div style="display:flex;align-items:center;justify-content:flex-end;gap:10px;flex-wrap:wrap;">' +
     (SESSION && !p.commitTeam ? (sessionOffer ? '<button class="rb-btn" disabled title="Your team already has an offer on this recruit">Offer submitted</button>' : (DB.offersLocked ? '<button class="rb-btn" disabled title="Offers are locked">Offers locked</button>' : '<button class="rb-btn rb-btn-gold" data-open-submit="' + escapeHtml(p.id) + '">Submit offer</button>')) : '') +
     (p.commitTeam ? renderCommittedTag(p.commitTeam, true, { view: 'prospect', prospectId: p.id, label: p.name }) : '') +
-    '<span>' + (recruitingStage() === 'transfer' ? '<span class="rb-tag">Transfer</span>' : starsOrLabel(p.stars)) + '</span></div>';
+    (recruitingStage() === 'transfer' ? '' : '<span>' + starsOrLabel(p.stars) + '</span>') + '</div>';
   html += '</div>';
   if (recruitingStage() === 'transfer') html += renderTransferProfile(p, true);
   else html += renderStorylineLine(p.storyline, 'margin-top:8px;');
