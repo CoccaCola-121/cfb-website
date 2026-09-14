@@ -10,7 +10,7 @@ const script = page.match(/<script>([\s\S]*?)<\/script>/)[1];
 const boot = script.lastIndexOf('\napplyRoute(routeFromPath(window.location.pathname));');
 assert(boot > 0, 'The app bootstrap must be identifiable without executing network requests.');
 const source = script.slice(0, boot) + `
-  globalThis.app = { DB, UI, setRecruitingStage, requestReset, approveDangerReset, beginSettingsDraft, hasSettingsChanges, canLeaveSettings, saveSettingsChanges, saveDBNow, leagueStatePayload, mergeSettingsValue, updateCommitsFromSheet, runBackupNow, setTransferFilter, renderTransferFilters, renderClassSetup, requestManualCommitOverride, applyManualCommitOverride, requestClearCommit, clearManualCommitOverride, applyManualCommitOverrides, clearRecruitingBoard, findProspectFromSheetRow, transferCardStyle, parseFullClass, prospectFromRosterRow, confirmTransferImport, releaseSingleStageBoard, addOfferDirect, render, renderNav, navigateTo, setReady(){ dbReady = true; sessionReady = true; }, renderFeed, renderBoardSearchResults, renderTeamsPage,
+  globalThis.app = { DB, UI, renderRescindFilterFields, renderVisitLedger, visibleBoardProspectIds, setRecruitingStage, requestReset, approveDangerReset, beginSettingsDraft, hasSettingsChanges, canLeaveSettings, saveSettingsChanges, saveDBNow, leagueStatePayload, mergeSettingsValue, updateCommitsFromSheet, runBackupNow, setTransferFilter, renderTransferFilters, renderClassSetup, requestManualCommitOverride, applyManualCommitOverride, requestClearCommit, clearManualCommitOverride, applyManualCommitOverrides, clearRecruitingBoard, findProspectFromSheetRow, transferCardStyle, parseFullClass, prospectFromRosterRow, confirmTransferImport, releaseSingleStageBoard, addOfferDirect, render, renderNav, navigateTo, setReady(){ dbReady = true; sessionReady = true; }, renderFeed, renderBoardSearchResults, renderTeamsPage,
     renderThreadProspectList, renderProspectDetail, builtInTeamBranding, getTeamBranding, activeTeamBrands,
     mobileRecruitName, renderRecruitName, renderMyOffers, renderCommitsForTeam, renderTeamOffers, renderConditionalRescinds, renderRecruitValues, teamBorderColor, bindEvents, applyDefaultClassData, releaseWave1, releaseWave2,
     setSession(value){ SESSION = value; } };
@@ -580,5 +580,23 @@ test('only high school settings expose commit sheets; all stages retain manual o
     assert.ok(html.includes('id="rb-apply-commit-override"'));
     assert.equal(html.includes('id="rb-update-commits"'),stage === 'hs');
     assert.ok(!html.includes('or published CSV URL'));
+  }
+});
+
+test('stage controls and own offer filtering match each recruiting stage', () => {
+  for (const stage of ['hs','transfer','cpr']) {
+    const {app} = harness();
+    app.DB.recruitingStage = stage;
+    const fields = app.renderRescindFilterFields('test',true);
+    assert.equal(fields.includes('test-stars'),stage === 'hs');
+    assert.equal(fields.includes('test-rank-value'),stage !== 'transfer');
+    assert.equal(app.renderVisitLedger() === '',stage !== 'hs');
+    app.DB.offersByProspect = {r1:[{team:'Michigan State'}],r2:[{team:'Michigan State',rescinded:true},{team:'Alabama'}]};
+    app.UI.boardOfferFilter = 'offered';
+    assert.deepEqual(Array.from(app.visibleBoardProspectIds(app.DB.threads[0])),['r1']);
+    app.UI.boardOfferFilter = 'unoffered';
+    assert.deepEqual(Array.from(app.visibleBoardProspectIds(app.DB.threads[0])),['r2']);
+    app.UI.boardCommitFilter = 'committed';
+    assert.equal(app.visibleBoardProspectIds(app.DB.threads[0]).length,0);
   }
 });

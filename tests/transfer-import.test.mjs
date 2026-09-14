@@ -120,3 +120,11 @@ test('transfer Discord announcements resolve bold role mentions and numeric team
     assert.equal(applyDiscordCommits(state,commits).updated,0);
   }
 });
+
+test('a standalone Scholarship line is part of a valid offer header only', () => {
+  const p = {name:'Bob Jones'};
+  assert.equal(pitchWordCount('Michigan State offers Bob Jones\nScholarship\nHello Bob',p),2);
+  assert.equal(pitchWordCount('Michigan State offers Bob Jones\n\nScholarship\nHello Bob',p),2);
+  assert.equal(pitchWordCount('Scholarship\nHello Bob',p),3);
+  assert.equal(pitchWordCount('Michigan State offers Bob Jones\nScholarship players matter',p),3);
+});

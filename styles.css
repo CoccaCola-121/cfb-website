@@ -676,3 +676,8 @@ html { scrollbar-gutter: stable; }
 .rb-transfer-origin-label { color:var(--slate); font-size:inherit; margin-right:2px; }
 
 .rb-rescind-center { margin-top:16px; }
+
+.rb-board-status-filters { display:flex; flex-direction:column; align-items:flex-end; gap:8px; margin-left:auto; margin-top:12px; }
+.rb-board-status-filters .rb-filter-row { margin:0; }
+.rb-transfer-filter-row > .rb-board-status-filters { margin-top:0; }
+@media (max-width:720px) { .rb-board-status-filters { align-items:flex-start; margin-left:0; } }

@@ -136,6 +136,7 @@ function resetBoardFilters(){
     });
   }
   UI.boardCommitFilter = 'all';
+  UI.boardOfferFilter = 'all';
   UI.hideCommittedBoards = false;
 }
 
@@ -632,6 +633,9 @@ function visibleBoardProspectIds(t){
     const p = DB.prospects[pid];
     const filter = UI.boardCommitFilter || (UI.hideCommittedBoards ? 'uncommitted' : 'all');
     if (!p) return false;
+    const offered = !!(SESSION && (DB.offersByProspect[pid] || []).some(function(o){ return o.team === SESSION.team && !o.rescinded; }));
+    if (UI.boardOfferFilter === 'offered' && !offered) return false;
+    if (UI.boardOfferFilter === 'unoffered' && offered) return false;
     if (filter === 'committed') return !!p.commitTeam;
     if (filter === 'uncommitted') return !p.commitTeam;
     return true;
@@ -3114,6 +3118,7 @@ function renderUnmatchedReview(){
 }
 
 function renderVisitLedger(){
+  if (recruitingStage() !== 'hs') return '';
   const usage = getTeamVisitUsage();
   if (!SESSION) return '';
   const row = usage[SESSION.team] || { coach: 0, campus: 0 };
@@ -3192,15 +3197,15 @@ function rescindFilterSummary(rule){
 
 function renderRescindFilterFields(prefix, includeCount){
   let html = '';
-  html += '<div class="rb-mobile-stack rb-rescind-filters" style="display:grid;grid-template-columns:' + (includeCount ? '0.8fr ' : '') + '1fr 0.9fr;gap:10px;margin-bottom:10px;">';
+  html += '<div class="rb-mobile-stack rb-rescind-filters" style="display:grid;grid-template-columns:' + (includeCount ? '1fr ' : '') + (recruitingStage() === 'hs' ? '1fr ' : '') + '1fr;gap:10px;margin-bottom:10px;">';
   if (includeCount) html += '<label><span class="rb-mono" style="font-size:11px;color:var(--slate);">Commits needed</span><input class="rb-input" id="' + prefix + '-count" type="number" min="1" value="1" /></label>';
-  html += '<label><span class="rb-mono" style="font-size:11px;color:var(--slate);">Stars</span><select class="rb-input" id="' + prefix + '-stars"><option value="">Any stars</option><option value="5">5 stars</option><option value="4">4 stars</option><option value="3">3 stars</option><option value="2">2 stars</option><option value="1">1 star</option><option value="0">0 stars</option></select></label>';
+  if (recruitingStage() === 'hs') html += '<label><span class="rb-mono" style="font-size:11px;color:var(--slate);">Stars</span><select class="rb-input" id="' + prefix + '-stars"><option value="">Any stars</option><option value="5">5 stars</option><option value="4">4 stars</option><option value="3">3 stars</option><option value="2">2 stars</option><option value="1">1 star</option><option value="0">0 stars</option></select></label>';
   html += '<label><span class="rb-mono" style="font-size:11px;color:var(--slate);">Offer type</span><select class="rb-input" id="' + prefix + '-scholarship"><option value="">Any type</option><option value="scholarship">Scholarship</option><option value="walkon">Walk-on</option></select></label>';
   html += '</div>';
   html += '<div style="margin-bottom:10px;">' + renderPositionChecklist(prefix) + '</div>';
-  html += '<div class="rb-mobile-stack rb-rescind-thresholds" style="display:grid;grid-template-columns:1fr 0.8fr 1fr 0.8fr;gap:10px;align-items:end;">';
-  html += '<label><span class="rb-mono" style="font-size:11px;color:var(--slate);">Rank filter</span><select class="rb-input" id="' + prefix + '-rank-mode"><option value="worse">Ranks below #</option><option value="better">Ranks # or better</option></select></label>';
-  html += '<input class="rb-input" id="' + prefix + '-rank-value" type="number" min="1" aria-label="Rank threshold" placeholder="blank = any rank" />';
+  html += '<div class="rb-mobile-stack rb-rescind-thresholds" style="display:grid;grid-template-columns:' + (recruitingStage() === 'transfer' ? '1fr 0.8fr' : '1fr 0.8fr 1fr 0.8fr') + ';gap:10px;align-items:end;">';
+  if (recruitingStage() !== 'transfer') html += '<label><span class="rb-mono" style="font-size:11px;color:var(--slate);">Rank filter</span><select class="rb-input" id="' + prefix + '-rank-mode"><option value="worse">Ranks below #</option><option value="better">Ranks # or better</option></select></label>';
+  if (recruitingStage() !== 'transfer') html += '<input class="rb-input" id="' + prefix + '-rank-value" type="number" min="1" aria-label="Rank threshold" placeholder="blank = any rank" />';
   html += '<label><span class="rb-mono" style="font-size:11px;color:var(--slate);">Overall filter</span><select class="rb-input" id="' + prefix + '-overall-mode"><option value="below">Overall below</option><option value="atLeast">Overall at least</option></select></label>';
   html += '<input class="rb-input" id="' + prefix + '-overall-value" type="number" min="1" max="99" aria-label="Overall threshold" placeholder="blank = any ovr" />';
   html += '</div>';
@@ -3231,7 +3236,7 @@ function renderConditionalRescinds(){
   html += '<div class="rb-h" style="font-size:14px;margin-bottom:10px;">Conditional Rule</div>';
   html += '<div style="font-size:13px;color:var(--slate);margin-bottom:10px;">When I win this many matching recruits, rescind my other active offers matching the same filters.</div>';
   html += renderRescindFilterFields('rb-cond', true);
-  html += '<div style="margin-top:10px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;"><button class="rb-btn rb-btn-gold" id="rb-add-conditional">Save auto rule</button><span class="rb-mono" style="font-size:11px;color:var(--slate);">Blank rank/overall means that filter is ignored.</span></div>';
+  html += '<div style="margin-top:10px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;"><button class="rb-btn rb-btn-gold" id="rb-add-conditional">Save auto rule</button><span class="rb-mono" style="font-size:11px;color:var(--slate);">' + (recruitingStage() === 'transfer' ? 'Blank overall means that filter is ignored.' : 'Blank rank/overall means that filter is ignored.') + '</span></div>';
   if (UI.conditionalError) html += '<div style="font-size:12px;color:var(--alert);margin-top:8px;">' + escapeHtml(UI.conditionalError) + '</div>';
   if (UI.conditionalStatus) html += '<div style="font-size:12px;color:var(--gold);margin-top:8px;">' + escapeHtml(UI.conditionalStatus) + '</div>';
   html += '</div>';
@@ -3849,11 +3854,13 @@ function renderThreadProspectList(t){
     html += '<div class="rb-transfer-filter-row"><div id="rb-transfer-filter-controls">' + renderTransferFilters() + '</div>';
   }
   const commitFilter = UI.boardCommitFilter || (UI.hideCommittedBoards ? 'uncommitted' : 'all');
-  html += '<div class="rb-filter-row"><div class="rb-segmented" aria-label="Commit status filter">';
+  html += '<div class="rb-board-status-filters"><div class="rb-filter-row"><div class="rb-segmented" aria-label="Commit status filter">';
   [['committed','Committed'], ['all','All'], ['uncommitted','Uncommitted']].forEach(function(option){
     html += '<button type="button" data-board-commit-filter="' + option[0] + '" aria-pressed="' + (commitFilter === option[0] ? 'true' : 'false') + '">' + option[1] + '</button>';
   });
   html += '</div></div>';
+  html += '<div class="rb-filter-row"><div class="rb-segmented" aria-label="Your offer status">' + [['offered','Offered'],['all','All'],['unoffered','Unoffered']].map(function(option){ return '<button type="button" data-board-offer-filter="' + option[0] + '" aria-pressed="' + ((UI.boardOfferFilter || 'all') === option[0]) + '">' + option[1] + '</button>'; }).join('') + '</div></div>';
+  html += '</div>';
   if (recruitingStage() === 'transfer') html += '</div>';
   html += '</div>';
 
@@ -4391,6 +4398,7 @@ function renderResetConfirmModal(){
 // ---------- Events ----------
 
 function bindEvents(){
+  document.querySelectorAll('[data-board-offer-filter]').forEach(function(button){ button.onclick = function(){ UI.boardOfferFilter = button.getAttribute('data-board-offer-filter'); render(); }; });
   const saveSettings = document.getElementById('rb-save-settings');
   if (saveSettings) saveSettings.onclick = saveSettingsChanges;
   const commitPlayerField = document.getElementById('rb-commit-override-rank');
