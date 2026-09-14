@@ -3158,7 +3158,7 @@ function availablePositions(){
 function renderPositionChecklist(prefix){
   const positions = availablePositions();
   let html = '<div><div class="rb-mono" style="font-size:11px;color:var(--slate);margin-bottom:6px;">Positions</div>';
-  html += '<div class="rb-card" style="padding:8px;background:var(--ink);display:flex;gap:6px;flex-wrap:wrap;">';
+  html += '<div class="rb-card rb-rescind-positions" style="padding:8px;background:var(--ink);display:flex;gap:6px;flex-wrap:wrap;">';
   positions.forEach(function(pos){
     html += '<label class="rb-tag" style="display:inline-flex;align-items:center;gap:5px;margin:0;cursor:pointer;">';
     html += '<input type="checkbox" class="rb-position-check" data-position-prefix="' + escapeHtml(prefix) + '" value="' + escapeHtml(pos) + '" style="accent-color:var(--gold);" /> ' + escapeHtml(pos);
