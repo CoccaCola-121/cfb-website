@@ -379,7 +379,7 @@ test('transfer overrides cannot leak from a previous season with reused IDs', ()
   assert.equal(Object.keys(app.DB.manualCommitOverrides).length,0);
 });
 
-test('transfer display hides rank numbers and searches eligibility with grade filters', () => {
+test('transfer search excludes eligibility while retaining grade filters', () => {
   const { app } = harness();
   app.DB.recruitingStage = 'transfer';
   Object.assign(app.DB.prospects.r1,{grade:'RS JR',yearsLeft:2,transferFrom:'South Carolina'});
@@ -389,8 +389,8 @@ test('transfer display hides rank numbers and searches eligibility with grade fi
   assert.doesNotMatch(html,/>#1<|placeholder="[^"]*rank/);
   app.UI.prospectId='r1';
   assert.doesNotMatch(app.renderProspectDetail(),/>#1 /);
-  assert.deepEqual(prospectIDs(app.renderBoardSearchResults('rs jr')),['r1']);
-  assert.deepEqual(prospectIDs(app.renderBoardSearchResults('2 years left')),['r1']);
+  assert.deepEqual(prospectIDs(app.renderBoardSearchResults('rs jr')),[]);
+  assert.deepEqual(prospectIDs(app.renderBoardSearchResults('2 years left')),[]);
   assert.equal(app.findProspectFromSheetRow(['1','Wrong Name'],0,1),null);
   assert.equal(app.findProspectFromSheetRow(['999','Jordan Able'],0,1).id,'r1');
   assert.match(app.transferCardStyle({transferFrom:'South Carolina',commitTeam:'Michigan State'}),/linear-gradient/);

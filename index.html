@@ -3809,7 +3809,7 @@ function renderBoardSearchResults(query){
   DB.threads.forEach(function(t){
     visibleBoardProspectIds(t).forEach(function(pid){
       const p = DB.prospects[pid];
-      const searchText = [recruitingStage() === 'transfer' ? '' : p.rank + ' #' + p.rank, p.name, p.hometown, p.transferFrom, p.grade, p.yearsLeft ? p.yearsLeft + ' years left' : '', Number(p.yearsLeft) === 1 ? '1 year left' : ''].join(' ').toLowerCase();
+      const searchText = [recruitingStage() === 'transfer' ? '' : p.rank + ' #' + p.rank, p.name, p.hometown, p.transferFrom].join(' ').toLowerCase();
       if (searchText.indexOf(q) !== -1) html += renderProspectBoardCard(pid, searchText, context);
     });
   });
@@ -3849,7 +3849,7 @@ function renderThreadProspectList(t){
   const visibleIds = visibleBoardProspectIds(t);
   if (recruitingStage() === 'transfer') visibleIds.sort(function(a,b){ const pa = DB.prospects[a], pb = DB.prospects[b]; return (pa.sourceOrder ?? pa.rank) - (pb.sourceOrder ?? pb.rank); });
   html += renderPositionCounts(visibleIds, function(pid){ return DB.prospects[pid] && DB.prospects[pid].position; }, filterKey);
-  html += '<input class="rb-input" data-thread-search="' + t.id + '" placeholder="' + (recruitingStage() === 'transfer' ? 'Search transfers by name, school, grade or years left' : 'Search recruits by name, rank, hometown or school') + '" />';
+  html += '<input class="rb-input" data-thread-search="' + t.id + '" placeholder="' + (recruitingStage() === 'transfer' ? 'Search transfers by name or school' : 'Search recruits by name, rank, hometown or school') + '" />';
   if (recruitingStage() === 'transfer') {
     html += '<div class="rb-transfer-filter-row"><div id="rb-transfer-filter-controls">' + renderTransferFilters() + '</div>';
   }
@@ -3868,7 +3868,7 @@ function renderThreadProspectList(t){
   visibleIds.forEach(function(pid){
     const p = DB.prospects[pid];
     if (!p) return;
-    const searchText = [recruitingStage() === 'transfer' ? '' : p.rank + ' #' + p.rank, p.name, p.hometown, p.transferFrom, p.grade, p.yearsLeft ? p.yearsLeft + ' years left' : '', Number(p.yearsLeft) === 1 ? '1 year left' : ''].join(' ').toLowerCase();
+    const searchText = [recruitingStage() === 'transfer' ? '' : p.rank + ' #' + p.rank, p.name, p.hometown, p.transferFrom].join(' ').toLowerCase();
     html += renderProspectBoardCard(pid, searchText, cardContext);
   });
   if (!visibleIds.length) html += '<div class="rb-card" style="padding:28px;text-align:center;color:var(--slate);">No ' + (ended ? 'free agents' : 'uncommitted prospects') + ' on this board.</div>';
