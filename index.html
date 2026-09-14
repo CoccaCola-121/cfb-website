@@ -2649,6 +2649,7 @@ function findOfferById(prospectId, offerId){
 }
 
 function openEditOffer(prospectId, offerId){
+  if (recruitingStage() !== 'hs') return;
   UI.editOfferTarget = { prospectId: prospectId, offerId: offerId };
   UI.editError = null;
   render();
@@ -2662,6 +2663,7 @@ function closeEditOffer(){
 }
 
 function saveOfferEdit(form, confirmedVisits){
+  if (recruitingStage() !== 'hs') return;
   confirmedVisits = confirmedVisits || {};
   if (!SESSION || !UI.editOfferTarget) return;
   const prospectId = UI.editOfferTarget.prospectId;
@@ -3563,7 +3565,7 @@ function renderMyOffers(){
       '</span>';
       html += '<span class="rb-my-offer-visits" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">' + visitBadges(o.visits, true) + '</span>';
       html += '</span>';
-      html += '<span class="rb-my-offer-actions" style="display:flex;align-items:center;justify-content:flex-end;gap:8px;white-space:nowrap;">' + (o.rescinded ? '<span class="rb-mono" style="color:var(--alert);font-size:12px;">rescinded</span>' : (p.commitTeam ? '<span class="rb-mono" style="color:var(--slate);font-size:12px;">committed</span>' : '<button class="rb-btn" data-edit-offer="' + escapeHtml(row.prospectId) + ':' + escapeHtml(o.id) + '">Edit</button><button class="rb-btn" data-rescind-offer="' + escapeHtml(row.prospectId) + ':' + escapeHtml(o.id) + '">Rescind</button>')) + '</span>';
+      html += '<span class="rb-my-offer-actions" style="display:flex;align-items:center;justify-content:flex-end;gap:8px;white-space:nowrap;">' + (o.rescinded ? '<span class="rb-mono" style="color:var(--alert);font-size:12px;">rescinded</span>' : (p.commitTeam ? '<span class="rb-mono" style="color:var(--slate);font-size:12px;">committed</span>' : (recruitingStage() === 'hs' ? '<button class="rb-btn" data-edit-offer="' + escapeHtml(row.prospectId) + ':' + escapeHtml(o.id) + '">Edit</button>' : '') + '<button class="rb-btn" data-rescind-offer="' + escapeHtml(row.prospectId) + ':' + escapeHtml(o.id) + '">Rescind</button>')) + '</span>';
       html += '<span class="rb-mobile-only rb-offer-expand" aria-hidden="true">' + renderArrow() + '</span>';
       html += '</summary>';
       html += '<div style="margin-top:10px;">' + renderOfferBlock(o, p.commitTeam ? { collapsed: true, prospect: p } : { expanded: true, prospect: p }) + '</div>';
