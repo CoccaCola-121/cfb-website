@@ -337,7 +337,7 @@ test('transfer board opens directly in source order with metadata and no values 
   const html = app.renderFeed();
   assert.deepEqual(prospectIDs(html), ['r1','r2','r3']);
   assert.doesNotMatch(html, /data-open-thread=/);
-  assert.match(html, /From <strong>UAB/);
+  assert.match(html, /Previous team<\/span> <strong>UAB/);
   assert.match(html, /RS JR · 2 years left/);
   assert.match(html, /Start every game/);
   app.UI.prospectId = 'r1';
