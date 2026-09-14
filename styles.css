@@ -689,3 +689,6 @@ html { scrollbar-gutter: stable; }
 @media (max-width:720px) { .rb-board-status-filters { width:100%; align-items:stretch; } }
 
 .rb-offer-word-count { color:var(--slate); font-size:11px; white-space:nowrap; font-variant-numeric:tabular-nums; }
+
+.rb-my-offer-visits:empty { display:none !important; }
+.rb-my-offer-meta > span:empty { display:none; }
