@@ -674,3 +674,5 @@ html { scrollbar-gutter: stable; }
 @media (max-width:720px) { .rb-transfer-commit-controls > .rb-input { font-size:16px; } }
 
 .rb-transfer-origin-label { color:var(--slate); font-size:inherit; margin-right:2px; }
+
+.rb-rescind-center { margin-top:16px; }
