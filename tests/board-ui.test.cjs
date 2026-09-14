@@ -568,3 +568,17 @@ test('transfer position counts follow slider changes and restore on Show all', (
   await app.approveDangerReset();
   assert.equal(Object.keys(app.DB.offersByProspect).length,0);
 });
+
+test('only high school settings expose commit sheets; all stages retain manual overrides', () => {
+  for (const stage of ['hs','transfer','cpr']) {
+    const {app} = harness();
+    app.setSession({accessLevel:'commissioner'});
+    app.DB.recruitingStage = stage;
+    app.DB.commitSheetUrl = '';
+    const html = app.renderClassSetup();
+    assert.equal(html.includes('id="rb-commit-sheet-url"'),stage === 'hs');
+    assert.ok(html.includes('id="rb-apply-commit-override"'));
+    assert.ok(html.includes('id="rb-update-commits"'));
+    assert.ok(!html.includes('or published CSV URL'));
+  }
+});

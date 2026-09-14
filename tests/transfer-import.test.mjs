@@ -106,3 +106,17 @@ test('PDF headers accept dotted mixed-case grades and normalize slider grades', 
     assert.equal(row.yearsLeft,3);
   }
 });
+
+test('transfer Discord announcements resolve bold role mentions and numeric team IDs without ranks', async () => {
+  const {parseDiscordCommits} = await import('../functions/api/commits/discord.js');
+  for (const destination of ['**<@&361568281456410624>**', '**(361568281456410624)**']) {
+    const commits = await parseDiscordCommits({}, [{id:'new', timestamp:'2026-09-14T12:00:00Z',content:`Coastal Carolina transfer Brandon Closs commits to ${destination}`}]);
+    assert.equal(commits[0].name,'Brandon Closs');
+    assert.equal(commits[0].team,'Louisville');
+    const state = {recruitingStage:'transfer',threads:[{createdAt:Date.parse('2026-09-13')}],prospects:{r7:{id:'r7',name:'Brandon Closs',transferFrom:'Coastal Carolina'}}};
+    assert.equal(applyDiscordCommits(state,commits).updated,1);
+    state.recruitingStage = 'hs';
+    state.prospects.r7.commitTeam = '';
+    assert.equal(applyDiscordCommits(state,commits).updated,0);
+  }
+});

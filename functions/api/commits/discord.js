@@ -7,6 +7,7 @@ import { findTeam } from '../../_lib/teams-util.js';
 
 function cleanTeamText(value) {
   return String(value || '')
+    .replace(/[*`]/g, '')
     .replace(/\(WO\)/gi, '')
     .replace(/\(edited\)/gi, '')
     .replace(/^@/, '')
@@ -33,6 +34,9 @@ async function resolveTeam(env, rawTeam) {
   const text = cleanTeamText(String(rawTeam || '').replace(/<@&\d+>/g, ''));
   if (!text) return '';
 
+  const numericId = text.replace(/^[()]|[()]$/g, '');
+  if (TEAM_ROLE_IDS[numericId]) return TEAM_ROLE_IDS[numericId];
+
   const directAlias = TEAM_ROLE_ALIASES[text] || TEAM_ROLE_ALIASES[text.toUpperCase()];
   if (directAlias) return directAlias;
 
@@ -41,7 +45,14 @@ async function resolveTeam(env, rawTeam) {
 }
 
 async function parseCommitLine(env, line) {
-  const match = String(line || '').match(/#\s*(\d+)\s+(.+?)\s+(?:\([^)]+\)\s+)?commits\s+to\s+(.+)$/i);
+  const text = String(line || '').replace(/[*`]/g, '').trim();
+  const transfer = text.match(/^(.+?)\s+transfer\s+(.+?)\s+commits\s+to\s+(.+)$/i);
+  if (transfer) {
+    const team = await resolveTeam(env, transfer[3]);
+    if (!team) return null;
+    return { name: transfer[2].trim(), transferFrom: transfer[1].trim(), stage: 'transfer', team, sourceLine: String(line).trim() };
+  }
+  const match = text.match(/#\s*(\d+)\s+(.+?)\s+(?:\([^)]+\)\s+)?commits\s+to\s+(.+)$/i);
   if (!match) return null;
   const rank = Number(match[1]);
   const team = await resolveTeam(env, match[3]);
@@ -146,10 +157,11 @@ export function applyDiscordCommits(state, commits) {
   const seen = new Set();
 
   commits.forEach((commit) => {
+    if (commit.stage && commit.stage !== state.recruitingStage) return;
     let prospect = prospects[commit.prospectId];
     if (state.recruitingStage === 'transfer') {
       const start = Math.min(...(state.threads || []).map(t => Number(t.createdAt)).filter(Number.isFinite));
-      if (!commit.timestamp || Date.parse(commit.timestamp) < start) return;
+      if (!Number.isFinite(Date.parse(commit.timestamp)) || Date.parse(commit.timestamp) < start) return;
       const matches = Object.values(prospects).filter(p => p.name && p.name.toLowerCase() === String(commit.name || '').toLowerCase());
       prospect = matches.length === 1 ? matches[0] : null;
     } else if (prospect && commit.name && prospect.name.toLowerCase() !== commit.name.toLowerCase()) prospect = null;

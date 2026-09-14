@@ -1814,9 +1814,9 @@ async function clearManualCommitOverride(){
 async function updateCommitsFromSheet(){
   if (queueSettingsAction('commits')) return;
   const input = document.getElementById('rb-commit-sheet-url');
-  const rawUrl = (input ? input.value : DB.commitSheetUrl || '').trim();
+  const rawUrl = recruitingStage() === 'hs' ? (input ? input.value : DB.commitSheetUrl || '').trim() : '';
   if (!apiAvailable() && !rawUrl){
-    UI.commitError = 'Save the season commit sheet URL first.';
+    UI.commitError = recruitingStage() === 'hs' ? 'Save the season commit sheet URL first.' : 'Discord commit sync requires the online site.';
     render(); return;
   }
   UI.updatingCommits = true;
@@ -3947,20 +3947,22 @@ function renderClassSetup(){
   }
   html += '<div class="rb-card" style="padding:20px 24px;max-width:640px;margin-top:14px;">';
   html += '<div class="rb-h" style="font-size:16px;margin-bottom:12px;">Commit Tracking</div>';
+  if (stage === 'hs') {
   if (DB.commitSheetUrl && !UI.commitEditing){
     html += '<div style="border:1px solid var(--hairline);border-radius:8px;background:var(--panel-alt);padding:10px 12px;display:flex;justify-content:space-between;gap:10px;align-items:center;flex-wrap:wrap;">';
     html += '<span class="rb-mono" style="font-size:12px;color:var(--slate);max-width:420px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + escapeHtml(DB.commitSheetUrl) + '</span>';
     html += '<button class="rb-btn" id="rb-change-commit-sheet">Change sheet</button>';
     html += '</div>';
   } else {
-    html += '<input class="rb-input" id="rb-commit-sheet-url" placeholder="Google Sheets URL or published CSV URL" value="' + escapeHtml(DB.commitSheetUrl || '') + '" />';
+    html += '<input class="rb-input" id="rb-commit-sheet-url" placeholder="Google Sheets URL" value="' + escapeHtml(DB.commitSheetUrl || '') + '" />';
     html += '<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:10px;">';
     html += '<button class="rb-btn rb-btn-gold" id="rb-save-commit-sheet">Save commit sheet</button>';
     if (DB.commitSheetUrl) html += '<button class="rb-btn" id="rb-cancel-commit-sheet">Cancel</button>';
     html += '</div>';
   }
+  }
   html += '<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:10px;">';
-  html += '<button class="rb-btn rb-btn-gold" id="rb-update-commits" ' + (UI.updatingCommits || (!apiAvailable() && !DB.commitSheetUrl) ? 'disabled' : '') + '>' + (UI.updatingCommits ? 'Updating...' : 'Manual push') + '</button>';
+  html += '<button class="rb-btn rb-btn-gold" id="rb-update-commits" ' + (UI.updatingCommits || (!apiAvailable() && (stage !== 'hs' || !DB.commitSheetUrl)) ? 'disabled' : '') + '>' + (UI.updatingCommits ? 'Updating...' : 'Manual push') + '</button>';
   if (DB.commitUpdatedAt) html += '<span class="rb-mono" style="font-size:12px;color:var(--slate);">Last update: ' + escapeHtml(new Date(DB.commitUpdatedAt).toLocaleString()) + '</span>';
   html += '</div>';
   if (seasonEnd){
