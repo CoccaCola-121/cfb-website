@@ -3960,11 +3960,11 @@ function renderClassSetup(){
     if (DB.commitSheetUrl) html += '<button class="rb-btn" id="rb-cancel-commit-sheet">Cancel</button>';
     html += '</div>';
   }
-  }
   html += '<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:10px;">';
   html += '<button class="rb-btn rb-btn-gold" id="rb-update-commits" ' + (UI.updatingCommits || (!apiAvailable() && (stage !== 'hs' || !DB.commitSheetUrl)) ? 'disabled' : '') + '>' + (UI.updatingCommits ? 'Updating...' : 'Manual push') + '</button>';
   if (DB.commitUpdatedAt) html += '<span class="rb-mono" style="font-size:12px;color:var(--slate);">Last update: ' + escapeHtml(new Date(DB.commitUpdatedAt).toLocaleString()) + '</span>';
   html += '</div>';
+  }
   if (seasonEnd){
     html += '<div class="rb-mono" style="font-size:12px;color:var(--slate);margin-top:8px;">' + escapeHtml(stageConfig.shortLabel) + ' recruiting ended' + (seasonEnd.season ? ' for ' + escapeHtml(seasonEnd.season) : '') + '.</div>';
   }

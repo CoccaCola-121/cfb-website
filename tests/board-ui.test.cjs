@@ -578,7 +578,7 @@ test('only high school settings expose commit sheets; all stages retain manual o
     const html = app.renderClassSetup();
     assert.equal(html.includes('id="rb-commit-sheet-url"'),stage === 'hs');
     assert.ok(html.includes('id="rb-apply-commit-override"'));
-    assert.ok(html.includes('id="rb-update-commits"'));
+    assert.equal(html.includes('id="rb-update-commits"'),stage === 'hs');
     assert.ok(!html.includes('or published CSV URL'));
   }
 });
