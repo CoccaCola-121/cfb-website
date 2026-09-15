@@ -10,7 +10,7 @@ const script = page.match(/<script>([\s\S]*?)<\/script>/)[1];
 const boot = script.lastIndexOf('\napplyRoute(routeFromPath(window.location.pathname));');
 assert(boot > 0, 'The app bootstrap must be identifiable without executing network requests.');
 const source = script.slice(0, boot) + `
-  globalThis.app = { DB, UI, pendingCommitChanges, restoreSettingsDraft, renderOfferBlock, renderRescindFilterFields, renderVisitLedger, visibleBoardProspectIds, setRecruitingStage, requestReset, approveDangerReset, beginSettingsDraft, hasSettingsChanges, canLeaveSettings, saveSettingsChanges, saveDBNow, leagueStatePayload, mergeSettingsValue, updateCommitsFromSheet, runBackupNow, setTransferFilter, renderTransferFilters, renderClassSetup, requestManualCommitOverride, applyManualCommitOverride, requestClearCommit, clearManualCommitOverride, applyManualCommitOverrides, clearRecruitingBoard, findProspectFromSheetRow, transferCardStyle, parseFullClass, prospectFromRosterRow, confirmTransferImport, releaseSingleStageBoard, addOfferDirect, render, renderNav, navigateTo, setReady(){ dbReady = true; sessionReady = true; }, renderFeed, renderBoardSearchResults, renderTeamsPage,
+  globalThis.app = { DB, UI, resetOfferWindow, setOffersLocked, offersLocked, pendingCommitChanges, restoreSettingsDraft, renderOfferBlock, renderRescindFilterFields, renderVisitLedger, visibleBoardProspectIds, setRecruitingStage, requestReset, approveDangerReset, beginSettingsDraft, hasSettingsChanges, canLeaveSettings, saveSettingsChanges, saveDBNow, leagueStatePayload, mergeSettingsValue, updateCommitsFromSheet, runBackupNow, setTransferFilter, renderTransferFilters, renderClassSetup, requestManualCommitOverride, applyManualCommitOverride, requestClearCommit, clearManualCommitOverride, applyManualCommitOverrides, clearRecruitingBoard, findProspectFromSheetRow, transferCardStyle, parseFullClass, prospectFromRosterRow, confirmTransferImport, releaseSingleStageBoard, addOfferDirect, render, renderNav, navigateTo, setReady(){ dbReady = true; sessionReady = true; }, renderFeed, renderBoardSearchResults, renderTeamsPage,
     renderThreadProspectList, renderProspectDetail, builtInTeamBranding, getTeamBranding, activeTeamBrands,
     mobileRecruitName, renderRecruitName, renderMyOffers, renderCommitsForTeam, renderTeamOffers, renderConditionalRescinds, renderRecruitValues, teamBorderColor, bindEvents, applyDefaultClassData, releaseWave1, releaseWave2,
     setSession(value){ SESSION = value; } };
@@ -61,6 +61,7 @@ function harness() {
     fetch(){ throw new Error('Regression checks must not contact a live API.'); }
   });
   vm.runInContext(fs.readFileSync(path.join(rootDir, 'team-branding.js'), 'utf8'), context);
+  vm.runInContext(fs.readFileSync(path.join(rootDir, 'offer-window.js'), 'utf8'), context);
   vm.runInContext(fs.readFileSync(path.join(rootDir, 'transfer-rules.js'), 'utf8'), context);
   vm.runInContext(source, context);
   const { app } = context;
@@ -648,4 +649,22 @@ test('pending commitments list all unsaved players and reflect subsequent correc
   assert.deepEqual(Array.from(app.pendingCommitChanges()),['Commitment will be cleared for Jordan Able.','Morgan Baker will commit to Alabama.']);
   app.restoreSettingsDraft();
   assert.equal(app.pendingCommitChanges().length,0);
+});
+
+test('new class resets offer window and schedule edits stay in settings draft', () => {
+  const {app} = harness();
+  for (const stage of ['hs','transfer','cpr']) {
+    app.DB.recruitingStage = stage;
+    app.DB.offersLocked = false;
+    app.DB.offerSchedule = {opensAt:'2020-01-01T00:00:00Z'};
+    app.clearRecruitingBoard();
+    assert.equal(app.offersLocked(),true);
+    assert.equal(app.DB.offerSchedule,null);
+  }
+  app.setSession({accessLevel:'commissioner'});
+  app.beginSettingsDraft();
+  app.DB.offerSchedule={timezone:'America/Chicago',opensAt:'2026-12-01T16:00:00Z'};
+  assert.equal(app.hasSettingsChanges(),true);
+  app.restoreSettingsDraft();
+  assert.equal(app.DB.offerSchedule,null);
 });

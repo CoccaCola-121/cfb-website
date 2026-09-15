@@ -45,6 +45,7 @@
 
 <script src="team-branding.js"></script>
 <script src="default-class-2062.js"></script>
+<script src="/offer-window.js" onerror="this.onerror=null;this.src='offer-window.js'"></script>
 <script src="/transfer-rules.js" onerror="this.onerror=null;this.src='transfer-rules.js'"></script>
 <script>
 (function(){
@@ -759,11 +760,12 @@ function beginSettingsDraft(){
   settingsDraft = { base: copySettings(DB), payload: copySettings(leagueStatePayload()), actions: {}, typed: false };
 }
 function hasSettingsChanges(){
-  return !!(settingsDraft && (UI.transferDraft || Object.keys(settingsDraft.actions).length || JSON.stringify(settingsDraft.payload) !== JSON.stringify(leagueStatePayload())));
+  return !!(settingsDraft && (UI.scheduleError || UI.transferDraft || Object.keys(settingsDraft.actions).length || JSON.stringify(settingsDraft.payload) !== JSON.stringify(leagueStatePayload())));
 }
 function restoreSettingsDraft(){
   if (settingsDraft) { Object.keys(DB).forEach(function(key){ delete DB[key]; }); Object.assign(DB, copySettings(settingsDraft.base)); }
   settingsDraft = null;
+  UI.scheduleError = null;
   UI.transferDraft = null;
   UI.classError = null; UI.classFileName = ''; UI.commitStatus = null; UI.commitError = null;
   UI.brandingStatus = null; UI.brandingError = null; UI.commitEditing = false;
@@ -802,6 +804,9 @@ function queueSettingsAction(kind){
 async function saveSettingsChanges(){
   if (!settingsDraft || settingsSaving || !canViewSettings()) return;
   if (UI.transferLoading || UI.transferDraft) { UI.settingsError = 'Finish reviewing and loading the transfer class before saving.'; render(); return; }
+  if (UI.scheduleError) { UI.settingsError = UI.scheduleError; render(); return; }
+  const scheduleError = NZCFLOfferWindow.validate(DB.offerSchedule);
+  if (scheduleError) { UI.settingsError = scheduleError; render(); return; }
   const sheet = document.getElementById('rb-commit-sheet-url');
   if (sheet) DB.commitSheetUrl = sheet.value.trim();
   settingsSaving = true; UI.settingsError = null; UI.settingsStatus = null;
@@ -872,6 +877,7 @@ function leagueStatePayload(){
     commitSeasonEnded: DB.commitSeasonEnded || null,
     defaultClassLoaded: DB.defaultClassLoaded,
     offersLocked: !!DB.offersLocked,
+    offerSchedule: DB.offerSchedule || null,
     dangerApprovals: DB.dangerApprovals || {},
     conditionalRescinds: DB.conditionalRescinds || [],
     manualCommitOverrides: DB.manualCommitOverrides || {}
@@ -889,7 +895,7 @@ function mergeLeagueState(state){
     discordCommitUpdatedAt: DB.discordCommitUpdatedAt,
     commitSeasonEnded: DB.commitSeasonEnded
   });
-  ['fullRoster','recruitingStage','released','wave1Released','wave2Released','prospects','threads','offersByProspect','unmatched','teams','teamBranding','commitSheetUrl','commitUpdatedAt','discordCommitUpdatedAt','discordCommitChannelId','commitSeasonEnded','defaultClassLoaded','offersLocked','dangerApprovals','conditionalRescinds','manualCommitOverrides'].forEach(function(field){
+  ['fullRoster','recruitingStage','released','wave1Released','wave2Released','prospects','threads','offersByProspect','unmatched','teams','teamBranding','commitSheetUrl','commitUpdatedAt','discordCommitUpdatedAt','discordCommitChannelId','commitSeasonEnded','defaultClassLoaded','offersLocked','offerSchedule','dangerApprovals','conditionalRescinds','manualCommitOverrides'].forEach(function(field){
     if (Object.prototype.hasOwnProperty.call(state, field)) DB[field] = state[field];
   });
   applyManualCommitOverrides();
@@ -958,6 +964,7 @@ function applyDefaultClassData(text){
   const list = parseFullClass(text || '', { stage: 'hs' });
   if (!list || !list.length) return false;
   DB.fullRoster = list;
+  resetOfferWindow();
   DB.recruitingStage = 'hs';
   hydrateProspectValuesFromRoster();
   DB.defaultClassLoaded = true;
@@ -1244,6 +1251,7 @@ function loadClassData(raw){
     UI.transferDraft = list; UI.classError = null; render(); return;
   }
   DB.fullRoster = list;
+  resetOfferWindow();
   DB.defaultClassLoaded = false;
   DB.commitSeasonEnded = null;
   hydrateProspectValuesFromRoster();
@@ -1296,6 +1304,7 @@ function confirmTransferImport(){
   const rows = UI.transferDraft;
   const invalid = rows.find(function(p){ return !p.name.trim() || !p.position.trim() || !p.transferFrom.trim() || !p.prompt.trim() || !p.brokenPromise.trim() || !Number.isInteger(Number(p.yearsLeft)) || Number(p.yearsLeft) < 1 || Number(p.yearsLeft) > 5 || !/^\d{1,2}\/\d{1,2}$/.test(p.rating); });
   if (invalid) { UI.classError = 'Check the name, position, school, OVR/POT, eligibility, promise and prompt for ' + (invalid.name || 'this player') + '.'; render(); return; }
+  resetOfferWindow();
   DB.fullRoster = rows.map(function(p, index){
     const ratings = p.rating.split('/').map(Number);
     return Object.assign({}, p, { rank: index + 1, overall: ratings[0], potential: ratings[1], yearsLeft: Number(p.yearsLeft), offerMode: 'pitch', values: {}, stars: null });
@@ -1389,6 +1398,7 @@ function makeThread(title, prospectIds, stars){
 }
 
 function clearRecruitingBoard(){
+  resetOfferWindow();
   DB.fullRoster = [];
   DB.released = {};
   DB.wave1Released = false;
@@ -2134,7 +2144,11 @@ async function savePendingTeamChanges(){
   render();
 }
 
+function offersLocked(){ return NZCFLOfferWindow.locked(DB); }
+function resetOfferWindow(){ DB.offersLocked = true; DB.offerSchedule = null; UI.scheduleError = null; }
 function setOffersLocked(locked){
+  UI.scheduleError = null;
+  DB.offerSchedule = null;
   DB.offersLocked = !!locked;
   UI.commitStatus = DB.offersLocked ? 'Offers are locked.' : 'Offers are open.';
   saveDB(); render();
@@ -2442,7 +2456,7 @@ function confirmSingleRescind(){
 // ---------- Offers ----------
 
 function addOfferDirect(prospectId, team, coach, text, promises, visits){
-  if (DB.offersLocked) return { ok: false, error: 'Offer denied: offers are locked.' };
+  if (offersLocked()) return { ok: false, error: 'Offer denied: offers are locked.' };
   const prospect = DB.prospects[prospectId];
   const pitchError = NZCFLTransferRules.pitchLimitError(text, prospect, recruitingStage());
   if (pitchError) return { ok: false, error: pitchError };
@@ -2756,7 +2770,7 @@ function parseOfferSheet(rawText){
 
 async function submitOfferSheet(rawText){
   if (!SESSION || !rawText.trim()) return;
-  if (DB.offersLocked){
+  if (offersLocked()){
     UI.lastSummary = { errorText: 'Offer denied: offers are locked.' };
     UI.showSubmitModal = false;
     UI.submitTargetId = null;
@@ -3539,7 +3553,7 @@ function renderMyOffers(){
   html += '<div class="rb-h" style="font-size:18px;margin-bottom:6px;">My Offers</div>';
   html += '<div style="font-size:13px;color:var(--slate);margin-bottom:12px;">' + rows.length + ' offer' + (rows.length === 1 ? '' : 's') + ' from ' + escapeHtml(SESSION.team) + '.</div>';
   html += renderPositionCounts(rows, function(row){ return row.prospect && row.prospect.position; }, filterKey);
-  html += '<div style="margin-bottom:12px;"><button class="rb-btn rb-btn-gold" id="rb-open-submit" ' + (DB.offersLocked ? 'disabled title="Offers are locked"' : '') + '>' + (DB.offersLocked ? 'Offers locked' : 'Submit offer') + '</button></div>';
+  html += '<div style="margin-bottom:12px;"><button class="rb-btn rb-btn-gold" id="rb-open-submit" ' + (offersLocked() ? 'disabled title="Offers are locked"' : '') + '>' + (offersLocked() ? 'Offers locked' : 'Submit offer') + '</button></div>';
   html += '<input class="rb-input" id="rb-my-offer-search" placeholder="' + (recruitingStage() === 'transfer' ? 'Search offers by player name' : 'Search your offers by recruit name, rank, or hometown') + '" />';
   if (UI.rescindError) html += '<div style="font-size:12px;color:var(--alert);margin-top:8px;">' + escapeHtml(UI.rescindError) + '</div>';
   html += '</div>';
@@ -3908,6 +3922,13 @@ function renderProspectBoardCard(pid, searchAttr, context){
   return html;
 }
 
+function renderOfferSchedule(){
+  const schedule = DB.offerSchedule || {};
+  const zone = schedule.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
+  const zones = Array.from(new Set([zone,'UTC',...(Intl.supportedValuesOf ? Intl.supportedValuesOf('timeZone') : ['America/New_York','America/Chicago','America/Denver','America/Los_Angeles','Europe/London','Australia/Sydney'])]));
+  return '<div class="rb-offer-schedule"><label>Timezone<select class="rb-input" id="rb-schedule-zone">' + zones.map(function(z){ return '<option' + (z === zone ? ' selected' : '') + '>' + escapeHtml(z) + '</option>'; }).join('') + '</select></label><div class="rb-schedule-dates">' + [['opensAt','Scheduled open'],['closesAt','Scheduled close']].map(function(pair){ return '<label>' + pair[1] + '<input class="rb-input" type="datetime-local" id="rb-schedule-' + pair[0] + '" value="' + NZCFLOfferWindow.localTime(schedule[pair[0]],zone) + '" /></label>'; }).join('') + '</div><p>Times use the selected timezone, including daylight saving. Leave blank for no schedule. Changing the lock toggle clears the schedule.</p><p id="rb-schedule-error" role="alert">' + escapeHtml(UI.scheduleError || '') + '</p></div>';
+}
+
 function pendingCommitChanges(){
   if (!settingsDraft) return [];
   const base = settingsDraft.base;
@@ -3934,13 +3955,14 @@ function renderClassSetup(){
   const stageConfig = recruitingStageConfig();
   const seasonEnd = activeCommitSeasonEnd();
 
-  html += '<div class="rb-card" style="padding:18px 20px;max-width:640px;margin-bottom:14px;border-color:' + (DB.offersLocked ? '#6F1D1B' : 'var(--hairline)') + ';">';
+  html += '<div class="rb-card" style="padding:18px 20px;max-width:640px;margin-bottom:14px;border-color:' + (offersLocked() ? '#6F1D1B' : 'var(--hairline)') + ';">';
   html += '<div class="rb-offer-window-row">';
-  html += '<div><div class="rb-h" style="font-size:16px;">Offer Window</div><div class="rb-mono" style="font-size:12px;color:var(--slate);margin-top:4px;">' + (DB.offersLocked ? 'Closed to new offers' : 'Open for new offers') + '</div></div>';
+  html += '<div><div class="rb-h" style="font-size:16px;">Offer Window</div><div class="rb-mono" style="font-size:12px;color:var(--slate);margin-top:4px;">' + (offersLocked() ? 'Closed to new offers' : 'Open for new offers') + '</div></div>';
   html += '<div class="rb-offer-window-actions">';
-  html += '<span class="rb-offer-status ' + (DB.offersLocked ? 'rb-offer-status-closed' : '') + '">' + (DB.offersLocked ? 'LOCKED' : 'OPEN') + '</span>';
-  html += '<label class="rb-toggle rb-offer-lock-toggle"><span>Lock offers</span><input type="checkbox" id="rb-offers-lock-toggle" ' + (DB.offersLocked ? 'checked' : '') + ' /><span class="rb-switch-track"><span class="rb-switch-thumb"></span></span></label>';
+  html += '<span class="rb-offer-status ' + (offersLocked() ? 'rb-offer-status-closed' : '') + '">' + (offersLocked() ? 'LOCKED' : 'OPEN') + '</span>';
+  html += '<label class="rb-toggle rb-offer-lock-toggle"><span>Lock offers</span><input type="checkbox" id="rb-offers-lock-toggle" ' + (offersLocked() ? 'checked' : '') + ' /><span class="rb-switch-track"><span class="rb-switch-thumb"></span></span></label>';
   html += '</div></div>';
+  html += renderOfferSchedule();
   html += '</div>';
 
   html += '<div class="rb-card" style="padding:24px;max-width:640px;">';
@@ -4097,7 +4119,7 @@ function renderProspectDetail(){
   html += '<div class="rb-mono" style="font-size:13px;color:var(--slate);margin-top:4px;">' + escapeHtml(p.position) + (p.rating ? ' &middot; ' + escapeHtml(p.rating) : '') + (p.hometown ? ' &middot; ' + escapeHtml(p.hometown) : '') + '</div>';
   html += '</div>';
   html += '<div style="display:flex;align-items:center;justify-content:flex-end;gap:10px;flex-wrap:wrap;">' +
-    (SESSION && !p.commitTeam ? (sessionOffer ? '<button class="rb-btn" disabled title="Your team already has an offer on this recruit">Offer submitted</button>' : (DB.offersLocked ? '<button class="rb-btn" disabled title="Offers are locked">Offers locked</button>' : '<button class="rb-btn rb-btn-gold" data-open-submit="' + escapeHtml(p.id) + '">Submit offer</button>')) : '') +
+    (SESSION && !p.commitTeam ? (sessionOffer ? '<button class="rb-btn" disabled title="Your team already has an offer on this recruit">Offer submitted</button>' : (offersLocked() ? '<button class="rb-btn" disabled title="Offers are locked">Offers locked</button>' : '<button class="rb-btn rb-btn-gold" data-open-submit="' + escapeHtml(p.id) + '">Submit offer</button>')) : '') +
     (p.commitTeam ? renderCommittedTag(p.commitTeam, true, { view: 'prospect', prospectId: p.id, label: p.name }) : '') +
     (recruitingStage() === 'transfer' ? '' : '<span>' + starsOrLabel(p.stars) + '</span>') + '</div>';
   html += '</div>';
@@ -4182,7 +4204,7 @@ function renderOfferBlock(o, opts){
 
 function renderSubmitModal(){
   const target = UI.submitTargetId && DB.prospects[UI.submitTargetId] ? DB.prospects[UI.submitTargetId] : null;
-  const locked = !!DB.offersLocked;
+  const locked = offersLocked();
   const pitchOffer = recruitingStageConfig().pitchOnly || isPitchRecruit(target);
   const submitHelp = locked ? 'Offers are currently locked. New offers cannot be posted.' :
     (pitchOffer ? (target ? 'Write or paste a personalized pitch for ' + (recruitNumber(target) ? recruitNumber(target) + ' ' : '') + renderRecruitName(target.name) + '. Include up to 3 promises; short pitch-only submissions are fine.' : 'Write or paste a personalized pitch. Include up to 3 promises; short pitch-only submissions are fine.') :
@@ -4441,6 +4463,24 @@ function bindEvents(){
   if (commitTeamField) commitTeamField.oninput = function(){ UI.commitOverrideTeam = commitTeamField.value; };
   const draftSheet = document.getElementById('rb-commit-sheet-url');
   if (draftSheet && settingsDraft) draftSheet.oninput = function(){ DB.commitSheetUrl = draftSheet.value.trim(); refreshSettingsButtons(); };
+  const zoneInput = document.getElementById('rb-schedule-zone');
+  if (zoneInput) {
+    const openInput = document.getElementById('rb-schedule-opensAt');
+    const closeInput = document.getElementById('rb-schedule-closesAt');
+    function stageSchedule(){
+      try {
+        const schedule = {timezone:zoneInput.value, opensAt:NZCFLOfferWindow.toUTC(openInput.value,zoneInput.value), closesAt:NZCFLOfferWindow.toUTC(closeInput.value,zoneInput.value)};
+        const error = NZCFLOfferWindow.validate(schedule);
+        if (error) throw Error(error);
+        DB.offerSchedule = schedule.opensAt || schedule.closesAt ? schedule : null;
+        UI.scheduleError = null;
+      } catch(e) { UI.scheduleError = e.message; }
+      document.getElementById('rb-schedule-error').textContent = UI.scheduleError || '';
+      refreshSettingsButtons();
+    }
+    openInput.oninput = closeInput.oninput = stageSchedule;
+    zoneInput.onchange = stageSchedule;
+  }
   const backTopBtn = document.getElementById('rb-back-top');
   if (backTopBtn) backTopBtn.onclick = function(){ scrollPageTop(true); };
   updateBackTopControl();
@@ -4484,7 +4524,7 @@ function bindEvents(){
 
   const openSubmit = document.getElementById('rb-open-submit');
   if (openSubmit) openSubmit.onclick = function(){
-    if (!SESSION || DB.offersLocked) return;
+    if (!SESSION || offersLocked()) return;
     UI.submitTargetId = null;
     UI.showSubmitModal = true;
     render();
@@ -4496,7 +4536,7 @@ function bindEvents(){
         e.preventDefault();
         e.stopPropagation();
       }
-      if (!SESSION || DB.offersLocked) return;
+      if (!SESSION || offersLocked()) return;
       UI.submitTargetId = el.getAttribute('data-open-submit') || null;
       UI.showSubmitModal = true;
       render();
@@ -4970,6 +5010,9 @@ function bindEvents(){
   const releaseStage = document.getElementById('rb-release-stage');
   if (releaseStage) releaseStage.onclick = releaseSingleStageBoard;
 }
+
+let lastOfferWindowLocked = offersLocked();
+setInterval(function(){ const locked = offersLocked(); if (locked !== lastOfferWindowLocked) { lastOfferWindowLocked = locked; if (UI.view !== 'setup' && !UI.showSubmitModal && !UI.editOfferTarget) render(); } }, 1000);
 
 applyRoute(routeFromPath(window.location.pathname));
 render();

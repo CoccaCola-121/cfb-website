@@ -22,6 +22,7 @@ const STATE_FIELDS = [
   'commitSeasonEnded',
   'defaultClassLoaded',
   'offersLocked',
+  'offerSchedule',
   'dangerApprovals',
   'conditionalRescinds',
   'manualCommitOverrides',
