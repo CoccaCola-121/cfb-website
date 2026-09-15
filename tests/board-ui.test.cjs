@@ -689,3 +689,15 @@ test('schedule dates use Eastern midnight and end-of-day boundaries', () => {
   assert.equal(app.DB.offerSchedule.closesAt,'2026-09-21T03:59:59.000Z');
   assert.equal(app.DB.offerSchedule.timezone,'America/New_York');
 });
+
+test('My Offers expands directly to full pitches without a second disclosure or scroll box', () => {
+  const {app} = harness();
+  app.DB.offersByProspect = {r1:[{id:'offer1',team:'Michigan State',text:'Full pitch for Jordan Able',visits:{}}]};
+  for (const committed of [true,false]) {
+    app.DB.prospects.r1.commitTeam = committed ? 'Michigan State' : '';
+    const html = app.renderMyOffers();
+    assert.ok(html.includes('Full pitch for Jordan Able'));
+    assert.ok(!html.includes('data-offer-details="1"'));
+    assert.ok(!html.includes('max-height:140px;overflow:auto;'));
+  }
+});
