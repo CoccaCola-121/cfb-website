@@ -692,3 +692,13 @@ html { scrollbar-gutter: stable; }
 
 .rb-my-offer-visits:empty { display:none !important; }
 .rb-my-offer-meta > span:empty { display:none; }
+
+.rb-branded-offer { background:var(--panel-alt); border:1px solid var(--offer-team-color); border-left-width:4px; border-radius:8px; }
+.rb-offer-team-title { display:flex; align-items:center; gap:10px; min-width:0; }
+.rb-offer-team-title strong { font-size:17px; line-height:1.25; overflow-wrap:anywhere; }
+.rb-branded-offer > .rb-offer-block-header { padding-bottom:12px; margin-bottom:12px; border-bottom:1px solid var(--hairline); }
+@media (max-width:720px) {
+  .rb-offer-team-title { gap:8px; }
+  .rb-offer-team-title strong { font-size:15px; }
+  .rb-branded-offer { padding:10px 12px !important; }
+}

@@ -4103,10 +4103,12 @@ function renderProspectDetail(){
 
 function renderOfferBlock(o, opts){
   opts = opts || {};
+  const brand = getTeamBranding(o.team);
+  const offerStyle = '--offer-team-color:' + escapeHtml(teamBorderColor(brand)) + ';';
   const badges = visitBadges(o.visits, !!opts.collapsed);
   const wordCount = recruitingStage() === 'transfer' && !o.rescinded ? '<span class="rb-offer-word-count">' + NZCFLTransferRules.pitchWordCount(o.text, opts.prospect) + ' / 800 words</span>' : '';
   const header = '<div class="rb-offer-block-header" style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:' + (opts.collapsed ? 'nowrap' : 'wrap') + ';min-width:0;">' +
-    '<span style="font-weight:600;font-size:13px;">' + escapeHtml(o.team) + '</span>' +
+    '<span class="rb-offer-team-title">' + renderTeamLogo(brand, 28) + '<strong>' + escapeHtml(o.team) + '</strong></span>' +
     '<span class="rb-offer-visit-wrap" style="display:flex;gap:6px;flex-wrap:' + (opts.collapsed ? 'nowrap' : 'wrap') + ';align-items:center;min-width:0;overflow:hidden;">' +
       wordCount + (badges || '') +
       '<span class="rb-mono" style="font-size:11px;color:var(--slate);">' + escapeHtml(o.coach || '') + '</span>' +
@@ -4114,11 +4116,11 @@ function renderOfferBlock(o, opts){
   '</div>';
   let html = '';
   if (opts.collapsed){
-    html += '<details data-offer-details="1" style="background:var(--panel-alt);border-radius:8px;padding:7px 12px;">';
+    html += '<details class="rb-branded-offer" data-offer-details="1" style="' + offerStyle + 'padding:10px 14px;">';
     html += '<summary class="rb-offer-summary" style="list-style:none;cursor:pointer;">' + header + '</summary>';
     html += '<div style="margin-top:8px;">';
   } else {
-    html += '<div style="background:var(--panel-alt);border-radius:8px;padding:10px 14px;">';
+    html += '<div class="rb-branded-offer" style="' + offerStyle + 'padding:14px 16px;">';
     if (!opts.hideHeader) html += header;
     else html += wordCount;
   }
