@@ -774,7 +774,7 @@ function restoreSettingsDraft(){
 function canLeaveSettings(nextView){
   if (UI.view !== 'setup' || nextView === 'setup') return true;
   if (settingsSaving) return false;
-  if (hasSettingsChanges() && !window.confirm('You have unsaved settings changes. Leave and discard them? Choose Cancel to stay and press Save settings changes.')) return false;
+  if (hasSettingsChanges() && !window.confirm('You have unsaved settings changes. Leave and discard them? Choose Cancel to stay and press Save changes.')) return false;
   restoreSettingsDraft();
   return true;
 }
@@ -795,7 +795,7 @@ function mergeSettingsValue(base, draft, live, path){
 function queueSettingsAction(kind){
   if (!settingsDraft || settingsSaving) return false;
   settingsDraft.actions[kind] = true;
-  UI.settingsStatus = 'Action queued. Press Save settings changes to publish it.';
+  UI.settingsStatus = 'Action queued. Press Save changes to publish it.';
   render();
   return true;
 }
@@ -1756,7 +1756,7 @@ async function applyManualCommitOverride(){
   DB.commitUpdatedAt = Date.now();
   resetCommitFields();
   UI.commitOverrideStatus = (recruitNumber(prospect) ? recruitNumber(prospect) + ' ' : '') + prospect.name + ' committed to ' + team + '.';
-  if (settingsDraft && !settingsSaving) UI.commitOverrideStatus += ' Pending Save settings changes.';
+  if (settingsDraft && !settingsSaving) UI.commitOverrideStatus += ' Pending Save changes.';
   await saveDBNow();
   render();
 }
@@ -1810,7 +1810,7 @@ async function clearManualCommitOverride(){
   DB.commitUpdatedAt = Date.now();
   resetCommitFields();
   UI.commitOverrideStatus = 'Commitment cleared for ' + prospect.name + '.';
-  if (settingsDraft && !settingsSaving) UI.commitOverrideStatus += ' Pending Save settings changes.';
+  if (settingsDraft && !settingsSaving) UI.commitOverrideStatus += ' Pending Save changes.';
   await saveDBNow();
   render();
 }
@@ -3910,7 +3910,7 @@ function renderProspectBoardCard(pid, searchAttr, context){
 
 function renderClassSetup(){
   beginSettingsDraft();
-  const saveControl = '<div class="rb-settings-save"><div class="rb-card"><div>' + (UI.settingsStatus ? '<p role="status">' + escapeHtml(UI.settingsStatus) + '</p>' : '') + (UI.settingsError ? '<p role="alert" style="color:var(--alert)">' + escapeHtml(UI.settingsError) + '</p>' : '') + '</div><button class="rb-btn rb-btn-gold" id="rb-save-settings"' + (settingsSaving ? ' disabled' : '') + '>' + (settingsSaving ? 'Saving…' : 'Save settings changes') + '</button></div></div>';
+  const saveControl = '<div class="rb-settings-save"><div class="rb-card"><div>' + (UI.settingsStatus ? '<p role="status">' + escapeHtml(UI.settingsStatus) + '</p>' : '') + (UI.settingsError ? '<p role="alert" style="color:var(--alert)">' + escapeHtml(UI.settingsError) + '</p>' : '') + '</div><button class="rb-btn rb-btn-gold" id="rb-save-settings"' + (settingsSaving ? ' disabled' : '') + '>' + (settingsSaving ? 'Saving…' : 'Save changes') + '</button></div></div>';
   let html = '';
   if (!canViewSettings()) return renderAccessDenied();
   const stage = recruitingStage();
@@ -4023,6 +4023,7 @@ function renderClassSetup(){
 
   html += '<div class="rb-card" style="padding:20px 24px;max-width:640px;margin-top:14px;">';
   html += '<div class="rb-h" style="font-size:16px;margin-bottom:12px;">Team Branding</div>';
+  html += '<p style="font-size:12px;color:var(--slate);margin:0 0 12px;">Only update when logos change or teams move up from FCS.</p>';
   html += '<div class="rb-mono" style="font-size:12px;color:var(--slate);margin-bottom:12px;">' + escapeHtml((window.NZCFL_TEAM_BRANDS || []).length) + ' default teams loaded.</div>';
   html += '<input class="rb-file-input" type="file" id="rb-branding-file" accept=".json,.gz,application/json" />';
   html += '<label class="rb-file-label" for="rb-branding-file">Import branding update</label>';
@@ -4380,7 +4381,7 @@ function renderResetConfirmModal(){
   const isClass = UI.confirmReset === 'class';
   const isStage = UI.confirmReset && UI.confirmReset.startsWith('stage:');
   const title = isStage ? 'Switch recruiting stage?' : isClass ? 'Reset class file?' : 'Reset all offers?';
-  const body = isStage ? 'This will clear the current class, board and offers to switch to ' + RECRUITING_STAGES[UI.confirmReset.slice(6)].label + '. Save settings changes to publish.' : isClass ?
+  const body = isStage ? 'This will clear the current class, board and offers to switch to ' + RECRUITING_STAGES[UI.confirmReset.slice(6)].label + '. Save changes to publish.' : isClass ?
     'This will remove the loaded class, all prospect boards, all offers, rescinded offers, visits, and unmatched review items.' :
     'This will remove every posted offer, rescinded offer, visit usage record, and unmatched review item while keeping the loaded class and boards.';
   const approvals = dangerApprovalList(UI.confirmReset);
