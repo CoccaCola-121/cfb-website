@@ -669,7 +669,7 @@ test('new class resets offer window and schedule edits stay in settings draft', 
   assert.equal(app.DB.offerSchedule,null);
 });
 
-test('schedule fields use Eastern time and typed dates instead of scrolling pickers', () => {
+test('schedule dates use Eastern midnight and end-of-day boundaries', () => {
   const {app,elements} = harness();
   app.setSession({accessLevel:'commissioner'});
   const html = app.renderClassSetup();
@@ -678,10 +678,12 @@ test('schedule fields use Eastern time and typed dates instead of scrolling pick
   for (const key of ['opensAt','closesAt']) for (const part of ['date','time','period']) elements['rb-schedule-' + key + '-' + part] = element();
   elements['rb-schedule-error'] = element();
   app.bindEvents();
-  elements['rb-schedule-opensAt-date'].value = '09/20/2026';
+  elements['rb-schedule-opensAt-date'].value = '2026-09-20';
+  elements['rb-schedule-closesAt-date'].value = '2026-09-20';
   elements['rb-schedule-opensAt-time'].value = '3:30';
   elements['rb-schedule-opensAt-period'].value = 'PM';
-  elements['rb-schedule-opensAt-time'].oninput();
-  assert.equal(app.DB.offerSchedule.opensAt,'2026-09-20T19:30:00.000Z');
+  elements['rb-schedule-opensAt-date'].onchange();
+  assert.equal(app.DB.offerSchedule.opensAt,'2026-09-20T04:00:00.000Z');
+  assert.equal(app.DB.offerSchedule.closesAt,'2026-09-21T03:59:59.000Z');
   assert.equal(app.DB.offerSchedule.timezone,'America/New_York');
 });
