@@ -3635,7 +3635,7 @@ function renderCommitsForTeam(team, title){
     html += '<summary class="rb-offer-summary" style="list-style:none;cursor:pointer;">';
     html += '<div class="rb-commit-summary-layout">';
     html += '<div class="rb-commit-identity" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;"><span class="rb-list-identity"><span class="rb-mono" style="color:var(--slate);">' + recruitNumber(p) + '</span> <strong data-open-prospect="' + escapeHtml(p.id) + '" title="' + escapeHtml(p.name) + '" style="color:var(--chalk);cursor:pointer;">' + renderRecruitName(p.name, 24) + '</strong> <span class="rb-mono" style="color:var(--slate);font-size:13px;">' + escapeHtml(p.position || '') + (p.rating ? '<span class="rb-recruit-rating"> &middot; ' + escapeHtml(p.rating) + '</span>' : '') + (p.hometown ? '<span class="rb-desktop-only"> &middot; <span title="' + escapeHtml(p.hometown) + '">' + escapeHtml(shortText(p.hometown, 24)) + '</span></span>' : '') + '</span></span></div>';
-    html += '<span class="rb-commit-promises">' + renderPromiseChips(offers) + '</span><span class="rb-commit-expand">Details &rsaquo;</span>';
+    html += '<span class="rb-commit-promises">' + renderPromiseChips(offers) + '</span>';
     html += '</div>';
     html += '</summary>';
     html += '<div style="margin-top:12px;">';
