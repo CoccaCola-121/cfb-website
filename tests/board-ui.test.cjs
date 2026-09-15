@@ -675,14 +675,16 @@ test('schedule dates use Eastern midnight and end-of-day boundaries', () => {
   const html = app.renderClassSetup();
   assert.ok(!html.includes('datetime-local'));
   assert.ok(!html.includes('id="rb-schedule-zone"'));
-  for (const key of ['opensAt','closesAt']) for (const part of ['date','time','period']) elements['rb-schedule-' + key + '-' + part] = element();
+  for (const key of ['opensAt','closesAt']) for (const part of ['month','day','year','clear']) elements['rb-schedule-' + key + '-' + part] = element();
   elements['rb-schedule-error'] = element();
   app.bindEvents();
-  elements['rb-schedule-opensAt-date'].value = '2026-09-20';
-  elements['rb-schedule-closesAt-date'].value = '2026-09-20';
-  elements['rb-schedule-opensAt-time'].value = '3:30';
-  elements['rb-schedule-opensAt-period'].value = 'PM';
-  elements['rb-schedule-opensAt-date'].onchange();
+  assert.ok(!html.includes('type="date"'));
+  for (const key of ['opensAt','closesAt']) {
+    elements['rb-schedule-' + key + '-month'].value = '09';
+    elements['rb-schedule-' + key + '-day'].value = '20';
+    elements['rb-schedule-' + key + '-year'].value = '2026';
+  }
+  elements['rb-schedule-opensAt-month'].onchange();
   assert.equal(app.DB.offerSchedule.opensAt,'2026-09-20T04:00:00.000Z');
   assert.equal(app.DB.offerSchedule.closesAt,'2026-09-21T03:59:59.000Z');
   assert.equal(app.DB.offerSchedule.timezone,'America/New_York');

@@ -3931,7 +3931,12 @@ function renderOfferSchedule(){
   const schedule = DB.offerSchedule || {};
   return '<div class="rb-offer-schedule"><div class="rb-schedule-dates">' + [['opensAt','Scheduled open'],['closesAt','Scheduled close']].map(function(pair){
     const date = NZCFLOfferWindow.localTime(schedule[pair[0]],'America/New_York').slice(0,10);
-    return '<label>' + pair[1] + '<input class="rb-input" type="date" id="rb-schedule-' + pair[0] + '-date" value="' + date + '" /><span class="rb-schedule-caption" id="rb-schedule-' + pair[0] + '-caption">' + escapeHtml(offerScheduleCaption(pair[0],schedule[pair[0]])) + '</span></label>';
+    const parts = date.split('-');
+    const year = new Date().getFullYear();
+    const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    const years = Array.from(new Set([...(parts[0] ? [Number(parts[0])] : []),...Array.from({length:6},(_,i)=>year+i)])).sort((a,b)=>a-b);
+    const fields = [['month','Month',months.map((name,i)=>[String(i+1).padStart(2,'0'),name]),parts[1]],['day','Day',Array.from({length:31},(_,i)=>[String(i+1).padStart(2,'0'),String(i+1)]),parts[2]],['year','Year',years.map(y=>[String(y),String(y)]),parts[0]]];
+    return '<div><div class="rb-schedule-label">' + pair[1] + '</div><div class="rb-schedule-date-selects">' + fields.map(function(field){ return '<select class="rb-input" id="rb-schedule-' + pair[0] + '-' + field[0] + '" aria-label="' + pair[1] + ' ' + field[1].toLowerCase() + '"><option value="">' + field[1] + '</option>' + field[2].map(function(option){ return '<option value="' + option[0] + '"' + (option[0] === field[3] ? ' selected' : '') + '>' + option[1] + '</option>'; }).join('') + '</select>'; }).join('') + '<button type="button" class="rb-btn" id="rb-schedule-' + pair[0] + '-clear">Clear</button></div><span class="rb-schedule-caption" id="rb-schedule-' + pair[0] + '-caption">' + escapeHtml(offerScheduleCaption(pair[0],schedule[pair[0]])) + '</span></div>';
   }).join('') + '</div><p id="rb-schedule-error" role="alert">' + escapeHtml(UI.scheduleError || '') + '</p></div>';
 }
 
@@ -4469,10 +4474,14 @@ function bindEvents(){
   if (commitTeamField) commitTeamField.oninput = function(){ UI.commitOverrideTeam = commitTeamField.value; };
   const draftSheet = document.getElementById('rb-commit-sheet-url');
   if (draftSheet && settingsDraft) draftSheet.oninput = function(){ DB.commitSheetUrl = draftSheet.value.trim(); refreshSettingsButtons(); };
-  if (document.getElementById('rb-schedule-opensAt-date')) {
+  if (document.getElementById('rb-schedule-opensAt-month')) {
     function readScheduleTime(key){
-      const date = document.getElementById('rb-schedule-' + key + '-date').value;
-      if (!date) return '';
+      const parts = ['year','month','day'].map(function(part){ return document.getElementById('rb-schedule-' + key + '-' + part).value; });
+      if (parts.every(part=>!part)) return '';
+      if (parts.some(part=>!part)) throw Error('Select a month, day, and year.');
+      const date = parts.join('-');
+      const check = new Date(date + 'T12:00:00Z');
+      if (!Number.isFinite(check.getTime()) || check.toISOString().slice(0,10) !== date) throw Error('Choose a valid day for the selected month.');
       const instant = NZCFLOfferWindow.toUTC(date + (key === 'opensAt' ? 'T00:00' : 'T23:59'),'America/New_York');
       return key === 'closesAt' ? new Date(Date.parse(instant) + 59000).toISOString() : instant;
     }
@@ -4489,7 +4498,8 @@ function bindEvents(){
       refreshSettingsButtons();
     }
     ['opensAt','closesAt'].forEach(function(key){
-      document.getElementById('rb-schedule-' + key + '-date').onchange = stageSchedule;
+      ['month','day','year'].forEach(function(part){ document.getElementById('rb-schedule-' + key + '-' + part).onchange = stageSchedule; });
+      document.getElementById('rb-schedule-' + key + '-clear').onclick = function(){ ['month','day','year'].forEach(function(part){ document.getElementById('rb-schedule-' + key + '-' + part).value = ''; }); stageSchedule(); };
     });
   }
   const backTopBtn = document.getElementById('rb-back-top');
