@@ -705,3 +705,6 @@ html { scrollbar-gutter: stable; }
   .rb-branded-offer { padding:10px 12px !important; }
 }
 .rb-settings-save button[hidden] { display:none; }
+
+.rb-pending-commits { font-size:12px; color:var(--gold); margin-top:12px; }
+.rb-pending-commits ul { margin:6px 0 0; padding-left:18px; line-height:1.7; }

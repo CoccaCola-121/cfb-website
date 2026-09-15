@@ -3908,6 +3908,23 @@ function renderProspectBoardCard(pid, searchAttr, context){
   return html;
 }
 
+function pendingCommitChanges(){
+  if (!settingsDraft) return [];
+  const base = settingsDraft.base;
+  return Object.entries(DB.prospects || {}).filter(function(entry){
+    const [id, prospect] = entry;
+    const previous = (base.prospects || {})[id];
+    if (!previous || previous.name !== prospect.name) return false;
+    const beforeOverride = (base.manualCommitOverrides || {})[id];
+    const afterOverride = (DB.manualCommitOverrides || {})[id];
+    return (previous.commitTeam || '') !== (prospect.commitTeam || '') ||
+      (beforeOverride && beforeOverride.team || '') !== (afterOverride && afterOverride.team || '');
+  }).map(function(entry){
+    const prospect = entry[1];
+    return prospect.commitTeam ? prospect.name + ' will commit to ' + prospect.commitTeam + '.' : 'Commitment will be cleared for ' + prospect.name + '.';
+  });
+}
+
 function renderClassSetup(){
   beginSettingsDraft();
   const saveControl = '<div class="rb-settings-save"><div class="rb-card"><div>' + (UI.settingsStatus ? '<p role="status">' + escapeHtml(UI.settingsStatus) + '</p>' : '') + (UI.settingsError ? '<p role="alert" style="color:var(--alert)">' + escapeHtml(UI.settingsError) + '</p>' : '') + '</div><button class="rb-btn" id="rb-discard-settings"' + (!hasSettingsChanges() ? ' hidden' : '') + (settingsSaving ? ' disabled' : '') + '>Discard changes</button><button class="rb-btn rb-btn-gold" id="rb-save-settings"' + (settingsSaving || !hasSettingsChanges() ? ' disabled' : '') + '>' + (settingsSaving ? 'Saving…' : 'Save changes') + '</button></div></div>';
@@ -3993,7 +4010,9 @@ function renderClassSetup(){
   html += '</div>';
   if (UI.commitStatus) html += '<div style="font-size:12px;color:var(--gold);margin-top:8px;">' + escapeHtml(UI.commitStatus) + '</div>';
   if (UI.commitError) html += '<div style="font-size:12px;color:var(--alert);margin-top:8px;">' + escapeHtml(UI.commitError) + '</div>';
-  if (UI.commitOverrideStatus) html += '<div style="font-size:12px;color:var(--gold);margin-top:8px;">' + escapeHtml(UI.commitOverrideStatus) + '</div>';
+  const pendingCommits = pendingCommitChanges();
+  if (pendingCommits.length) html += '<div class="rb-pending-commits" role="status"><strong>Unsaved commitments (' + pendingCommits.length + ')</strong><ul>' + pendingCommits.map(function(message){ return '<li>' + escapeHtml(message) + '</li>'; }).join('') + '</ul></div>';
+  if (!settingsDraft && UI.commitOverrideStatus) html += '<div style="font-size:12px;color:var(--gold);margin-top:8px;">' + escapeHtml(UI.commitOverrideStatus) + '</div>';
   if (UI.commitOverrideError) html += '<div style="font-size:12px;color:var(--alert);margin-top:8px;">' + escapeHtml(UI.commitOverrideError) + '</div>';
   html += '</div>';
 
