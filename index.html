@@ -759,7 +759,7 @@ function beginSettingsDraft(){
   settingsDraft = { base: copySettings(DB), payload: copySettings(leagueStatePayload()), actions: {}, typed: false };
 }
 function hasSettingsChanges(){
-  return !!(settingsDraft && (settingsDraft.typed || UI.transferDraft || Object.keys(settingsDraft.actions).length || JSON.stringify(settingsDraft.payload) !== JSON.stringify(leagueStatePayload())));
+  return !!(settingsDraft && (UI.transferDraft || Object.keys(settingsDraft.actions).length || JSON.stringify(settingsDraft.payload) !== JSON.stringify(leagueStatePayload())));
 }
 function restoreSettingsDraft(){
   if (settingsDraft) { Object.keys(DB).forEach(function(key){ delete DB[key]; }); Object.assign(DB, copySettings(settingsDraft.base)); }
@@ -3910,7 +3910,7 @@ function renderProspectBoardCard(pid, searchAttr, context){
 
 function renderClassSetup(){
   beginSettingsDraft();
-  const saveControl = '<div class="rb-settings-save"><div class="rb-card"><div>' + (UI.settingsStatus ? '<p role="status">' + escapeHtml(UI.settingsStatus) + '</p>' : '') + (UI.settingsError ? '<p role="alert" style="color:var(--alert)">' + escapeHtml(UI.settingsError) + '</p>' : '') + '</div><button class="rb-btn rb-btn-gold" id="rb-save-settings"' + (settingsSaving ? ' disabled' : '') + '>' + (settingsSaving ? 'Saving…' : 'Save changes') + '</button></div></div>';
+  const saveControl = '<div class="rb-settings-save"><div class="rb-card"><div>' + (UI.settingsStatus ? '<p role="status">' + escapeHtml(UI.settingsStatus) + '</p>' : '') + (UI.settingsError ? '<p role="alert" style="color:var(--alert)">' + escapeHtml(UI.settingsError) + '</p>' : '') + '</div><button class="rb-btn" id="rb-discard-settings"' + (!hasSettingsChanges() ? ' hidden' : '') + (settingsSaving ? ' disabled' : '') + '>Discard changes</button><button class="rb-btn rb-btn-gold" id="rb-save-settings"' + (settingsSaving || !hasSettingsChanges() ? ' disabled' : '') + '>' + (settingsSaving ? 'Saving…' : 'Save changes') + '</button></div></div>';
   let html = '';
   if (!canViewSettings()) return renderAccessDenied();
   const stage = recruitingStage();
@@ -4409,12 +4409,19 @@ function bindEvents(){
   document.querySelectorAll('[data-board-offer-filter]').forEach(function(button){ button.onclick = function(){ UI.boardOfferFilter = button.getAttribute('data-board-offer-filter'); render(); }; });
   const saveSettings = document.getElementById('rb-save-settings');
   if (saveSettings) saveSettings.onclick = saveSettingsChanges;
+  const discardSettings = document.getElementById('rb-discard-settings');
+  if (discardSettings) discardSettings.onclick = function(){ if (settingsSaving) return; restoreSettingsDraft(); render(); };
+  function refreshSettingsButtons(){
+    const dirty = hasSettingsChanges();
+    if (saveSettings) saveSettings.disabled = settingsSaving || !dirty;
+    if (discardSettings) discardSettings.hidden = !dirty;
+  }
   const commitPlayerField = document.getElementById('rb-commit-override-rank');
   if (commitPlayerField) commitPlayerField.onchange = function(){ UI.commitOverrideRank = commitPlayerField.value; };
   const commitTeamField = document.getElementById('rb-commit-override-team');
   if (commitTeamField) commitTeamField.oninput = function(){ UI.commitOverrideTeam = commitTeamField.value; };
   const draftSheet = document.getElementById('rb-commit-sheet-url');
-  if (draftSheet && settingsDraft) draftSheet.oninput = function(){ settingsDraft.typed = true; DB.commitSheetUrl = draftSheet.value.trim(); };
+  if (draftSheet && settingsDraft) draftSheet.oninput = function(){ DB.commitSheetUrl = draftSheet.value.trim(); refreshSettingsButtons(); };
   const backTopBtn = document.getElementById('rb-back-top');
   if (backTopBtn) backTopBtn.onclick = function(){ scrollPageTop(true); };
   updateBackTopControl();

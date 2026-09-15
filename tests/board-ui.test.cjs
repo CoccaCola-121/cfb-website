@@ -617,3 +617,22 @@ test('public transfer offer counts exclude headers and update with pitch text', 
   app.DB.recruitingStage = 'hs';
   assert.doesNotMatch(app.renderOfferBlock(offer,{prospect}),/800 words/);
 });
+
+test('settings save enables for drafts and discard restores the saved settings', () => {
+  const {app,elements} = harness();
+  app.setSession({accessLevel:'commissioner'});
+  app.UI.view = 'setup';
+  let html = app.renderClassSetup();
+  assert.match(html,/id="rb-save-settings" disabled/);
+  assert.match(html,/id="rb-discard-settings" hidden/);
+  const original = app.DB.offersLocked;
+  app.DB.offersLocked = !original;
+  html = app.renderClassSetup();
+  assert.doesNotMatch(html,/id="rb-save-settings" disabled/);
+  assert.doesNotMatch(html,/id="rb-discard-settings" hidden/);
+  elements['rb-discard-settings'] = element();
+  app.bindEvents();
+  elements['rb-discard-settings'].onclick();
+  assert.equal(app.DB.offersLocked,original);
+  assert.match(app.renderClassSetup(),/id="rb-save-settings" disabled/);
+});

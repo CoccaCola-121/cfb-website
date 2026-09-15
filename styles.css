@@ -704,3 +704,4 @@ html { scrollbar-gutter: stable; }
   .rb-offer-team-title strong { font-size:14px; }
   .rb-branded-offer { padding:10px 12px !important; }
 }
+.rb-settings-save button[hidden] { display:none; }
