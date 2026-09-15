@@ -3924,9 +3924,16 @@ function renderProspectBoardCard(pid, searchAttr, context){
 
 function renderOfferSchedule(){
   const schedule = DB.offerSchedule || {};
-  const zone = schedule.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
-  const zones = Array.from(new Set([zone,'UTC',...(Intl.supportedValuesOf ? Intl.supportedValuesOf('timeZone') : ['America/New_York','America/Chicago','America/Denver','America/Los_Angeles','Europe/London','Australia/Sydney'])]));
-  return '<div class="rb-offer-schedule"><label>Timezone<select class="rb-input" id="rb-schedule-zone">' + zones.map(function(z){ return '<option' + (z === zone ? ' selected' : '') + '>' + escapeHtml(z) + '</option>'; }).join('') + '</select></label><div class="rb-schedule-dates">' + [['opensAt','Scheduled open'],['closesAt','Scheduled close']].map(function(pair){ return '<label>' + pair[1] + '<input class="rb-input" type="datetime-local" id="rb-schedule-' + pair[0] + '" value="' + NZCFLOfferWindow.localTime(schedule[pair[0]],zone) + '" /></label>'; }).join('') + '</div><p>Times use the selected timezone, including daylight saving. Leave blank for no schedule. Changing the lock toggle clears the schedule.</p><p id="rb-schedule-error" role="alert">' + escapeHtml(UI.scheduleError || '') + '</p></div>';
+  const zone = 'America/New_York';
+  return '<div class="rb-offer-schedule"><p class="rb-schedule-timezone">Eastern Time · EST/EDT adjusts automatically</p><div class="rb-schedule-dates">' + [['opensAt','Scheduled open'],['closesAt','Scheduled close']].map(function(pair){
+    const local = NZCFLOfferWindow.localTime(schedule[pair[0]],zone);
+    const parts = local.split('T');
+    const dateParts = (parts[0] || '').split('-');
+    const hour = parts[1] ? Number(parts[1].slice(0,2)) : 0;
+    const date = local ? dateParts[1] + '/' + dateParts[2] + '/' + dateParts[0] : '';
+    const time = local ? (hour % 12 || 12) + parts[1].slice(2) : '';
+    return '<div><div class="rb-schedule-label">' + pair[1] + '</div><div class="rb-schedule-entry"><input class="rb-input" type="text" id="rb-schedule-' + pair[0] + '-date" aria-label="' + pair[1] + ' date, month/day/year" placeholder="MM/DD/YYYY" value="' + date + '" maxlength="10" /><input class="rb-input" type="text" id="rb-schedule-' + pair[0] + '-time" aria-label="' + pair[1] + ' time, hour:minute" placeholder="HH:MM" value="' + time + '" maxlength="5" /><select class="rb-input" id="rb-schedule-' + pair[0] + '-period" aria-label="' + pair[1] + ' AM or PM"><option' + (hour < 12 ? ' selected' : '') + '>AM</option><option' + (hour >= 12 ? ' selected' : '') + '>PM</option></select></div></div>';
+  }).join('') + '</div><p>Enter dates and times in Eastern Time. Leave both fields blank for no schedule. Changing the lock toggle clears the schedule.</p><p id="rb-schedule-error" role="alert">' + escapeHtml(UI.scheduleError || '') + '</p></div>';
 }
 
 function pendingCommitChanges(){
@@ -4463,13 +4470,21 @@ function bindEvents(){
   if (commitTeamField) commitTeamField.oninput = function(){ UI.commitOverrideTeam = commitTeamField.value; };
   const draftSheet = document.getElementById('rb-commit-sheet-url');
   if (draftSheet && settingsDraft) draftSheet.oninput = function(){ DB.commitSheetUrl = draftSheet.value.trim(); refreshSettingsButtons(); };
-  const zoneInput = document.getElementById('rb-schedule-zone');
-  if (zoneInput) {
-    const openInput = document.getElementById('rb-schedule-opensAt');
-    const closeInput = document.getElementById('rb-schedule-closesAt');
+  if (document.getElementById('rb-schedule-opensAt-date')) {
+    function readScheduleTime(key){
+      const date = document.getElementById('rb-schedule-' + key + '-date').value.trim();
+      const time = document.getElementById('rb-schedule-' + key + '-time').value.trim();
+      const period = document.getElementById('rb-schedule-' + key + '-period').value;
+      if (!date && !time) return '';
+      const d = date.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+      const t = time.match(/^(\d{1,2}):(\d{2})$/);
+      if (!d || !t || Number(t[1]) < 1 || Number(t[1]) > 12 || Number(t[2]) > 59) throw Error('Use MM/DD/YYYY and HH:MM with AM or PM.');
+      const local = d[3] + '-' + d[1].padStart(2,'0') + '-' + d[2].padStart(2,'0') + 'T' + String(Number(t[1]) % 12 + (period === 'PM' ? 12 : 0)).padStart(2,'0') + ':' + t[2];
+      return NZCFLOfferWindow.toUTC(local,'America/New_York');
+    }
     function stageSchedule(){
       try {
-        const schedule = {timezone:zoneInput.value, opensAt:NZCFLOfferWindow.toUTC(openInput.value,zoneInput.value), closesAt:NZCFLOfferWindow.toUTC(closeInput.value,zoneInput.value)};
+        const schedule = {timezone:'America/New_York', opensAt:readScheduleTime('opensAt'), closesAt:readScheduleTime('closesAt')};
         const error = NZCFLOfferWindow.validate(schedule);
         if (error) throw Error(error);
         DB.offerSchedule = schedule.opensAt || schedule.closesAt ? schedule : null;
@@ -4478,8 +4493,10 @@ function bindEvents(){
       document.getElementById('rb-schedule-error').textContent = UI.scheduleError || '';
       refreshSettingsButtons();
     }
-    openInput.oninput = closeInput.oninput = stageSchedule;
-    zoneInput.onchange = stageSchedule;
+    ['opensAt','closesAt'].forEach(function(key){
+      ['date','time'].forEach(function(part){ document.getElementById('rb-schedule-' + key + '-' + part).oninput = stageSchedule; });
+      document.getElementById('rb-schedule-' + key + '-period').onchange = stageSchedule;
+    });
   }
   const backTopBtn = document.getElementById('rb-back-top');
   if (backTopBtn) backTopBtn.onclick = function(){ scrollPageTop(true); };

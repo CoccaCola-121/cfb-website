@@ -722,3 +722,8 @@ html { scrollbar-gutter: stable; }
 .rb-commit-summary-layout .rb-commit-promises { grid-column:1 / -1; display:block; min-width:0; border-top:1px solid var(--hairline); padding-top:12px; }
 .rb-commit-summary-layout .rb-commit-promises .rb-tag { background:transparent; border:0; border-radius:0; padding:3px 0; font-size:12px; line-height:1.6 !important; }
 .rb-commit-summary-layout .rb-commit-promises .rb-tag:last-child { margin-bottom:0 !important; }
+
+.rb-schedule-dates { grid-template-columns:1fr; }
+.rb-schedule-entry { display:grid; grid-template-columns:minmax(0,1.5fr) minmax(0,1fr) 76px; gap:8px; }
+.rb-schedule-label { font-size:12px; color:var(--slate); }
+.rb-offer-schedule .rb-schedule-timezone { margin:0; color:var(--chalk); }
