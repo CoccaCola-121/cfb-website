@@ -3910,7 +3910,8 @@ function renderProspectBoardCard(pid, searchAttr, context){
 
 function renderClassSetup(){
   beginSettingsDraft();
-  let html = '<div class="rb-settings-save"><div><strong>Settings</strong><p>Changes stay in draft until you save.</p>' + (UI.settingsStatus ? '<p role="status">' + escapeHtml(UI.settingsStatus) + '</p>' : '') + (UI.settingsError ? '<p role="alert" style="color:var(--alert)">' + escapeHtml(UI.settingsError) + '</p>' : '') + '</div><button class="rb-btn rb-btn-gold" id="rb-save-settings"' + (settingsSaving ? ' disabled' : '') + '>' + (settingsSaving ? 'Saving…' : 'Save settings changes') + '</button></div>';
+  const saveControl = '<div class="rb-settings-save"><div class="rb-card"><div>' + (UI.settingsStatus ? '<p role="status">' + escapeHtml(UI.settingsStatus) + '</p>' : '') + (UI.settingsError ? '<p role="alert" style="color:var(--alert)">' + escapeHtml(UI.settingsError) + '</p>' : '') + '</div><button class="rb-btn rb-btn-gold" id="rb-save-settings"' + (settingsSaving ? ' disabled' : '') + '>' + (settingsSaving ? 'Saving…' : 'Save settings changes') + '</button></div></div>';
+  let html = '';
   if (!canViewSettings()) return renderAccessDenied();
   const stage = recruitingStage();
   const stageConfig = recruitingStageConfig();
@@ -4043,7 +4044,7 @@ function renderClassSetup(){
     html += '</div>';
     html += '</div>';
   }
-  return '<fieldset class="rb-settings-fields"' + (settingsSaving ? ' disabled' : '') + '>' + html + '</fieldset>';
+  return '<fieldset class="rb-settings-fields"' + (settingsSaving ? ' disabled' : '') + '>' + html + saveControl + '</fieldset>';
 }
 
 function renderThread(){

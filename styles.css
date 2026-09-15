@@ -661,14 +661,16 @@ html { scrollbar-gutter: stable; }
 @media (max-width:720px) { .rb-transfer-filter-row { gap:14px; } #rb-transfer-filter-controls { max-width:none; } .rb-transfer-filter-row > .rb-filter-row { margin-left:0; } }
 .rb-transfer-tick-active { color:var(--chalk); font-weight:700; }
 .rb-list-identity > span:empty { display:none; }
-.rb-settings-save { position:sticky; top:0; z-index:12; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px; background:var(--panel); border:1px solid var(--hairline); padding:16px 20px; margin-bottom:18px; border-radius:8px; }
-.rb-settings-save p { font-size:12px; color:var(--slate); margin:4px 0 0; max-width:640px; }
+.rb-settings-save { position:sticky; bottom:12px; z-index:12; display:flex; justify-content:center; margin-top:12px; }
+.rb-settings-save > .rb-card { padding:8px 10px; display:flex; align-items:center; justify-content:center; gap:8px; flex-wrap:wrap; width:max-content; max-width:100%; }
+.rb-settings-save p { font-size:12px; color:var(--slate); margin:0; max-width:420px; }
+.rb-settings-save > .rb-card > div:empty { display:none; }
 .rb-transfer-commit-controls { grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:8px; }
 .rb-transfer-commit-controls > .rb-input { font-size:14px; padding:8px 11px; min-height:36px; }
 .rb-transfer-commit-controls > select { grid-column:1 / -1; min-width:0; width:100%; }
 .rb-transfer-commit-controls > input { grid-column:1 / -1; }
 .rb-transfer-commit-controls > button { min-width:0; font-size:13px; padding:8px 12px; min-height:36px; }
-@media (max-width:720px) { .rb-settings-save { padding:12px; } .rb-settings-save > button { width:100%; } .rb-transfer-commit-controls { grid-template-columns:repeat(2,minmax(0,1fr)); } }
+@media (max-width:720px) { .rb-transfer-commit-controls { grid-template-columns:repeat(2,minmax(0,1fr)); } }
 .rb-settings-fields { min-width:0; border:0; margin:0; padding:0; }
 
 @media (max-width:720px) { .rb-transfer-commit-controls > .rb-input { font-size:16px; } }
