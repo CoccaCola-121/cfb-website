@@ -752,3 +752,6 @@ html { scrollbar-gutter: stable; }
 .rb-cpr-offer-identity label { font-size:12px; color:var(--slate); min-width:0; }
 .rb-cpr-offer-identity .rb-input { width:100%; margin-top:5px; box-sizing:border-box; }
 @media(max-width:720px) { .rb-cpr-offer-identity { grid-template-columns:1fr; } .rb-cpr-offer-identity .rb-input { font-size:16px; } }
+.rb-cpr-history { display:flex; align-items:center; flex-wrap:wrap; gap:8px; }
+.rb-cpr-export { margin-top:16px; padding-top:14px; border-top:1px solid var(--hairline); }
+.rb-cpr-export p { font-size:12px; color:var(--slate); line-height:1.5; }

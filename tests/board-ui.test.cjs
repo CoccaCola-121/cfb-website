@@ -776,3 +776,11 @@ test('CPR offer submission creates its CSV thread and offer together, then route
   assert.ok(html.includes('existing thread or create one'));
   assert.ok(!html.includes('detect visits'));
 });
+
+test('CPR player detail displays home state once',()=>{
+  const {app}=harness();
+  app.DB.recruitingStage='cpr';
+  Object.assign(app.DB.prospects.r1,{hometown:'Pennsylvania',homestate:'Pennsylvania'});
+  app.UI.prospectId='r1';
+  assert.equal((app.renderProspectDetail().match(/Pennsylvania/g)||[]).length,1);
+});
