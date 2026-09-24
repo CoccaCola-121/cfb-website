@@ -3829,7 +3829,7 @@ function renderCprProfile(p){
 }
 function renderCprCreate(){
   if (!SESSION) return '';
-  return '<div class="rb-card rb-cpr-create"><button class="rb-btn rb-btn-gold" id="rb-open-submit"' + (offersLocked() ? ' disabled' : '') + '>Submit offer</button><p>We’ll find the player’s thread or create one from the uploaded free-agent list.</p></div>';
+  return '<div class="rb-card rb-cpr-create"><button class="rb-btn rb-btn-gold" id="rb-open-submit"' + (offersLocked() ? ' disabled' : '') + '>Submit offer</button><p>Routes to an existing thread or creates one from the free-agent list.</p></div>';
 }
 function createCprPlayer(input){
   if (!SESSION || recruitingStage() !== 'cpr' || !DB.wave1Released) throw Error('The CPR board must be open first.');
