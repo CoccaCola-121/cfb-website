@@ -3929,7 +3929,7 @@ function renderBoardSearchResults(query){
   DB.threads.forEach(function(t){
     visibleBoardProspectIds(t).forEach(function(pid){
       const p = DB.prospects[pid];
-      const searchText = [recruitingStage() !== 'hs' ? '' : p.rank + ' #' + p.rank, p.name, p.hometown, p.transferFrom].join(' ').toLowerCase();
+      const searchText = [recruitingStage() !== 'hs' ? '' : p.rank + ' #' + p.rank, p.name, p.homestate, p.hometown, p.transferFrom, p.previousTeam || (p.previousTeams || []).slice(-1)[0]].join(' ').toLowerCase();
       if (searchText.indexOf(q) !== -1) html += renderProspectBoardCard(pid, searchText, context);
     });
   });
@@ -3969,7 +3969,7 @@ function renderThreadProspectList(t){
   const visibleIds = visibleBoardProspectIds(t);
   if (recruitingStage() === 'transfer') visibleIds.sort(function(a,b){ const pa = DB.prospects[a], pb = DB.prospects[b]; return (pa.sourceOrder ?? pa.rank) - (pb.sourceOrder ?? pb.rank); });
   html += renderPositionCounts(visibleIds, function(pid){ return DB.prospects[pid] && DB.prospects[pid].position; }, filterKey);
-  html += '<input class="rb-input" data-thread-search="' + t.id + '" placeholder="' + (recruitingStage() !== 'hs' ? 'Search players by name or school' : 'Search recruits by name, rank, hometown or school') + '" />';
+  html += '<input class="rb-input" data-thread-search="' + t.id + '" placeholder="' + (recruitingStage() !== 'hs' ? 'Search players by name, home state or previous school' : 'Search recruits by name, rank, hometown or school') + '" />';
   if (recruitingStage() !== 'hs') {
     html += '<div class="rb-transfer-filter-row"><div id="rb-transfer-filter-controls">' + renderTransferFilters() + '</div>';
   }
@@ -3989,7 +3989,7 @@ function renderThreadProspectList(t){
   visibleIds.forEach(function(pid){
     const p = DB.prospects[pid];
     if (!p) return;
-    const searchText = [recruitingStage() !== 'hs' ? '' : p.rank + ' #' + p.rank, p.name, p.hometown, p.transferFrom].join(' ').toLowerCase();
+    const searchText = [recruitingStage() !== 'hs' ? '' : p.rank + ' #' + p.rank, p.name, p.homestate, p.hometown, p.transferFrom, p.previousTeam || (p.previousTeams || []).slice(-1)[0]].join(' ').toLowerCase();
     html += renderProspectBoardCard(pid, searchText, cardContext);
   });
   if (!visibleIds.length) html += '<div class="rb-card" style="padding:28px;text-align:center;color:var(--slate);">No ' + (ended ? 'free agents' : 'uncommitted prospects') + ' on this board.</div>';
@@ -4001,7 +4001,7 @@ function renderProspectBoardCard(pid, searchAttr, context){
   const p = DB.prospects[pid];
   if (!p) return '';
   const offers = DB.offersByProspect[pid] || [];
-  const searchText = searchAttr || [p.rank, '#' + p.rank, p.name, p.hometown].join(' ').toLowerCase();
+  const searchText = searchAttr || [p.rank, '#' + p.rank, p.name, p.homestate, p.hometown, p.transferFrom, p.previousTeam || (p.previousTeams || []).slice(-1)[0]].join(' ').toLowerCase();
   const bucket = positionBucket(p.position);
   const ended = context ? context.ended : recruitingEndedForCurrentStage();
   const currentThread = context ? context.thread : (UI.view === 'thread' ? DB.threads.find(function(t){ return t.id === UI.threadId; }) : null);
