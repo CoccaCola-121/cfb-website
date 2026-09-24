@@ -766,3 +766,12 @@ html { scrollbar-gutter: stable; }
 .rb-cpr-pitch-badge { padding:5px 8px; font-size:10px; line-height:1.3; align-self:center; white-space:nowrap; }
 
 .rb-cpr-scholarship-badge { color:var(--chalk); border-color:var(--slate); background:rgba(160,164,168,.10); }
+
+.rb-transfer-filter-row:has(.rb-cpr-type-filter) { display:grid; grid-template-columns:minmax(220px,1fr) minmax(240px,.8fr) minmax(280px,1fr); gap:24px; }
+.rb-cpr-type-filter { width:100%; max-width:320px; justify-self:center; font-size:11px; color:var(--slate); }
+.rb-cpr-type-filter .rb-segmented { display:grid; grid-template-columns:1fr 1.3fr .8fr; margin-top:6px; }
+.rb-cpr-type-filter .rb-segmented button { padding:8px; font-size:12px; }
+.rb-transfer-filter-row:has(.rb-cpr-type-filter) .rb-board-status-filters { width:100%; }
+.rb-transfer-filter-row:has(.rb-cpr-type-filter) .rb-board-status-filters button { font-size:12px; padding:8px; }
+@media(max-width:1050px) { .rb-transfer-filter-row:has(.rb-cpr-type-filter) { grid-template-columns:1fr 1fr; } .rb-cpr-type-filter { max-width:none; } .rb-transfer-filter-row:has(.rb-cpr-type-filter) .rb-board-status-filters { grid-column:1 / -1; flex-direction:row; } .rb-transfer-filter-row:has(.rb-cpr-type-filter) .rb-board-status-filters > * { flex:1; min-width:0; } }
+@media(max-width:600px) { .rb-transfer-filter-row:has(.rb-cpr-type-filter) { grid-template-columns:minmax(0,1fr); gap:16px; } .rb-transfer-filter-row:has(.rb-cpr-type-filter) .rb-board-status-filters { flex-direction:column; } }

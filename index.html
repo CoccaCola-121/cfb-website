@@ -1419,7 +1419,7 @@ function clearRecruitingBoard(){
   DB.conditionalRescinds = [];
   DB.manualCommitOverrides = {};
   DB.commitSheetUrl = '';
-  UI.transferGrade = ''; UI.transferYears = ''; UI.transferFilterMode = 'years';
+  UI.transferGrade = ''; UI.transferYears = ''; UI.transferFilterMode = 'years'; UI.cprTypeFilter = '';
   DB.commitUpdatedAt = null;
   DB.discordCommitUpdatedAt = null;
   DB.discordCommitChannelId = '';
@@ -3973,6 +3973,7 @@ function renderThreadProspectList(t){
   if (recruitingStage() !== 'hs') {
     html += '<div class="rb-transfer-filter-row"><div id="rb-transfer-filter-controls">' + renderTransferFilters() + '</div>';
   }
+  if (recruitingStage() === 'cpr') html += '<div class="rb-cpr-type-filter"><div class="rb-transfer-filter-heading"><span>Recruit type</span><button type="button" class="rb-transfer-filter-reset" data-cpr-type="">Show all</button></div><div class="rb-segmented" aria-label="Recruit type">' + [['walkon','Walk-On'],['scholarship','Scholarship'],['pitch','Pitch']].map(function(item){ return '<button type="button" data-cpr-type="' + item[0] + '" aria-pressed="' + (UI.cprTypeFilter === item[0]) + '">' + item[1] + '</button>'; }).join('') + '</div></div>';
   const commitFilter = UI.boardCommitFilter || (UI.hideCommittedBoards ? 'uncommitted' : 'all');
   html += '<div class="rb-board-status-filters"><div class="rb-filter-row"><div class="rb-segmented" aria-label="Commit status filter">';
   [['committed','Committed'], ['all','All'], ['uncommitted','Uncommitted']].forEach(function(option){
@@ -4821,7 +4822,9 @@ function bindEvents(){
       });
       const p = kind === 'board' && recruitingStage() !== 'hs' ? DB.prospects[card.getAttribute('data-open-prospect')] : null;
       const eligible = !p || ((!UI.transferGrade || (p.grade || 'Not listed') === UI.transferGrade) && (!UI.transferYears || String(p.yearsLeft) === String(UI.transferYears)));
-      const matches = (!q || haystack.indexOf(q) !== -1) && eligible;
+      const recruitType = p && (isPitchRecruit(p) ? 'pitch' : (NZCFLCprRules.scholarshipRecruit(p) ? 'scholarship' : 'walkon'));
+      const matchesType = recruitingStage() !== 'cpr' || !p || !UI.cprTypeFilter || recruitType === UI.cprTypeFilter;
+      const matches = (!q || haystack.indexOf(q) !== -1) && eligible && matchesType;
       if (matches) filteredCounts[bucket] = (filteredCounts[bucket] || 0) + 1;
       card.style.display = matches && !hiddenByPosition ? '' : 'none';
     });
@@ -4898,6 +4901,13 @@ function bindEvents(){
     if (slider) { slider.onchange = slider.oninput; slider.onclick = slider.oninput; }
   }
   bindTransferFilters();
+  document.querySelectorAll('[data-cpr-type]').forEach(function(button){
+    button.onclick = function(){
+      UI.cprTypeFilter = button.getAttribute('data-cpr-type') || '';
+      document.querySelectorAll('[data-cpr-type]').forEach(function(option){ option.setAttribute('aria-pressed', !!UI.cprTypeFilter && option.getAttribute('data-cpr-type') === UI.cprTypeFilter ? 'true' : 'false'); });
+      applyPositionListFilters('board');
+    };
+  });
   const myOfferSearch = document.getElementById('rb-my-offer-search');
   if (myOfferSearch) myOfferSearch.oninput = function(){
     applyPositionListFilters('offers');
