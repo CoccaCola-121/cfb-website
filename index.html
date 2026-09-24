@@ -3824,7 +3824,7 @@ function renderTeamsPage(){
 }
 
 function renderCprProfile(p){
-  const tags = (p.coachCreated ? '<span class="rb-cpr-created">Coach-created</span>' : '') + (isPitchRecruit(p) ? '<span class="rb-cpr-pitch-badge">PITCH RECRUIT <span>800-word free write</span></span>' : '');
+  const tags = (p.coachCreated ? '<span class="rb-cpr-created">Coach-created</span>' : '') + (isPitchRecruit(p) ? '<span class="rb-cpr-pitch-badge">PITCH RECRUIT</span>' : '');
   return '<div class="rb-cpr-profile">' + (p.homestate ? '<span>Home state: <strong>' + escapeHtml(p.homestate) + '</strong></span>' : '') + tags + '</div>';
 }
 function renderCprCreate(){
