@@ -3829,8 +3829,8 @@ function renderTeamsPage(){
 
 function renderCprProfile(p){
   const tags = (p.coachCreated ? '<span class="rb-cpr-created">Coach-created</span>' : '') + (isPitchRecruit(p) ? '<span class="rb-cpr-pitch-badge">PITCH RECRUIT</span>' : '');
-  const history = (p.previousTeams || []).map(function(team){ return '<span class="rb-cpr-previous">' + renderTeamLogo(getTeamBranding(team)) + escapeHtml(team) + '</span>'; }).join('');
-  return '<div class="rb-cpr-profile">' + (p.homestate ? '<span>Home state: <strong>' + escapeHtml(p.homestate) + '</strong></span>' : '') + (history ? '<span class="rb-cpr-history">Previous teams: ' + history + '</span>' : '') + (p.grade ? '<span>' + escapeHtml(p.grade) + (p.yearsLeft ? ' · ' + p.yearsLeft + ' year' + (Number(p.yearsLeft)===1 ? '' : 's') + ' left' : '') + '</span>' : '') + tags + '</div>';
+  const history = (p.previousTeam ? [p.previousTeam] : (p.previousTeams || []).slice(-1)).map(function(team){ return '<span class="rb-cpr-previous">' + renderTeamLogo(getTeamBranding(team)) + escapeHtml(team) + '</span>'; }).join('');
+  return '<div class="rb-cpr-profile">' + (p.homestate ? '<span>Home state: <strong>' + escapeHtml(p.homestate) + '</strong></span>' : '') + (history ? '<span class="rb-cpr-history">Previous team: ' + history + '</span>' : '') + (p.grade ? '<span>' + escapeHtml(p.grade) + (p.yearsLeft ? ' · ' + p.yearsLeft + ' year' + (Number(p.yearsLeft)===1 ? '' : 's') + ' left' : '') + '</span>' : '') + tags + '</div>';
 }
 async function loadCprMetadata(file){
   if (!file || recruitingStage() !== 'cpr' || !settingsDraft || !DB.fullRoster.length) return;
@@ -3846,7 +3846,7 @@ async function loadCprMetadata(file){
     result.matches.forEach(function(match){
       const row=DB.fullRoster.find(p=>p.rank===match.rank && p.name===match.name);
       if (!row) return;
-      const fields={grade:match.grade,yearsLeft:match.yearsLeft,previousTeams:match.previousTeams,metadataSeason:match.metadataSeason};
+      const fields={grade:match.grade,yearsLeft:match.yearsLeft,previousTeam:match.previousTeam,previousTeams:match.previousTeams,metadataSeason:match.metadataSeason};
       Object.assign(row,fields);
       const p=DB.prospects['r'+row.rank]; if (p && p.name===row.name) Object.assign(p,fields);
     });
@@ -4085,7 +4085,7 @@ function renderClassSetup(){
   html += '<label class="rb-file-label" for="rb-class-file">Upload class file</label>';
   html += '<span class="rb-mono" style="font-size:12px;color:var(--slate);margin-left:10px;">' + escapeHtml(UI.classFileName || (DB.fullRoster.length ? (stageConfig.usesDefaultClass && DB.defaultClassLoaded ? DEFAULT_CLASS_NAME : stageConfig.label + (stage === 'transfer' ? ' PDF' : ' CSV')) : 'No file selected')) + '</span>';
   if (stage === 'transfer') html += renderTransferImportPreview();
-  if (stage === 'cpr') html += '<div class="rb-cpr-export"><div class="rb-h" style="font-size:15px;">Player history</div><p>Upload the league JSON export to add previous teams and eligibility.</p><input type="file" class="rb-file-input" id="rb-cpr-export" accept=".json,application/json"' + (!DB.fullRoster.length || UI.cprMetadataLoading ? ' disabled' : '') + ' /><label class="rb-file-label" for="rb-cpr-export">Upload league export</label>' + (!DB.fullRoster.length ? '<p>Load the CPR CSV first.</p>' : '') + (UI.cprMetadataStatus ? '<p role="status">' + escapeHtml(UI.cprMetadataStatus) + '</p>' : '') + '</div>';
+  if (stage === 'cpr') html += '<div class="rb-cpr-export"><div class="rb-h" style="font-size:15px;">Player history</div><p>Upload the league .json or .json.gz export to add previous team and eligibility.</p><input type="file" class="rb-file-input" id="rb-cpr-export" accept=".json,.gz,application/json,application/gzip"' + (!DB.fullRoster.length || UI.cprMetadataLoading ? ' disabled' : '') + ' /><label class="rb-file-label" for="rb-cpr-export">Upload league export</label>' + (!DB.fullRoster.length ? '<p>Load the CPR CSV first.</p>' : '') + (UI.cprMetadataStatus ? '<p role="status">' + escapeHtml(UI.cprMetadataStatus) + '</p>' : '') + '</div>';
   if (UI.classError) html += '<div style="font-size:12px;color:var(--alert);margin-top:8px;">' + escapeHtml(UI.classError) + '</div>';
   html += '</div>';
 
