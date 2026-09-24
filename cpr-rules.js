@@ -12,5 +12,19 @@
     if (matches.length!==1) throw Error(matches.length ? 'Multiple CSV players match these details. Ask a commissioner to resolve the duplicate.' : 'No free agent in the uploaded CSV matches that name, position, overall and potential.');
     return matches[0];
   }
-  root.NZCFLCprRules = Object.freeze({thresholds,qualify,leaders,match});
+  function resolveOffer(roster,text,input = {}){
+    const header = normalize(String(text || '').split(/\r?\n/).slice(0,5).join(' ').replace(/[*_`]/g,''));
+    const escape = value => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const name = normalize(input.name);
+    const position = String(input.position || '').trim().toUpperCase();
+    let matches = roster.filter(p => name ? normalize(p.name) === name : new RegExp('(?:^|[^a-z0-9])' + escape(normalize(p.name)) + '(?=$|[^a-z0-9])','i').test(header));
+    if (position) matches = matches.filter(p=>p.position===position);
+    if (matches.length > 1 && !position) {
+      const positions = Object.keys(thresholds).filter(pos=>new RegExp('(?:^|[^a-z])' + pos + '(?:$|[^a-z])','i').test(header));
+      if (positions.length === 1) matches=matches.filter(p=>p.position===positions[0]);
+    }
+    if (matches.length !== 1) throw Error(matches.length ? 'More than one player matches. Enter the player name and position below.' : 'No matching free agent found in the CSV. Enter the player name and position below.');
+    return matches[0];
+  }
+  root.NZCFLCprRules = Object.freeze({thresholds,qualify,leaders,match,resolveOffer});
 })(globalThis);

@@ -742,3 +742,10 @@ html { scrollbar-gutter: stable; }
 .rb-cpr-create-fields .rb-input { margin-top:5px; width:100%; box-sizing:border-box; }
 .rb-cpr-metadata { margin-top:14px; }
 @media (max-width:720px) { .rb-cpr-create-fields { grid-template-columns:repeat(2,minmax(0,1fr)); } .rb-cpr-create-fields .rb-input { font-size:16px; } }
+.rb-cpr-pitch-badge { display:inline-flex; align-items:center; flex-wrap:wrap; gap:8px; padding:8px 12px; border:1px solid var(--gold); border-left:4px solid var(--gold); border-radius:5px; color:var(--gold); background:rgba(212,175,55,.10); font-size:12px; font-weight:800; letter-spacing:.04em; }
+.rb-cpr-pitch-badge span { color:var(--chalk); font-weight:400; letter-spacing:0; }
+.rb-cpr-created { font-size:11px; color:var(--slate); }
+.rb-cpr-offer-identity { display:grid; grid-template-columns:1.5fr 1fr; gap:10px; margin-bottom:12px; }
+.rb-cpr-offer-identity label { font-size:12px; color:var(--slate); min-width:0; }
+.rb-cpr-offer-identity .rb-input { width:100%; margin-top:5px; box-sizing:border-box; }
+@media(max-width:720px) { .rb-cpr-offer-identity { grid-template-columns:1fr; } .rb-cpr-offer-identity .rb-input { font-size:16px; } }

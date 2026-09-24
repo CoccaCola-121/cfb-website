@@ -145,3 +145,13 @@ test('CPR rejects player threads that do not match the CSV', async () => {
   const response=await onRequestPut({env,request:new Request('https://test/api/league/state',{method:'PUT',body:JSON.stringify({state})})});
   assert.equal(response.status,400);
 });
+
+test('CPR header matching uses whole names and optional position to resolve ambiguity', async () => {
+  await import('../cpr-rules.js');
+  const {resolveOffer}=globalThis.NZCFLCprRules;
+  const roster=[{name:'John Jones',position:'S'},{name:'John Joneson',position:'QB'},{name:'John Jones',position:'LB'}];
+  assert.equal(resolveOffer(roster,'Army offers John Joneson').position,'QB');
+  assert.equal(resolveOffer(roster,'Army offers John Jones (LB)').position,'LB');
+  assert.equal(resolveOffer(roster,'My free write',{name:'John Jones',position:'S'}).position,'S');
+  assert.throws(()=>resolveOffer(roster,'Army offers John Jones'),/More than one/);
+});

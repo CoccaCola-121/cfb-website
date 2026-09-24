@@ -2774,7 +2774,47 @@ function parseOfferSheet(rawText){
   };
 }
 
+async function submitCprOffer(rawText){
+  if (!SESSION || UI.submitting || !rawText.trim()) return;
+  const nameInput = document.getElementById('rb-cpr-offer-name');
+  const posInput = document.getElementById('rb-cpr-offer-position');
+  const input = {name:nameInput ? nameInput.value : '',position:posInput ? posInput.value : ''};
+  let snapshot;
+  UI.submitting = true;
+  try {
+    let current;
+    if (apiAvailable()) {
+      const response=await fetch('/api/league/state',{credentials:'include'});
+      if (!response.ok) throw Error('Could not check the CPR board. Try again.');
+      current=(await response.json()).state;
+      if (!current || current.recruitingStage !== 'cpr') throw Error('The CPR board is no longer active.');
+      mergeLeagueState(current);
+    }
+    if (offersLocked()) throw Error('Offers are locked.');
+    const row = UI.submitTargetId && DB.prospects[UI.submitTargetId] ? DB.prospects[UI.submitTargetId] : NZCFLCprRules.resolveOffer(DB.fullRoster,rawText,input);
+    const error=NZCFLTransferRules.pitchLimitError(rawText,row,'cpr');
+    if (error) throw Error(error);
+    snapshot=copySettings(DB);
+    const pid=createCprPlayer(row);
+    const result=addOfferDirect(pid,SESSION.team,(DB.teams[SESSION.team] || {}).coach,rawText,extractPromises(rawText),{});
+    if (!result.ok) throw Error(result.error);
+    if (apiAvailable()) {
+      const response=await fetch('/api/league/state',{method:'PUT',credentials:'include',headers:{'content-type':'application/json'},body:JSON.stringify({state:leagueStatePayload(),expectedUpdatedAt:current.updatedAt || null})});
+      const saved=await response.json();
+      if (!response.ok || !saved.ok) throw Error(saved.error || 'Could not save your offer. Try again.');
+      mergeLeagueState(saved.state);
+    } else await saveDBNow();
+    UI.submitting=false; UI.showSubmitModal=false; UI.submitTargetId=null;
+    UI.lastSummary={matched:1,unmatched:0,total:1,dismissAt:Date.now()+6000};
+    render();
+  } catch(e) {
+    if (snapshot) { Object.keys(DB).forEach(key=>delete DB[key]); Object.assign(DB,snapshot); }
+    const error=document.getElementById('rb-submit-error'); if (error) error.textContent=e.message;
+  } finally { UI.submitting=false; }
+}
+
 async function submitOfferSheet(rawText){
+  if (recruitingStage() === 'cpr') return submitCprOffer(rawText);
   if (!SESSION || !rawText.trim()) return;
   if (offersLocked()){
     UI.lastSummary = { errorText: 'Offer denied: offers are locked.' };
@@ -3560,6 +3600,7 @@ function renderMyOffers(){
   html += '<div style="font-size:13px;color:var(--slate);margin-bottom:12px;">' + rows.length + ' offer' + (rows.length === 1 ? '' : 's') + ' from ' + escapeHtml(SESSION.team) + '.</div>';
   html += renderPositionCounts(rows, function(row){ return row.prospect && row.prospect.position; }, filterKey);
   html += '<div style="margin-bottom:12px;"><button class="rb-btn rb-btn-gold" id="rb-open-submit" ' + (offersLocked() ? 'disabled title="Offers are locked"' : '') + '>' + (offersLocked() ? 'Offers locked' : 'Submit offer') + '</button></div>';
+  if (recruitingStage() === 'cpr') html += '<p class="rb-transfer-limit">Your offer goes to the matching player thread, or creates one from the free-agent list.</p>';
   html += '<input class="rb-input" id="rb-my-offer-search" placeholder="' + (recruitingStage() === 'transfer' ? 'Search offers by player name' : 'Search your offers by recruit name, rank, or hometown') + '" />';
   if (UI.rescindError) html += '<div style="font-size:12px;color:var(--alert);margin-top:8px;">' + escapeHtml(UI.rescindError) + '</div>';
   html += '</div>';
@@ -3783,12 +3824,12 @@ function renderTeamsPage(){
 }
 
 function renderCprProfile(p){
-  const brand = p.previousTeam ? getTeamBranding(p.previousTeam) : null;
-  return '<div class="rb-cpr-profile"><span>Home state: <strong>' + escapeHtml(p.homestate || 'Not provided') + '</strong></span><span class="rb-cpr-previous">' + (brand ? renderTeamLogo(brand) : '') + 'Previous team: <strong>' + escapeHtml(p.previousTeam || 'Not provided') + '</strong></span><span>Years left: <strong>' + escapeHtml(p.yearsLeft || 'Not provided') + '</strong></span>' + (isPitchRecruit(p) ? '<span class="rb-tag">Pitch recruit · 800 words</span>' : '') + '</div>';
+  const tags = (p.coachCreated ? '<span class="rb-cpr-created">Coach-created</span>' : '') + (isPitchRecruit(p) ? '<span class="rb-cpr-pitch-badge">PITCH RECRUIT <span>800-word free write</span></span>' : '');
+  return '<div class="rb-cpr-profile">' + (p.homestate ? '<span>Home state: <strong>' + escapeHtml(p.homestate) + '</strong></span>' : '') + tags + '</div>';
 }
 function renderCprCreate(){
   if (!SESSION) return '';
-  return '<details class="rb-card rb-cpr-create"><summary>Create a player thread</summary><p>For free agents below the automatic position minimums. Details must match the uploaded CSV.</p><div class="rb-cpr-create-fields"><label>Player name<input class="rb-input" id="rb-cpr-name" /></label><label>Position<select class="rb-input" id="rb-cpr-position">' + Object.keys(NZCFLCprRules.thresholds).map(function(pos){return '<option>' + pos + '</option>';}).join('') + '</select></label><label>Overall<input class="rb-input" id="rb-cpr-overall" type="number" min="0" max="100" /></label><label>Potential<input class="rb-input" id="rb-cpr-potential" type="number" min="0" max="100" /></label></div><button class="rb-btn rb-btn-gold" id="rb-cpr-create">Create thread</button><p id="rb-cpr-create-error" role="alert"></p></details>';
+  return '<div class="rb-card rb-cpr-create"><button class="rb-btn rb-btn-gold" id="rb-open-submit"' + (offersLocked() ? ' disabled' : '') + '>Submit offer</button><p>We’ll find the player’s thread or create one from the uploaded free-agent list.</p></div>';
 }
 function createCprPlayer(input){
   if (!SESSION || recruitingStage() !== 'cpr' || !DB.wave1Released) throw Error('The CPR board must be open first.');
@@ -3797,15 +3838,11 @@ function createCprPlayer(input){
   const id = 'r' + row.rank;
   if (DB.prospects[id]) return id;
   DB.prospects[id] = prospectFromRosterRow(row,id);
+  DB.prospects[id].coachCreated = true;
   DB.released[row.rank] = true;
   DB.threads.push(makeThread(row.name,[id],null));
   return id;
 }
-function renderCprMetadataEditor(p){
-  if (!canViewSettings()) return '';
-  return '<details class="rb-cpr-metadata"><summary>Edit missing player details</summary><div class="rb-cpr-create-fields">' + [['homestate','Home state'],['previousTeam','Previous team'],['yearsLeft','Years left']].map(function(field){ return '<label>' + field[1] + '<input class="rb-input" id="rb-cpr-meta-' + field[0] + '" value="' + escapeHtml(p[field[0]] || '') + '"' + (field[0] === 'yearsLeft' ? ' type="number" min="1" max="4"' : '') + ' /></label>'; }).join('') + '</div><button class="rb-btn" id="rb-cpr-meta-save" data-player="' + escapeHtml(p.id) + '">Save player details</button><p id="rb-cpr-meta-error" role="alert"></p></details>';
-}
-
 function renderFeed(){
   if (recruitingStage() === 'cpr' && DB.wave1Released) return renderCprCreate() + renderThreadProspectList({id:'cpr-board',title:'CPR Board',prospectIds:Object.keys(DB.prospects),stars:null});
   if (recruitingStage() === 'transfer' && DB.threads.length) return renderThreadProspectList({ id: DB.threads[0].id, title: 'Transfer Board', prospectIds: Array.from(new Set(DB.threads.flatMap(function(t){ return t.prospectIds; }))), stars: null });
@@ -4167,7 +4204,7 @@ function renderProspectDetail(){
     (recruitingStage() !== 'hs' ? '' : '<span>' + starsOrLabel(p.stars) + '</span>') + '</div>';
   html += '</div>';
   if (recruitingStage() === 'transfer') html += renderTransferProfile(p, true);
-  else if (recruitingStage() === 'cpr') html += renderCprProfile(p) + renderCprMetadataEditor(p);
+  else if (recruitingStage() === 'cpr') html += renderCprProfile(p);
   else html += renderStorylineLine(p.storyline, 'margin-top:8px;');
   html += renderLegacySchoolLine(p.legacySchool, 'margin-top:8px;');
   if (recruitingStage() === 'transfer'){
@@ -4251,7 +4288,7 @@ function renderSubmitModal(){
   const locked = offersLocked();
   const pitchOffer = recruitingStageConfig().pitchOnly || isPitchRecruit(target);
   const submitHelp = locked ? 'Offers are currently locked. New offers cannot be posted.' :
-    (pitchOffer ? (target ? 'Write or paste a personalized pitch for ' + (recruitNumber(target) ? recruitNumber(target) + ' ' : '') + renderRecruitName(target.name) + '. Include up to 3 promises; short pitch-only submissions are fine.' : 'Write or paste a personalized pitch. Include up to 3 promises; short pitch-only submissions are fine.') :
+    (recruitingStage() === 'cpr' ? (target ? 'Submit your offer for ' + escapeHtml(target.name) + (isPitchRecruit(target) ? '. Free-write pitch, 800 words maximum.' : '.') : 'Paste your offer. We’ll match the player by name and position, then use their existing thread or create one from the CSV. Pitch recruits allow 800 words.') : pitchOffer ? (target ? 'Write or paste a personalized pitch for ' + (recruitNumber(target) ? recruitNumber(target) + ' ' : '') + renderRecruitName(target.name) + '. Include up to 3 promises; short pitch-only submissions are fine.' : 'Write or paste a personalized pitch. Include up to 3 promises; short pitch-only submissions are fine.') :
       (target ? 'Paste one offer sheet as-is. This will post directly to ' + (recruitNumber(target) ? recruitNumber(target) + ' ' : '') + renderRecruitName(target.name) + ', detect visits, and file your team name automatically.' : 'Paste one offer sheet as-is. We\'ll match it to the right prospect, detect visits, and file your team name automatically.'));
   const placeholder = pitchOffer ? 'Write or paste your pitch here' : 'Paste your auto-offer sheet output here';
   return '<div style="position:fixed;inset:0;background:rgba(0,0,0,0.6);display:flex;align-items:center;justify-content:center;z-index:50;" data-close-modal="1">' +
@@ -4260,8 +4297,10 @@ function renderSubmitModal(){
       '<div style="font-size:12px;color:var(--slate);margin-bottom:12px;">' +
         submitHelp +
       '</div>' +
+      (recruitingStage() === 'cpr' && !target ? '<div class="rb-cpr-offer-identity"><label>Player name (if not clear in offer)<input class="rb-input" id="rb-cpr-offer-name" /></label><label>Position<select class="rb-input" id="rb-cpr-offer-position"><option value="">Detect from offer</option>' + Object.keys(NZCFLCprRules.thresholds).map(pos=>'<option>' + pos + '</option>').join('') + '</select></label></div>' : '') +
+      '<p id="rb-submit-error" role="alert" style="color:var(--alert);font-size:12px;"></p>' +
       '<textarea class="rb-textarea rb-scrollbar" id="rb-sheet-text" rows="10" placeholder="' + escapeHtml(placeholder) + '" ' + (locked ? 'disabled' : '') + '></textarea>' +
-      (pitchOffer ? '<div id="rb-pitch-count" role="status" class="rb-transfer-limit">0 / 800 words · standalone offer header excluded</div>' : '') +
+      (pitchOffer || recruitingStage() === 'cpr' ? '<div id="rb-pitch-count" role="status" class="rb-transfer-limit">0 / 800 words · standalone offer header excluded</div>' : '') +
       '<div style="display:flex;justify-content:flex-end;gap:8px;margin-top:14px;">' +
         '<button class="rb-btn" data-close-modal="1">Cancel</button>' +
         '<button class="rb-btn rb-btn-gold" id="rb-submit-sheet-btn" ' + (UI.submitting || locked ? 'disabled' : '') + '>' + (locked ? 'Offers locked' : (UI.submitting ? 'Posting...' : 'Post offer')) + '</button>' +
@@ -4491,47 +4530,6 @@ function renderResetConfirmModal(){
 // ---------- Events ----------
 
 function bindEvents(){
-  const cprCreate = document.getElementById('rb-cpr-create');
-  if (cprCreate) cprCreate.onclick = async function(){
-    const input = {}; ['name','position','overall','potential'].forEach(function(key){input[key]=document.getElementById('rb-cpr-' + key).value;});
-    let snapshot;
-    cprCreate.disabled = true;
-    try {
-      let current;
-      if (apiAvailable()) {
-        const response = await fetch('/api/league/state',{credentials:'include'});
-        if (!response.ok) throw Error('Could not check the current CPR class. Try again.');
-        current = (await response.json()).state;
-        if (!current || current.recruitingStage !== 'cpr') throw Error('The CPR class is no longer open. Refresh the board.');
-        mergeLeagueState(current);
-      }
-      snapshot = copySettings(DB);
-      const id = createCprPlayer(input);
-      if (apiAvailable()) {
-        const response = await fetch('/api/league/state',{method:'PUT',credentials:'include',headers:{'content-type':'application/json'},body:JSON.stringify({state:leagueStatePayload(),expectedUpdatedAt:current.updatedAt || null})});
-        const result = await response.json();
-        if (!response.ok || !result.ok) throw Error(result.error || 'Could not create this thread. Try again.');
-        mergeLeagueState(result.state);
-      } else await saveDBNow();
-      navigateTo('prospect',{prospectId:id});
-    } catch(e) {
-      if (snapshot) { Object.keys(DB).forEach(function(key){delete DB[key];}); Object.assign(DB,snapshot); }
-      const error = document.getElementById('rb-cpr-create-error'); if (error) error.textContent=e.message;
-    } finally { cprCreate.disabled=false; }
-  };
-  const cprMeta = document.getElementById('rb-cpr-meta-save');
-  if (cprMeta) cprMeta.onclick = async function(){
-    if (!canViewSettings() || recruitingStage() !== 'cpr') return;
-    const p = DB.prospects[cprMeta.getAttribute('data-player')];
-    if (!p) return;
-    const data = {}; ['homestate','previousTeam','yearsLeft'].forEach(function(key){data[key]=document.getElementById('rb-cpr-meta-' + key).value.trim();});
-    if (data.yearsLeft && (!Number.isInteger(Number(data.yearsLeft)) || Number(data.yearsLeft)<1 || Number(data.yearsLeft)>4)) { document.getElementById('rb-cpr-meta-error').textContent='Years left must be 1–4, or blank.'; return; }
-    Object.assign(p,data);
-    const row = DB.fullRoster.find(function(row){return row.rank === p.rank;});
-    if (row) Object.assign(row,data);
-    await saveDBNow(); render();
-  };
-
   document.querySelectorAll('[data-board-offer-filter]').forEach(function(button){ button.onclick = function(){ UI.boardOfferFilter = button.getAttribute('data-board-offer-filter'); render(); }; });
   const saveSettings = document.getElementById('rb-save-settings');
   if (saveSettings) saveSettings.onclick = saveSettingsChanges;
@@ -4639,10 +4637,12 @@ function bindEvents(){
   });
 
   const pitchInput = document.getElementById('rb-sheet-text');
-  if (pitchInput && (recruitingStage() === 'transfer' || (recruitingStage() === 'cpr' && isPitchRecruit(DB.prospects[UI.submitTargetId])))) pitchInput.oninput = function(){
-    const prospect = DB.prospects[UI.submitTargetId] || findProspectFromOffer(pitchInput.value);
+  if (pitchInput && (recruitingStage() === 'transfer' || recruitingStage() === 'cpr')) pitchInput.oninput = function(){
+    let prospect = DB.prospects[UI.submitTargetId] || findProspectFromOffer(pitchInput.value);
+    if (!prospect && recruitingStage() === 'cpr') { try { prospect = NZCFLCprRules.resolveOffer(DB.fullRoster,pitchInput.value); } catch(e) {} }
     const count = NZCFLTransferRules.pitchWordCount(pitchInput.value, prospect);
     const status = document.getElementById('rb-pitch-count');
+    if (status && recruitingStage() === 'cpr' && !isPitchRecruit(prospect)) { status.textContent = prospect ? 'Standard offer recruit' : 'Pitch recruits have an 800-word limit.'; return; }
     if (status) { status.textContent = count + ' / 800 words · standalone offer header excluded'; status.style.color = count > 800 ? 'var(--alert)' : 'var(--slate)'; }
   };
   const submitSheetBtn = document.getElementById('rb-submit-sheet-btn');

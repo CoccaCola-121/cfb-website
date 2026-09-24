@@ -10,7 +10,7 @@ const script = page.match(/<script>([\s\S]*?)<\/script>/)[1];
 const boot = script.lastIndexOf('\napplyRoute(routeFromPath(window.location.pathname));');
 assert(boot > 0, 'The app bootstrap must be identifiable without executing network requests.');
 const source = script.slice(0, boot) + `
-  globalThis.app = { DB, UI, createCprPlayer, loadClassData, resetOfferWindow, setOffersLocked, offersLocked, pendingCommitChanges, restoreSettingsDraft, renderOfferBlock, renderRescindFilterFields, renderVisitLedger, visibleBoardProspectIds, setRecruitingStage, requestReset, approveDangerReset, beginSettingsDraft, hasSettingsChanges, canLeaveSettings, saveSettingsChanges, saveDBNow, leagueStatePayload, mergeSettingsValue, updateCommitsFromSheet, runBackupNow, setTransferFilter, renderTransferFilters, renderClassSetup, requestManualCommitOverride, applyManualCommitOverride, requestClearCommit, clearManualCommitOverride, applyManualCommitOverrides, clearRecruitingBoard, findProspectFromSheetRow, transferCardStyle, parseFullClass, prospectFromRosterRow, confirmTransferImport, releaseSingleStageBoard, addOfferDirect, render, renderNav, navigateTo, setReady(){ dbReady = true; sessionReady = true; }, renderFeed, renderBoardSearchResults, renderTeamsPage,
+  globalThis.app = { DB, UI, submitCprOffer, renderSubmitModal, createCprPlayer, loadClassData, resetOfferWindow, setOffersLocked, offersLocked, pendingCommitChanges, restoreSettingsDraft, renderOfferBlock, renderRescindFilterFields, renderVisitLedger, visibleBoardProspectIds, setRecruitingStage, requestReset, approveDangerReset, beginSettingsDraft, hasSettingsChanges, canLeaveSettings, saveSettingsChanges, saveDBNow, leagueStatePayload, mergeSettingsValue, updateCommitsFromSheet, runBackupNow, setTransferFilter, renderTransferFilters, renderClassSetup, requestManualCommitOverride, applyManualCommitOverride, requestClearCommit, clearManualCommitOverride, applyManualCommitOverrides, clearRecruitingBoard, findProspectFromSheetRow, transferCardStyle, parseFullClass, prospectFromRosterRow, confirmTransferImport, releaseSingleStageBoard, addOfferDirect, render, renderNav, navigateTo, setReady(){ dbReady = true; sessionReady = true; }, renderFeed, renderBoardSearchResults, renderTeamsPage,
     renderThreadProspectList, renderProspectDetail, builtInTeamBranding, getTeamBranding, activeTeamBrands,
     mobileRecruitName, renderRecruitName, renderMyOffers, renderCommitsForTeam, renderTeamOffers, renderConditionalRescinds, renderRecruitValues, teamBorderColor, bindEvents, applyDefaultClassData, releaseWave1, releaseWave2,
     setSession(value){ SESSION = value; } };
@@ -725,9 +725,11 @@ test('CPR CSV creates qualifying player threads and validates below-threshold ad
   assert.equal(app.DB.threads.length,4);
   assert.throws(()=>app.createCprPlayer({name:'Low Safety',position:'S',overall:'30',potential:'55'}),/No free agent/);
   const html=app.renderFeed();
-  assert.ok(html.includes('Home state:'));
-  assert.ok(html.includes('Not provided'));
-  assert.ok(html.includes('Pitch recruit · 800 words'));
+  assert.ok(!html.includes('Not provided'));
+  assert.ok(html.includes('PITCH RECRUIT'));
+  assert.ok(html.includes('Coach-created'));
+  assert.ok(!html.includes('Previous team:'));
+  assert.ok(!html.includes('Years left:'));
   assert.ok(!html.includes('Pitch prompt'));
 });
 
@@ -750,4 +752,27 @@ test('CPR PlayerBios Country is home state and jersey numbers never become playe
   assert.equal(rows[0].hometown,'Ohio');
   assert.equal(rows[0].previousTeam,'');
   assert.equal(rows[0].yearsLeft,'');
+});
+
+test('CPR offer submission creates its CSV thread and offer together, then routes repeats', async () => {
+  const {app,elements}=harness();
+  app.DB.recruitingStage='cpr'; app.clearRecruitingBoard();
+  app.loadClassData('Name,Pos,Team,Ovr,Pot\nTop S,S,FA,40,60\nLow S,S,FA,29,45');
+  app.releaseSingleStageBoard(); app.DB.offersLocked=false;
+  elements['rb-submit-error']=element();
+  await app.submitCprOffer('Michigan State offers Low S (S)\nScholarship\nWelcome to our team.');
+  assert.equal(app.DB.prospects.r2.name,'Low S');
+  assert.equal(app.DB.prospects.r2.coachCreated,true);
+  assert.equal(app.DB.offersByProspect.r2.length,1);
+  assert.equal(app.DB.threads.length,2);
+  await app.submitCprOffer('Michigan State offers Low S (S)\nScholarship\nSecond offer.');
+  assert.equal(app.DB.offersByProspect.r2.length,1);
+  assert.equal(app.DB.threads.length,2);
+  assert.match(elements['rb-submit-error'].textContent,/already offered/);
+  await app.submitCprOffer('Michigan State offers Nonexistent Person');
+  assert.equal(app.DB.threads.length,2);
+  assert.match(elements['rb-submit-error'].textContent,/No matching/);
+  const html=app.renderSubmitModal();
+  assert.ok(html.includes('existing thread or create one'));
+  assert.ok(!html.includes('detect visits'));
 });
