@@ -13,7 +13,7 @@ test('bot-compatible grade rules and team history skip unknown eligibility',()=>
 });
 test('export import only enriches unique matching free agents',()=>{
   const player={pid:10,firstName:'John',lastName:'Smith',tid:-1,age:20,ratings:[{pos:'S',ovr:29,pot:50}],statsTids:[1]};
-  const data={gameAttributes:{season:2067},teams:[{tid:1,region:'Army'}],players:[player,{...player,tid:1}]};
+  const data={gameAttributes:{season:2067},teams:[{tid:1,region:'Army'}],players:[player]};
   const roster=[{rank:1,name:'John Smith',position:'S',overall:29,potential:50},{rank:2,name:'Other',position:'QB',overall:50,potential:60}];
   const result=extractCprMetadata(data,roster);
   assert.equal(result.matches.length,1);
@@ -51,4 +51,16 @@ test('a gap in the immediately previous season leaves previous team blank',()=>{
   assert.deepEqual(playerMetadata(p,2063,teams).previousTeams,[]);
   p.stats.push({season:2062,tid:1});
   assert.equal(playerMetadata(p,2063,teams).previousTeam,'Stanford');
+});
+
+test('CSV identity can match a still-rostered export player like Ben Hale',()=>{
+  const result=extractCprMetadata({gameAttributes:{season:2063},teams:[{tid:25,region:'Michigan State'}],players:[{firstName:'Ben',lastName:'Hale',tid:25,born:{year:2042},yearsFreeAgent:0,stats:[{season:2062,tid:25}],ratings:[{pos:'QB',ovr:40,pot:59}]}]},[{rank:1,name:'Ben Hale',position:'QB',overall:40,potential:59}]);
+  assert.equal(result.matches[0].grade,'JR');
+  assert.equal(result.matches[0].yearsLeft,2);
+  assert.equal(result.matches[0].previousTeam,'Michigan State');
+});
+test('free agent tenure distinguishes missing stats from a missed recruiting cycle',()=>{
+  const teams=new Map([[92,{region:'Princeton'}],[56,{region:'Stanford'}]]);
+  assert.equal(playerMetadata({tid:-1,yearsFreeAgent:1,stats:[{season:2061,tid:92}]},2063,teams).previousTeam,'Princeton');
+  assert.equal(playerMetadata({tid:-1,yearsFreeAgent:2,stats:[{season:2060,tid:56}]},2063,teams).previousTeam,'');
 });

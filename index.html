@@ -3827,8 +3827,12 @@ function renderTeamsPage(){
   return html;
 }
 
+function renderPitchBadge(p){
+  return recruitingStage() === 'cpr' && isPitchRecruit(p) ? '<span class="rb-cpr-pitch-badge">PITCH RECRUIT</span>' : '';
+}
+
 function renderCprProfile(p){
-  const tags = (p.coachCreated ? '<span class="rb-cpr-created">Coach-created</span>' : '') + (isPitchRecruit(p) ? '<span class="rb-cpr-pitch-badge">PITCH RECRUIT</span>' : '');
+  const tags = (p.coachCreated ? '<span class="rb-cpr-created">Coach-created</span>' : '');
   const team = p.previousTeam || (p.previousTeams || []).slice(-1)[0];
   const home = p.homestate ? '<div class="rb-cpr-fact"><span class="rb-cpr-fact-label">Home state</span><strong>' + escapeHtml(p.homestate) + '</strong></div>' : '';
   const previous = team ? '<div class="rb-cpr-fact"><span class="rb-cpr-fact-label">Previous team</span><span class="rb-cpr-previous">' + renderTeamLogo(getTeamBranding(team)) + '<strong>' + escapeHtml(team) + '</strong></span></div>' : '';
@@ -4007,7 +4011,7 @@ function renderProspectBoardCard(pid, searchAttr, context){
     '<span class="rb-mono" style="color:var(--slate);font-size:13px;">' + escapeHtml(p.position) + (p.rating ? '<span class="rb-recruit-rating"> &middot; ' + escapeHtml(p.rating) + '</span>' : '') + '</span>' +
     (p.hometown && recruitingStage() !== 'cpr' ? '<span class="rb-desktop-only" style="color:var(--slate);font-size:13px;"> &middot; <span title="' + escapeHtml(p.hometown) + '">' + escapeHtml(shortText(p.hometown, 28)) + '</span></span>' : '') +
   '</div>';
-  html += '<div style="display:flex;align-items:center;gap:8px;white-space:nowrap;">' + (p.commitTeam || ended ? '' : offerCountTag(pid)) + (p.commitTeam ? renderCommittedTag(p.commitTeam, true, commitReturn) : (ended ? freeAgentTag() : '')) + '</div>';
+  html += '<div style="display:flex;align-items:center;gap:8px;white-space:nowrap;">' + renderPitchBadge(p) + (p.commitTeam || ended ? '' : offerCountTag(pid)) + (p.commitTeam ? renderCommittedTag(p.commitTeam, true, commitReturn) : (ended ? freeAgentTag() : '')) + '</div>';
   html += '</div>';
   if (recruitingStage() === 'transfer') html += renderTransferProfile(p, false);
   else if (recruitingStage() === 'cpr') html += renderCprProfile(p);
@@ -4229,7 +4233,7 @@ function renderProspectDetail(){
   html += '<div class="rb-h' + (ownCommit ? ' rb-prospect-title-owned' : '') + '" style="font-size:22px;">' + (recruitNumber(p) ? recruitNumber(p) + ' ' : '') + escapeHtml(p.name) + '</div>';
   html += '<div class="rb-mono" style="font-size:13px;color:var(--slate);margin-top:4px;">' + escapeHtml(p.position) + (p.rating ? ' &middot; ' + escapeHtml(p.rating) : '') + (p.hometown && recruitingStage() !== 'cpr' ? ' &middot; ' + escapeHtml(p.hometown) : '') + '</div>';
   html += '</div>';
-  html += '<div style="display:flex;align-items:center;justify-content:flex-end;gap:10px;flex-wrap:wrap;">' +
+  html += '<div style="display:flex;align-items:center;justify-content:flex-end;gap:10px;flex-wrap:wrap;">' + renderPitchBadge(p) +
     (SESSION && !p.commitTeam ? (sessionOffer ? '<button class="rb-btn" disabled title="Your team already has an offer on this recruit">Offer submitted</button>' : (offersLocked() ? '<button class="rb-btn" disabled title="Offers are locked">Offers locked</button>' : '<button class="rb-btn rb-btn-gold" data-open-submit="' + escapeHtml(p.id) + '">Submit offer</button>')) : '') +
     (p.commitTeam ? renderCommittedTag(p.commitTeam, true, { view: 'prospect', prospectId: p.id, label: p.name }) : '') +
     (recruitingStage() !== 'hs' ? '' : '<span>' + starsOrLabel(p.stars) + '</span>') + '</div>';

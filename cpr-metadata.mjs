@@ -10,14 +10,18 @@ export function playerMetadata(player, season, teams) {
   // Use dated history, not a list of every team the player has visited.
   const history = [];
   for (const [index, record] of (player.stats || []).entries()) {
-    if (Number.isFinite(record.season) && record.season === season - 1) history.push({...record,order:index,source:0});
+    if (Number.isFinite(record.season) && record.season <= season - 1) history.push({...record,order:index,source:0});
   }
   for (const [index, record] of (player.transactions || []).entries()) {
-    if (Number.isFinite(record.season) && record.season === season - 1) history.push({...record,order:index,source:1});
+    if (Number.isFinite(record.season) && record.season <= season - 1) history.push({...record,order:index,source:1});
   }
-  const valid = record => typeof record.tid === 'number' && record.tid >= 0 && record.tid !== player.tid && teams.has(record.tid);
+  const valid = record => typeof record.tid === 'number' && record.tid >= 0 && teams.has(record.tid);
   history.sort((a,b)=>b.season-a.season || (b.phase ?? 0)-(a.phase ?? 0) || b.source-a.source || (b.eid ?? b.order)-(a.eid ?? a.order));
-  const latest = history.find(valid);
+  // A season without stats need not mean a season without a roster spot.
+  // One completed free-agent year is the current offseason cohort; two
+  // or more means the player sat out the preceding recruiting cycle.
+  const recentRoster = Number.isFinite(player.yearsFreeAgent) && player.yearsFreeAgent <= 1;
+  const latest = history.find(record=>valid(record) && (record.season === season - 1 || recentRoster));
   const previousTeam = teams.get(latest?.tid)?.region || '';
   return {grade,yearsLeft,previousTeam,previousTeams:previousTeam ? [previousTeam] : [],metadataSeason:season,exportPlayerId:player.pid};
 }
@@ -29,7 +33,6 @@ export function extractCprMetadata(data, roster){
   const normalize=s=>String(s || '').trim().replace(/\s+/g,' ').toLowerCase();
   const index=new Map();
   for (const p of data.players) {
-    if (p.tid !== -1) continue;
     const rating=p.ratings?.[p.ratings.length-1];
     if (!rating) continue;
     const key=normalize(`${p.firstName || ''} ${p.lastName || ''}`)+'|'+rating.pos;
