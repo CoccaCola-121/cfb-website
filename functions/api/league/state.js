@@ -1,5 +1,6 @@
 import '../../../transfer-rules.js';
 import '../../../offer-window.js';
+import '../../../cpr-rules.js';
 import { json } from '../../_lib/auth.js';
 import { queueLeagueBackup } from '../../_lib/backup.js';
 import { readLeagueState, writeLeagueState } from '../../_lib/league-state.js';
@@ -14,6 +15,17 @@ export async function onRequestPut({ request, env, waitUntil }) {
   const incoming = body.state || body;
   const previous = await readLeagueState(env);
   if (Object.prototype.hasOwnProperty.call(body,'expectedUpdatedAt') && (previous && previous.updatedAt || null) !== body.expectedUpdatedAt) return json({ok:false,error:'The league changed before saving. Your draft is intact; try Save again.'},{status:409});
+  if (incoming.recruitingStage === 'cpr') {
+    const roster = incoming.fullRoster || [];
+    const leaders = globalThis.NZCFLCprRules.leaders(roster);
+    for (const [id,p] of Object.entries(incoming.prospects || {})) {
+      try {
+        const row = globalThis.NZCFLCprRules.match(roster,p);
+        if (id !== 'r' + row.rank) throw Error('Player ID must match the uploaded CSV.');
+        p.offerMode = leaders[row.position] === row ? 'pitch' : 'values';
+      } catch(error) { return json({ok:false,error:error.message},{status:400}); }
+    }
+  }
   const scheduleError = globalThis.NZCFLOfferWindow.validate(incoming.offerSchedule);
   if (scheduleError) return json({ok:false,error:scheduleError},{status:400});
   for (const [pid, offers] of Object.entries(incoming.offersByProspect || {})) {

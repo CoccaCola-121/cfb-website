@@ -128,3 +128,20 @@ test('a standalone Scholarship line is part of a valid offer header only', () =>
   assert.equal(pitchWordCount('Scholarship\nHello Bob',p),3);
   assert.equal(pitchWordCount('Michigan State offers Bob Jones\nScholarship players matter',p),3);
 });
+
+test('CPR pitch limit applies per-position leaders on the server even if incoming mode is wrong', async () => {
+  const row={rank:1,name:'Top QB',position:'QB',overall:40,potential:60};
+  const state={recruitingStage:'cpr',fullRoster:[row],prospects:{r1:{...row,id:'r1',offerMode:'values'}},offersByProspect:{r1:[{id:'o1',text:'word '.repeat(801)}]}};
+  let writes=0;
+  const env={AUTH_KV:{get:async()=>null,put:async()=>{writes++;}}};
+  const response=await onRequestPut({env,request:new Request('https://test/api/league/state',{method:'PUT',body:JSON.stringify({state})})});
+  assert.equal(response.status,400);
+  assert.match((await response.json()).error,/801 words/);
+  assert.equal(writes,0);
+});
+test('CPR rejects player threads that do not match the CSV', async () => {
+  const state={recruitingStage:'cpr',fullRoster:[{rank:1,name:'Low Safety',position:'S',overall:29,potential:45}],prospects:{r1:{name:'Low Safety',position:'S',overall:30,potential:45}}};
+  const env={AUTH_KV:{get:async()=>null,put:async()=>{throw Error('Must not write');}}};
+  const response=await onRequestPut({env,request:new Request('https://test/api/league/state',{method:'PUT',body:JSON.stringify({state})})});
+  assert.equal(response.status,400);
+});

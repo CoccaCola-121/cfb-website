@@ -10,7 +10,7 @@ const script = page.match(/<script>([\s\S]*?)<\/script>/)[1];
 const boot = script.lastIndexOf('\napplyRoute(routeFromPath(window.location.pathname));');
 assert(boot > 0, 'The app bootstrap must be identifiable without executing network requests.');
 const source = script.slice(0, boot) + `
-  globalThis.app = { DB, UI, resetOfferWindow, setOffersLocked, offersLocked, pendingCommitChanges, restoreSettingsDraft, renderOfferBlock, renderRescindFilterFields, renderVisitLedger, visibleBoardProspectIds, setRecruitingStage, requestReset, approveDangerReset, beginSettingsDraft, hasSettingsChanges, canLeaveSettings, saveSettingsChanges, saveDBNow, leagueStatePayload, mergeSettingsValue, updateCommitsFromSheet, runBackupNow, setTransferFilter, renderTransferFilters, renderClassSetup, requestManualCommitOverride, applyManualCommitOverride, requestClearCommit, clearManualCommitOverride, applyManualCommitOverrides, clearRecruitingBoard, findProspectFromSheetRow, transferCardStyle, parseFullClass, prospectFromRosterRow, confirmTransferImport, releaseSingleStageBoard, addOfferDirect, render, renderNav, navigateTo, setReady(){ dbReady = true; sessionReady = true; }, renderFeed, renderBoardSearchResults, renderTeamsPage,
+  globalThis.app = { DB, UI, createCprPlayer, loadClassData, resetOfferWindow, setOffersLocked, offersLocked, pendingCommitChanges, restoreSettingsDraft, renderOfferBlock, renderRescindFilterFields, renderVisitLedger, visibleBoardProspectIds, setRecruitingStage, requestReset, approveDangerReset, beginSettingsDraft, hasSettingsChanges, canLeaveSettings, saveSettingsChanges, saveDBNow, leagueStatePayload, mergeSettingsValue, updateCommitsFromSheet, runBackupNow, setTransferFilter, renderTransferFilters, renderClassSetup, requestManualCommitOverride, applyManualCommitOverride, requestClearCommit, clearManualCommitOverride, applyManualCommitOverrides, clearRecruitingBoard, findProspectFromSheetRow, transferCardStyle, parseFullClass, prospectFromRosterRow, confirmTransferImport, releaseSingleStageBoard, addOfferDirect, render, renderNav, navigateTo, setReady(){ dbReady = true; sessionReady = true; }, renderFeed, renderBoardSearchResults, renderTeamsPage,
     renderThreadProspectList, renderProspectDetail, builtInTeamBranding, getTeamBranding, activeTeamBrands,
     mobileRecruitName, renderRecruitName, renderMyOffers, renderCommitsForTeam, renderTeamOffers, renderConditionalRescinds, renderRecruitValues, teamBorderColor, bindEvents, applyDefaultClassData, releaseWave1, releaseWave2,
     setSession(value){ SESSION = value; } };
@@ -61,6 +61,7 @@ function harness() {
     fetch(){ throw new Error('Regression checks must not contact a live API.'); }
   });
   vm.runInContext(fs.readFileSync(path.join(rootDir, 'team-branding.js'), 'utf8'), context);
+  vm.runInContext(fs.readFileSync(path.join(rootDir, 'cpr-rules.js'), 'utf8'), context);
   vm.runInContext(fs.readFileSync(path.join(rootDir, 'offer-window.js'), 'utf8'), context);
   vm.runInContext(fs.readFileSync(path.join(rootDir, 'transfer-rules.js'), 'utf8'), context);
   vm.runInContext(source, context);
@@ -700,4 +701,53 @@ test('My Offers expands directly to full pitches without a second disclosure or 
     assert.ok(!html.includes('data-offer-details="1"'));
     assert.ok(!html.includes('max-height:140px;overflow:auto;'));
   }
+});
+
+test('CPR CSV creates qualifying player threads and validates below-threshold additions', () => {
+  const {app} = harness();
+  app.DB.recruitingStage='cpr';
+  app.clearRecruitingBoard();
+  const csv='Name,Pos,Team,Ovr,Pot\nHigh Safety,S,FA,40,60\nPitch Safety,S,FA,40,70\nLow Safety,S,FA,29,55\nTop QB,QB,FA,36,60\nNot Free,QB,Alabama,99,99';
+  app.loadClassData(csv);
+  assert.equal(app.DB.fullRoster.length,4);
+  assert.equal(app.DB.fullRoster.filter(p=>p.offerMode==='pitch').length,2);
+  assert.equal(app.DB.fullRoster.find(p=>p.name==='Pitch Safety').offerMode,'pitch');
+  assert.equal(app.DB.fullRoster[0].legacySchool,'');
+  assert.equal(app.DB.fullRoster[0].storyline,'');
+  app.releaseSingleStageBoard();
+  assert.equal(Object.keys(app.DB.prospects).length,3);
+  assert.equal(app.DB.threads.length,3);
+  assert.equal(app.DB.offersLocked,true);
+  const id=app.createCprPlayer({name:'Low Safety',position:'S',overall:'29',potential:'55'});
+  assert.equal(app.DB.prospects[id].name,'Low Safety');
+  assert.equal(app.DB.prospects[id].stars,null);
+  app.createCprPlayer({name:'Low Safety',position:'S',overall:'29',potential:'55'});
+  assert.equal(app.DB.threads.length,4);
+  assert.throws(()=>app.createCprPlayer({name:'Low Safety',position:'S',overall:'30',potential:'55'}),/No free agent/);
+  const html=app.renderFeed();
+  assert.ok(html.includes('Home state:'));
+  assert.ok(html.includes('Not provided'));
+  assert.ok(html.includes('Pitch recruit · 800 words'));
+  assert.ok(!html.includes('Pitch prompt'));
+});
+
+test('CPR sample CSV yields expected automatic threads when supplied for local validation', {skip:!process.env.CPR_SAMPLE_CSV}, () => {
+  const {app}=harness();
+  app.DB.recruitingStage='cpr'; app.clearRecruitingBoard();
+  app.loadClassData(fs.readFileSync(process.env.CPR_SAMPLE_CSV,'utf8'));
+  assert.equal(app.DB.fullRoster.length,2427);
+  assert.equal(app.DB.fullRoster.filter(p=>p.offerMode==='pitch').length,11);
+  app.releaseSingleStageBoard();
+  assert.equal(Object.keys(app.DB.prospects).length,54);
+  assert.equal(app.DB.threads.length,54);
+});
+
+test('CPR PlayerBios Country is home state and jersey numbers never become player IDs', () => {
+  const {app}=harness();
+  const rows=app.parseFullClass('Name,Pos,#,Team,Country,Ovr,Pot\nOne,QB,-Infinity,FA,Ohio,40,60\nTwo,QB,18,FA,Texas,35,60\nThree,S,18,FA,Florida,29,50',{stage:'cpr'});
+  assert.deepEqual(Array.from(rows,p=>p.rank),[1,2,3]);
+  assert.equal(rows[0].homestate,'Ohio');
+  assert.equal(rows[0].hometown,'Ohio');
+  assert.equal(rows[0].previousTeam,'');
+  assert.equal(rows[0].yearsLeft,'');
 });

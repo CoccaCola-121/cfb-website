@@ -15,9 +15,9 @@
     return lines.join(' ').trim().split(/\s+/).filter(Boolean).length;
   }
   function pitchLimitError(text, prospect, stage){
-    if (stage !== 'transfer' && !(prospect && prospect.transferFrom)) return '';
+    if (stage !== 'transfer' && !(prospect && prospect.transferFrom) && !(stage === 'cpr' && prospect && prospect.offerMode === 'pitch')) return '';
     const count = pitchWordCount(text, prospect);
-    return count > 800 ? 'Transfer pitches allow 800 words, excluding a standalone offer header. This pitch has ' + count + ' words.' : '';
+    return count > 800 ? 'Pitch recruits allow 800 words, excluding a standalone offer header. This pitch has ' + count + ' words.' : '';
   }
   function cleanCommitOverrides(state){
     const overrides = state.manualCommitOverrides || {};
