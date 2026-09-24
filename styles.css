@@ -764,3 +764,5 @@ html { scrollbar-gutter: stable; }
 @media(max-width:540px) { .rb-cpr-profile { gap:12px 22px; } .rb-cpr-fact { min-width:100px; } }
 
 .rb-cpr-pitch-badge { padding:5px 8px; font-size:10px; line-height:1.3; align-self:center; white-space:nowrap; }
+
+.rb-cpr-scholarship-badge { color:var(--chalk); border-color:var(--slate); background:rgba(160,164,168,.10); }

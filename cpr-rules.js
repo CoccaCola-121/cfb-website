@@ -1,5 +1,10 @@
 (function(root){
   const thresholds = Object.freeze({S:30,TE:30,QB:35,DL:35,LB:35,RB:37,CB:37,OL:37,WR:50,K:57,P:57});
+  const scholarshipCutoffs = Object.freeze({K:65,P:65,WR:54,LB:50,OL:50,DL:50,RB:47,CB:47,QB:45,S:45,TE:45});
+  function scholarshipRecruit(player){
+    const overall = player.overall == null ? Number(String(player.rating || '').split('/')[0]) : Number(player.overall);
+    return player.offerMode === 'pitch' || (Object.hasOwn(scholarshipCutoffs,player.position) && overall > scholarshipCutoffs[player.position]);
+  }
   const normalize = value => String(value || '').trim().replace(/\s+/g,' ').toLowerCase();
   function qualify(player){ return Object.hasOwn(thresholds,player.position) && player.overall >= thresholds[player.position]; }
   function leaders(roster){
@@ -26,5 +31,5 @@
     if (matches.length !== 1) throw Error(matches.length ? 'More than one player matches. Enter the player name and position below.' : 'No matching free agent found in the CSV. Enter the player name and position below.');
     return matches[0];
   }
-  root.NZCFLCprRules = Object.freeze({thresholds,qualify,leaders,match,resolveOffer});
+  root.NZCFLCprRules = Object.freeze({thresholds,scholarshipCutoffs,scholarshipRecruit,qualify,leaders,match,resolveOffer});
 })(globalThis);
