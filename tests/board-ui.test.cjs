@@ -516,9 +516,9 @@ test('settings merge preserves unrelated live changes and rejects conflicting ed
   assert.throws(()=>app.mergeSettingsValue(base,draft,live),/league changed/);
 });
 
-test('transfer position counts follow slider changes and restore on Show all', () => {
+for (const stage of ['transfer','cpr']) test(stage + ' position counts follow slider changes and restore on Show all', () => {
   const {app, context, elements, results, getCards} = harness();
-  app.DB.recruitingStage = 'transfer';
+  app.DB.recruitingStage = stage;
   Object.assign(app.DB.prospects.r1, {grade:'JR', yearsLeft:2});
   Object.assign(app.DB.prospects.r2, {grade:'RS SO', yearsLeft:3});
   const key = 'board:wave1';
@@ -529,6 +529,7 @@ test('transfer position counts follow slider changes and restore on Show all', (
     return chip;
   });
   results.innerHTML = app.renderThreadProspectList(app.DB.threads[0]);
+  assert.match(results.innerHTML, /id="rb-transfer-slider"/);
   const original = context.document.querySelectorAll;
   context.document.querySelectorAll = selector => selector === '[data-position-filter]' ? chips : original(selector);
   elements['rb-transfer-filter-controls'] = element();

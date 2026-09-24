@@ -10,16 +10,15 @@ export function playerMetadata(player, season, teams) {
   // Use dated history, not a list of every team the player has visited.
   const history = [];
   for (const [index, record] of (player.stats || []).entries()) {
-    if (Number.isFinite(record.season) && record.season <= season) history.push({...record,order:index,source:0});
+    if (Number.isFinite(record.season) && record.season === season - 1) history.push({...record,order:index,source:0});
   }
   for (const [index, record] of (player.transactions || []).entries()) {
-    if (Number.isFinite(record.season) && record.season <= season) history.push({...record,order:index,source:1});
+    if (Number.isFinite(record.season) && record.season === season - 1) history.push({...record,order:index,source:1});
   }
   const valid = record => typeof record.tid === 'number' && record.tid >= 0 && record.tid !== player.tid && teams.has(record.tid);
   history.sort((a,b)=>b.season-a.season || (b.phase ?? 0)-(a.phase ?? 0) || b.source-a.source || (b.eid ?? b.order)-(a.eid ?? a.order));
   const latest = history.find(valid);
-  const fallback = [...(player.transactions || [])].reverse().find(record=>!Number.isFinite(record.season) && valid(record)) || [...(player.statsTids || [])].reverse().map(tid=>({tid})).find(valid);
-  const previousTeam = teams.get((latest || fallback)?.tid)?.region || '';
+  const previousTeam = teams.get(latest?.tid)?.region || '';
   return {grade,yearsLeft,previousTeam,previousTeams:previousTeam ? [previousTeam] : [],metadataSeason:season,exportPlayerId:player.pid};
 }
 export function extractCprMetadata(data, roster){

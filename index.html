@@ -3829,8 +3829,11 @@ function renderTeamsPage(){
 
 function renderCprProfile(p){
   const tags = (p.coachCreated ? '<span class="rb-cpr-created">Coach-created</span>' : '') + (isPitchRecruit(p) ? '<span class="rb-cpr-pitch-badge">PITCH RECRUIT</span>' : '');
-  const history = (p.previousTeam ? [p.previousTeam] : (p.previousTeams || []).slice(-1)).map(function(team){ return '<span class="rb-cpr-previous">' + renderTeamLogo(getTeamBranding(team)) + escapeHtml(team) + '</span>'; }).join('');
-  return '<div class="rb-cpr-profile">' + (p.homestate ? '<span>Home state: <strong>' + escapeHtml(p.homestate) + '</strong></span>' : '') + (history ? '<span class="rb-cpr-history">Previous team: ' + history + '</span>' : '') + (p.grade ? '<span>' + escapeHtml(p.grade) + (p.yearsLeft ? ' · ' + p.yearsLeft + ' year' + (Number(p.yearsLeft)===1 ? '' : 's') + ' left' : '') + '</span>' : '') + tags + '</div>';
+  const team = p.previousTeam || (p.previousTeams || []).slice(-1)[0];
+  const home = p.homestate ? '<div class="rb-cpr-fact"><span class="rb-cpr-fact-label">Home state</span><strong>' + escapeHtml(p.homestate) + '</strong></div>' : '';
+  const previous = team ? '<div class="rb-cpr-fact"><span class="rb-cpr-fact-label">Previous team</span><span class="rb-cpr-previous">' + renderTeamLogo(getTeamBranding(team)) + '<strong>' + escapeHtml(team) + '</strong></span></div>' : '';
+  const eligibility = p.grade ? '<div class="rb-cpr-fact"><span class="rb-cpr-fact-label">Eligibility</span><strong>' + escapeHtml(p.grade) + (p.yearsLeft ? ' · ' + p.yearsLeft + ' year' + (Number(p.yearsLeft)===1 ? '' : 's') + ' left' : '') + '</strong></div>' : '';
+  return '<div class="rb-cpr-profile">' + home + previous + eligibility + tags + '</div>';
 }
 async function loadCprMetadata(file){
   if (!file || recruitingStage() !== 'cpr' || !settingsDraft || !DB.fullRoster.length) return;
@@ -3961,7 +3964,7 @@ function renderThreadProspectList(t){
   if (recruitingStage() === 'transfer') visibleIds.sort(function(a,b){ const pa = DB.prospects[a], pb = DB.prospects[b]; return (pa.sourceOrder ?? pa.rank) - (pb.sourceOrder ?? pb.rank); });
   html += renderPositionCounts(visibleIds, function(pid){ return DB.prospects[pid] && DB.prospects[pid].position; }, filterKey);
   html += '<input class="rb-input" data-thread-search="' + t.id + '" placeholder="' + (recruitingStage() !== 'hs' ? 'Search players by name or school' : 'Search recruits by name, rank, hometown or school') + '" />';
-  if (recruitingStage() === 'transfer') {
+  if (recruitingStage() !== 'hs') {
     html += '<div class="rb-transfer-filter-row"><div id="rb-transfer-filter-controls">' + renderTransferFilters() + '</div>';
   }
   const commitFilter = UI.boardCommitFilter || (UI.hideCommittedBoards ? 'uncommitted' : 'all');
@@ -3972,10 +3975,10 @@ function renderThreadProspectList(t){
   html += '</div></div>';
   html += '<div class="rb-filter-row"><div class="rb-segmented" aria-label="Your offer status">' + [['offered','Offered'],['all','All'],['unoffered','Unoffered']].map(function(option){ return '<button type="button" data-board-offer-filter="' + option[0] + '" aria-pressed="' + ((UI.boardOfferFilter || 'all') === option[0]) + '">' + option[1] + '</button>'; }).join('') + '</div></div>';
   html += '</div>';
-  if (recruitingStage() === 'transfer') html += '</div>';
+  if (recruitingStage() !== 'hs') html += '</div>';
   html += '</div>';
 
-  html += '<div class="' + (recruitingStage() === 'transfer' ? 'rb-transfer-results' : '') + '" style="display:flex;flex-direction:column;gap:10px;">';
+  html += '<div class="' + (recruitingStage() !== 'hs' ? 'rb-transfer-results' : '') + '" style="display:flex;flex-direction:column;gap:10px;">';
   visibleIds.forEach(function(pid){
     const p = DB.prospects[pid];
     if (!p) return;
@@ -4810,13 +4813,13 @@ function bindEvents(){
         if (!activeKeys[key]) return;
         if ((UI.positionFilters[key] || {})[bucket]) hiddenByPosition = true;
       });
-      const p = kind === 'board' && recruitingStage() === 'transfer' ? DB.prospects[card.getAttribute('data-open-prospect')] : null;
+      const p = kind === 'board' && recruitingStage() !== 'hs' ? DB.prospects[card.getAttribute('data-open-prospect')] : null;
       const eligible = !p || ((!UI.transferGrade || (p.grade || 'Not listed') === UI.transferGrade) && (!UI.transferYears || String(p.yearsLeft) === String(UI.transferYears)));
       const matches = (!q || haystack.indexOf(q) !== -1) && eligible;
       if (matches) filteredCounts[bucket] = (filteredCounts[bucket] || 0) + 1;
       card.style.display = matches && !hiddenByPosition ? '' : 'none';
     });
-    if (kind === 'board' && recruitingStage() === 'transfer') {
+    if (kind === 'board' && recruitingStage() !== 'hs') {
       document.querySelectorAll('[data-position-filter]').forEach(function(chip){
         if (!activeKeys[chip.getAttribute('data-position-filter')]) return;
         const count = chip.querySelector('span');

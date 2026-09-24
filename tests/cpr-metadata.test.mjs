@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {extractCprMetadata,playerMetadata} from '../cpr-metadata.mjs';
 test('bot-compatible grade rules and team history skip unknown eligibility',()=>{
   const teams=new Map([[1,{region:'Alabama'}],[2,{region:'Army'}]]);
-  assert.deepEqual(playerMetadata({age:21,tid:-1,statsTids:[1,1],transactions:[{tid:2},{tid:-1}]},2067,teams).previousTeams,['Army']);
+  assert.deepEqual(playerMetadata({age:21,tid:-1,statsTids:[1,1],transactions:[{tid:2},{tid:-1}]},2067,teams).previousTeams,[]);
   assert.equal(playerMetadata({age:21},2067,teams).grade,'JR');
   assert.equal(playerMetadata({age:21},2067,teams).yearsLeft,2);
   assert.equal(playerMetadata({born:{year:2045},injuries:[{type:'Redshirt'}]},2067,teams).grade,'RS JR');
@@ -29,7 +29,7 @@ test('most recent dated team wins over old transaction and stats team order',()=
   const teams=new Map([[1,{region:'Alabama'}],[2,{region:'Army'}]]);
   const p={tid:-1,age:21,statsTids:[2,1],stats:[{season:2066,tid:2}],transactions:[{season:2064,tid:1}]};
   assert.equal(playerMetadata(p,2067,teams).previousTeam,'Army');
-  p.transactions.push({season:2067,phase:1,tid:1});
+  p.transactions.push({season:2066,phase:1,tid:1});
   assert.equal(playerMetadata(p,2067,teams).previousTeam,'Alabama');
   assert.equal(playerMetadata({age:21},2067,teams).yearsLeft,2);
   assert.equal(playerMetadata({age:22,injuries:[{type:'redshirt'}]},2067,teams).yearsLeft,2);
@@ -42,4 +42,13 @@ test('plain JSON and gzip exports decode identically',async()=>{
   const text=JSON.stringify({gameAttributes:{season:2067},players:[],teams:[]});
   assert.deepEqual(await readLeagueExport(new Blob([text])),JSON.parse(text));
   assert.deepEqual(await readLeagueExport(new Blob([gzipSync(text)])),JSON.parse(text));
+});
+
+test('a gap in the immediately previous season leaves previous team blank',()=>{
+  const teams=new Map([[1,{region:'Stanford'}]]);
+  const p={tid:-1,statsTids:[1],stats:[{season:2061,tid:1}],transactions:[{season:2061,tid:1}]};
+  assert.equal(playerMetadata(p,2063,teams).previousTeam,'');
+  assert.deepEqual(playerMetadata(p,2063,teams).previousTeams,[]);
+  p.stats.push({season:2062,tid:1});
+  assert.equal(playerMetadata(p,2063,teams).previousTeam,'Stanford');
 });
