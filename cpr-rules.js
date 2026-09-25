@@ -3,7 +3,7 @@
   const scholarshipCutoffs = Object.freeze({K:65,P:65,WR:54,LB:50,OL:50,DL:50,RB:47,CB:47,QB:45,S:45,TE:45});
   function scholarshipRecruit(player){
     const overall = player.overall == null ? Number(String(player.rating || '').split('/')[0]) : Number(player.overall);
-    return player.offerMode === 'pitch' || (Object.hasOwn(scholarshipCutoffs,player.position) && overall > scholarshipCutoffs[player.position]);
+    return player.everScholarship === true || player.offerMode === 'pitch' || (Object.hasOwn(scholarshipCutoffs,player.position) && overall > scholarshipCutoffs[player.position]);
   }
   const normalize = value => String(value || '').trim().replace(/\s+/g,' ').toLowerCase();
   function qualify(player){ return Object.hasOwn(thresholds,player.position) && player.overall >= thresholds[player.position]; }

@@ -46,6 +46,7 @@
 <script src="team-branding.js"></script>
 <script src="default-class-2062.js"></script>
 <script src="/cpr-rules.js" onerror="this.onerror=null;this.src='cpr-rules.js'"></script>
+<script src="/scholarship-history.js" onerror="this.onerror=null;this.src='scholarship-history.js'"></script>
 <script src="/offer-window.js" onerror="this.onerror=null;this.src='offer-window.js'"></script>
 <script src="/transfer-rules.js" onerror="this.onerror=null;this.src='transfer-rules.js'"></script>
 <script>
@@ -767,7 +768,7 @@ function restoreSettingsDraft(){
   if (settingsDraft) { Object.keys(DB).forEach(function(key){ delete DB[key]; }); Object.assign(DB, copySettings(settingsDraft.base)); }
   settingsDraft = null;
   UI.scheduleError = null;
-  UI.cprMetadataStatus = null;
+  UI.cprMetadataStatus = null; UI.scholarshipStatus = null;
   UI.transferDraft = null;
   UI.classError = null; UI.classFileName = ''; UI.commitStatus = null; UI.commitError = null;
   UI.brandingStatus = null; UI.brandingError = null; UI.commitEditing = false;
@@ -805,7 +806,7 @@ function queueSettingsAction(kind){
 }
 async function saveSettingsChanges(){
   if (!settingsDraft || settingsSaving || !canViewSettings()) return;
-  if (UI.cprMetadataLoading) { UI.settingsError='Wait for the league export to finish processing.'; render(); return; }
+  if (UI.cprMetadataLoading || UI.scholarshipLoading) { UI.settingsError='Wait for the league export to finish processing.'; render(); return; }
   if (UI.transferLoading || UI.transferDraft) { UI.settingsError = 'Finish reviewing and loading the transfer class before saving.'; render(); return; }
   if (UI.scheduleError) { UI.settingsError = UI.scheduleError; render(); return; }
   const scheduleError = NZCFLOfferWindow.validate(DB.offerSchedule);
@@ -863,6 +864,8 @@ function saveDB(){
 function leagueStatePayload(){
   return {
     fullRoster: DB.fullRoster,
+    scholarshipHistory: DB.scholarshipHistory || {},
+    scholarshipSource: DB.scholarshipSource || null,
     recruitingStage: recruitingStage(),
     released: DB.released,
     wave1Released: DB.wave1Released,
@@ -898,7 +901,7 @@ function mergeLeagueState(state){
     discordCommitUpdatedAt: DB.discordCommitUpdatedAt,
     commitSeasonEnded: DB.commitSeasonEnded
   });
-  ['fullRoster','recruitingStage','released','wave1Released','wave2Released','prospects','threads','offersByProspect','unmatched','teams','teamBranding','commitSheetUrl','commitUpdatedAt','discordCommitUpdatedAt','discordCommitChannelId','commitSeasonEnded','defaultClassLoaded','offersLocked','offerSchedule','dangerApprovals','conditionalRescinds','manualCommitOverrides'].forEach(function(field){
+  ['scholarshipHistory','scholarshipSource','fullRoster','recruitingStage','released','wave1Released','wave2Released','prospects','threads','offersByProspect','unmatched','teams','teamBranding','commitSheetUrl','commitUpdatedAt','discordCommitUpdatedAt','discordCommitChannelId','commitSeasonEnded','defaultClassLoaded','offersLocked','offerSchedule','dangerApprovals','conditionalRescinds','manualCommitOverrides'].forEach(function(field){
     if (Object.prototype.hasOwnProperty.call(state, field)) DB[field] = state[field];
   });
   applyManualCommitOverrides();
@@ -1116,6 +1119,8 @@ function prospectFromRosterRow(p, id){
     previousTeam: p.previousTeam || '',
     previousTeams: p.previousTeams || [],
     metadataSeason: p.metadataSeason || null,
+    exportPlayerId: p.exportPlayerId ?? null,
+    everScholarship: !!p.everScholarship,
     legacySchool: p.legacySchool || '',
     transferFrom: p.transferFrom || '',
     grade: p.grade || '',
@@ -3842,7 +3847,7 @@ function renderCprProfile(p){
   return '<div class="rb-cpr-profile">' + home + previous + eligibility + tags + '</div>';
 }
 async function loadCprMetadata(file){
-  if (!file || recruitingStage() !== 'cpr' || !settingsDraft || !DB.fullRoster.length) return;
+  if (!file || recruitingStage() !== 'cpr' || !settingsDraft || !DB.fullRoster.length || UI.scholarshipLoading) return;
   const draft = settingsDraft;
   const sourceRoster = DB.fullRoster;
   UI.cprMetadataLoading = true; UI.cprMetadataStatus = 'Reading player history…'; render();
@@ -3855,13 +3860,34 @@ async function loadCprMetadata(file){
     result.matches.forEach(function(match){
       const row=DB.fullRoster.find(p=>p.rank===match.rank && p.name===match.name);
       if (!row) return;
-      const fields={grade:match.grade,yearsLeft:match.yearsLeft,previousTeam:match.previousTeam,previousTeams:match.previousTeams,metadataSeason:match.metadataSeason};
+      const fields={grade:match.grade,yearsLeft:match.yearsLeft,previousTeam:match.previousTeam,previousTeams:match.previousTeams,metadataSeason:match.metadataSeason,exportPlayerId:match.exportPlayerId,everScholarship:!!row.everScholarship || !!(DB.scholarshipHistory || {})[String(match.exportPlayerId)]};
       Object.assign(row,fields);
       const p=DB.prospects['r'+row.rank]; if (p && p.name===row.name) Object.assign(p,fields);
     });
     UI.cprMetadataStatus = 'Season ' + result.season + ': matched ' + result.matches.length + ' players. ' + result.unmatched.length + ' unmatched; ' + result.ambiguous.length + ' ambiguous. Save changes to publish.';
   } catch(e) { if (settingsDraft===draft) UI.cprMetadataStatus=e.message; }
   finally {if (worker) worker.terminate(); UI.cprMetadataLoading=false; if (settingsDraft===draft) render();}
+}
+async function refreshScholarshipHistory(){
+  if (!settingsDraft || recruitingStage() !== 'cpr' || UI.scholarshipLoading) return;
+  const input=document.getElementById('rb-scholarship-source');
+  const match=String(input.value || '').match(/^https:\/\/docs\.google\.com\/spreadsheets\/d\/([A-Za-z0-9_-]+)/);
+  if(!match){ UI.scholarshipStatus='Enter a Google Sheets link.'; render(); return; }
+  const draft=settingsDraft, roster=DB.fullRoster;
+  UI.scholarshipLoading=true; UI.scholarshipStatus='Reading scholarship history…'; render();
+  try {
+    const response=await fetch('/api/admin/scholarship-history?sheetId='+encodeURIComponent(match[1]));
+    const snapshot=await response.json(); if(!response.ok || !snapshot.ok) throw Error(snapshot.error || 'Could not read scholarship history.');
+    if(settingsDraft!==draft || DB.fullRoster!==roster || recruitingStage()!=='cpr') return;
+    const seasons=[...new Set(roster.filter(p=>p.exportPlayerId!=null).map(p=>p.metadataSeason))];
+    if(!seasons.length) throw Error('Upload the league export first to match player IDs.');
+    if(seasons.some(year=>year!==snapshot.season)) throw Error('Sheet class year '+snapshot.season+' does not match the imported league season. No changes applied.');
+    const result=NZCFLScholarshipHistory.apply(roster,DB.prospects,DB.scholarshipHistory,snapshot);
+    DB.scholarshipHistory=result.ledger;
+    DB.scholarshipSource={url:snapshot.source,season:snapshot.season,updatedAt:Date.now()};
+    UI.scholarshipStatus='Matched '+result.matched+' players. '+result.unmatched.length+' unmatched'+(result.unmatched.length ? ': '+result.unmatched.join(', ') : '')+'. Save changes to publish.';
+  }catch(e){if(settingsDraft===draft) UI.scholarshipStatus=e.message;}
+  finally {UI.scholarshipLoading=false;if(settingsDraft===draft)render();}
 }
 function renderCprCreate(){
   if (!SESSION) return '';
@@ -4096,6 +4122,8 @@ function renderClassSetup(){
   html += '<span class="rb-mono" style="font-size:12px;color:var(--slate);margin-left:10px;">' + escapeHtml(UI.classFileName || (DB.fullRoster.length ? (stageConfig.usesDefaultClass && DB.defaultClassLoaded ? DEFAULT_CLASS_NAME : stageConfig.label + (stage === 'transfer' ? ' PDF' : ' CSV')) : 'No file selected')) + '</span>';
   if (stage === 'transfer') html += renderTransferImportPreview();
   if (stage === 'cpr') html += '<div class="rb-cpr-export"><div class="rb-h" style="font-size:15px;">Player history</div><p>Upload the league .json or .json.gz export to add previous team and eligibility.</p><input type="file" class="rb-file-input" id="rb-cpr-export" accept=".json,.gz,application/json,application/gzip"' + (!DB.fullRoster.length || UI.cprMetadataLoading ? ' disabled' : '') + ' /><label class="rb-file-label" for="rb-cpr-export">Upload league export</label>' + (!DB.fullRoster.length ? '<p>Load the CPR CSV first.</p>' : '') + (UI.cprMetadataStatus ? '<p role="status">' + escapeHtml(UI.cprMetadataStatus) + '</p>' : '') + '</div>';
+  if (stage === 'cpr') html += '<div class="rb-cpr-export"><div class="rb-h" style="font-size:15px;">Scholarship history</div><p>Link the scholarship sheet after importing the league export. Confirmed scholarships stay with the player, even if ratings drop.</p><input class="rb-input" id="rb-scholarship-source" aria-label="Scholarship Google Sheet" value="' + escapeHtml(DB.scholarshipSource?.url || 'https://docs.google.com/spreadsheets/d/1K39AsZ2AqAh2hjxDGT7XTm2WrAnACsJcfDcZNlmmTAA/edit') + '" /><button class="rb-btn" id="rb-scholarship-refresh"' + (UI.scholarshipLoading || UI.cprMetadataLoading || !DB.fullRoster.length ? ' disabled' : '') + '>Read scholarship history</button>' + (DB.scholarshipSource ? '<p>Saved source: class ' + DB.scholarshipSource.season + '</p>' : '') + (UI.scholarshipStatus ? '<p role="status">' + escapeHtml(UI.scholarshipStatus) + '</p>' : '') + '</div>';
+
   if (UI.classError) html += '<div style="font-size:12px;color:var(--alert);margin-top:8px;">' + escapeHtml(UI.classError) + '</div>';
   html += '</div>';
 
@@ -4568,6 +4596,8 @@ function renderResetConfirmModal(){
 // ---------- Events ----------
 
 function bindEvents(){
+  const scholarshipRefresh=document.getElementById('rb-scholarship-refresh');
+  if(scholarshipRefresh) scholarshipRefresh.onclick=refreshScholarshipHistory;
   const cprExport=document.getElementById('rb-cpr-export');
   if (cprExport) cprExport.onchange=function(){loadCprMetadata(cprExport.files[0]);};
   document.querySelectorAll('[data-board-offer-filter]').forEach(function(button){ button.onclick = function(){ UI.boardOfferFilter = button.getAttribute('data-board-offer-filter'); render(); }; });

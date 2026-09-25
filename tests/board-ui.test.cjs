@@ -10,7 +10,7 @@ const script = page.match(/<script>([\s\S]*?)<\/script>/)[1];
 const boot = script.lastIndexOf('\napplyRoute(routeFromPath(window.location.pathname));');
 assert(boot > 0, 'The app bootstrap must be identifiable without executing network requests.');
 const source = script.slice(0, boot) + `
-  globalThis.app = { DB, UI, submitCprOffer, renderSubmitModal, createCprPlayer, loadClassData, resetOfferWindow, setOffersLocked, offersLocked, pendingCommitChanges, restoreSettingsDraft, renderOfferBlock, renderRescindFilterFields, renderVisitLedger, visibleBoardProspectIds, setRecruitingStage, requestReset, approveDangerReset, beginSettingsDraft, hasSettingsChanges, canLeaveSettings, saveSettingsChanges, saveDBNow, leagueStatePayload, mergeSettingsValue, updateCommitsFromSheet, runBackupNow, setTransferFilter, renderTransferFilters, renderClassSetup, requestManualCommitOverride, applyManualCommitOverride, requestClearCommit, clearManualCommitOverride, applyManualCommitOverrides, clearRecruitingBoard, findProspectFromSheetRow, transferCardStyle, parseFullClass, prospectFromRosterRow, confirmTransferImport, releaseSingleStageBoard, addOfferDirect, render, renderNav, navigateTo, setReady(){ dbReady = true; sessionReady = true; }, renderFeed, renderBoardSearchResults, renderTeamsPage,
+  globalThis.app = { DB, UI, refreshScholarshipHistory, submitCprOffer, renderSubmitModal, createCprPlayer, loadClassData, resetOfferWindow, setOffersLocked, offersLocked, pendingCommitChanges, restoreSettingsDraft, renderOfferBlock, renderRescindFilterFields, renderVisitLedger, visibleBoardProspectIds, setRecruitingStage, requestReset, approveDangerReset, beginSettingsDraft, hasSettingsChanges, canLeaveSettings, saveSettingsChanges, saveDBNow, leagueStatePayload, mergeSettingsValue, updateCommitsFromSheet, runBackupNow, setTransferFilter, renderTransferFilters, renderClassSetup, requestManualCommitOverride, applyManualCommitOverride, requestClearCommit, clearManualCommitOverride, applyManualCommitOverrides, clearRecruitingBoard, findProspectFromSheetRow, transferCardStyle, parseFullClass, prospectFromRosterRow, confirmTransferImport, releaseSingleStageBoard, addOfferDirect, render, renderNav, navigateTo, setReady(){ dbReady = true; sessionReady = true; }, renderFeed, renderBoardSearchResults, renderTeamsPage,
     renderThreadProspectList, renderProspectDetail, builtInTeamBranding, getTeamBranding, activeTeamBrands,
     mobileRecruitName, renderRecruitName, renderMyOffers, renderCommitsForTeam, renderTeamOffers, renderConditionalRescinds, renderRecruitValues, teamBorderColor, bindEvents, applyDefaultClassData, releaseWave1, releaseWave2,
     setSession(value){ SESSION = value; } };
@@ -62,6 +62,7 @@ function harness() {
   });
   vm.runInContext(fs.readFileSync(path.join(rootDir, 'team-branding.js'), 'utf8'), context);
   vm.runInContext(fs.readFileSync(path.join(rootDir, 'cpr-rules.js'), 'utf8'), context);
+  vm.runInContext(fs.readFileSync(path.join(rootDir, 'scholarship-history.js'), 'utf8'), context);
   vm.runInContext(fs.readFileSync(path.join(rootDir, 'offer-window.js'), 'utf8'), context);
   vm.runInContext(fs.readFileSync(path.join(rootDir, 'transfer-rules.js'), 'utf8'), context);
   vm.runInContext(source, context);
@@ -784,4 +785,30 @@ test('CPR player detail displays home state once',()=>{
   Object.assign(app.DB.prospects.r1,{hometown:'Pennsylvania',homestate:'Pennsylvania'});
   app.UI.prospectId='r1';
   assert.equal((app.renderProspectDetail().match(/Pennsylvania/g)||[]).length,1);
+});
+
+test('scholarship import stages changes by player ID, rejects wrong seasons, and discards cleanly',async()=>{
+ const {app,context,elements}=harness();
+ app.DB.recruitingStage='cpr';
+ app.setSession({accessLevel:'commissioner',discordId:'test'});
+ app.DB.fullRoster=[{rank:1,name:'Jordan Able',exportPlayerId:123,metadataSeason:2064,overall:20,position:'QB'}];
+ app.beginSettingsDraft();
+ elements['rb-scholarship-source']=element();
+ elements['rb-scholarship-source'].value='https://docs.google.com/spreadsheets/d/abcdefghijklmnopqrst/edit';
+ let season=2063;
+ context.fetch=async(url)=>{
+   assert.match(url,/^\/api\/admin\/scholarship-history/);
+   return {ok:true,json:async()=>({ok:true,season,source:'test',players:[{id:'123',name:'Jordan Able',everScholarship:true}]})};
+ };
+ await app.refreshScholarshipHistory();
+ assert.match(app.UI.scholarshipStatus,/does not match/);
+ assert.equal(app.hasSettingsChanges(),false);
+ season=2064;
+ await app.refreshScholarshipHistory();
+ assert.equal(app.DB.prospects.r1.everScholarship,true);
+ assert.equal(app.hasSettingsChanges(),true);
+ assert.equal(app.prospectFromRosterRow(app.DB.fullRoster[0],'r1').everScholarship,true);
+ app.restoreSettingsDraft();
+ assert.equal(app.DB.prospects.r1.everScholarship,undefined);
+ assert.equal(app.DB.scholarshipHistory,undefined);
 });

@@ -775,3 +775,7 @@ html { scrollbar-gutter: stable; }
 .rb-transfer-filter-row:has(.rb-cpr-type-filter) .rb-board-status-filters button { font-size:12px; padding:8px; }
 @media(max-width:1050px) { .rb-transfer-filter-row:has(.rb-cpr-type-filter) { grid-template-columns:1fr 1fr; } .rb-cpr-type-filter { max-width:none; } .rb-transfer-filter-row:has(.rb-cpr-type-filter) .rb-board-status-filters { grid-column:1 / -1; flex-direction:row; } .rb-transfer-filter-row:has(.rb-cpr-type-filter) .rb-board-status-filters > * { flex:1; min-width:0; } }
 @media(max-width:600px) { .rb-transfer-filter-row:has(.rb-cpr-type-filter) { grid-template-columns:minmax(0,1fr); gap:16px; } .rb-transfer-filter-row:has(.rb-cpr-type-filter) .rb-board-status-filters { flex-direction:column; } }
+
+#rb-scholarship-source { width:100%; max-width:640px; display:block; margin:10px 0; font-size:13px; }
+#rb-scholarship-refresh { font-size:12px; padding:9px 12px; }
+.rb-cpr-export [role="status"] { max-height:180px; overflow:auto; overflow-wrap:anywhere; }

@@ -5,6 +5,8 @@ export const STATE_KEY = 'league:state';
 
 const STATE_FIELDS = [
   'fullRoster',
+  'scholarshipHistory',
+  'scholarshipSource',
   'recruitingStage',
   'released',
   'wave1Released',
