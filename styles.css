@@ -800,3 +800,14 @@ html { scrollbar-gutter: stable; }
  .rb-rescind-thresholds { grid-template-columns:minmax(0,1fr) !important; }
  .rb-rescind-thresholds .rb-input { width:100%; box-sizing:border-box; }
 }
+
+.rb-commit-player-picker { position:relative; min-width:0; width:100%; grid-column:1 / -1; }
+.rb-commit-player-picker > .rb-input { width:100%; box-sizing:border-box; }
+#rb-commit-player-options { position:absolute; z-index:30; top:calc(100% + 5px); left:0; right:0; max-height:260px; overflow:auto; overscroll-behavior:contain; background:var(--panel); border:1px solid var(--hairline); border-radius:6px; box-shadow:0 8px 24px rgba(0,0,0,.3); padding:4px; }
+#rb-commit-player-options [role="option"] { display:flex; flex-direction:column; gap:3px; padding:10px 12px; cursor:pointer; border-radius:4px; font-size:13px; }
+#rb-commit-player-options [role="option"] span, .rb-player-empty { color:var(--slate); font-size:11px; }
+#rb-commit-player-options [role="option"]:hover, #rb-commit-player-options [aria-selected="true"] { background:var(--panel-alt); }
+.rb-player-empty { padding:12px; }
+@media(max-width:720px) { #rb-commit-player-search { font-size:16px; } #rb-commit-player-options { max-height:220px; } }
+
+.rb-offer-schedule .rb-schedule-dates { grid-template-columns:minmax(0,1fr); }

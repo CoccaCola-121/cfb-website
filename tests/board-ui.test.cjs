@@ -408,8 +408,9 @@ test('transfer settings select players by name and apply/clear the selected comm
   app.DB.prospects.r2.transferFrom = 'South Carolina';
   app.UI.commitOverrideRank = '2';
   const html = app.renderClassSetup();
-  assert.match(html, /<select[^>]*id="rb-commit-override-rank"/);
-  assert.match(html, /value="2" selected>Morgan Baker — South Carolina/);
+  assert.match(html, /<input type="hidden" id="rb-commit-override-rank" value="2"/);
+  assert.match(html, /id="rb-commit-player-search" role="combobox"/);
+  assert.match(html, /id="rb-commit-player-options" role="listbox"/);
   elements['rb-commit-override-rank'] = {...element(),value:'2'};
   elements['rb-commit-override-team'] = {...element(),value:'Michigan State'};
   app.requestManualCommitOverride();
@@ -678,25 +679,62 @@ test('new class resets offer window and schedule edits stay in settings draft', 
   assert.equal(app.DB.offerSchedule,null);
 });
 
-test('schedule dates use Eastern midnight and end-of-day boundaries', () => {
+test('manual commit picker filters names and selects with Enter', () => {
+  const {app,elements} = harness();
+  const search=elements['rb-commit-player-search']=element();
+  search.removeAttribute=()=>{};
+  const options=elements['rb-commit-player-options']=element();
+  options.querySelectorAll=()=>[];
+  const rank=elements['rb-commit-override-rank']=element();
+  app.bindEvents();
+  search.value='morgan';
+  search.oninput();
+  assert.match(options.innerHTML,/Morgan Baker/);
+  assert.ok(!options.innerHTML.includes('Jordan Able'));
+  assert.equal(rank.value,'');
+  search.onkeydown({key:'Enter',preventDefault(){}});
+  assert.equal(search.value,'Morgan Baker');
+  assert.equal(rank.value,String(app.DB.prospects.r2.rank));
+  assert.equal(options.hidden,true);
+  search.value='no such player';
+  search.oninput();
+  assert.match(options.innerHTML,/No matching players/);
+  assert.equal(rank.value,'');
+});
+
+test('scheduled close uses Eastern end-of-day with manual opening', () => {
   const {app,elements} = harness();
   app.setSession({accessLevel:'commissioner'});
   const html = app.renderClassSetup();
   assert.ok(!html.includes('datetime-local'));
   assert.ok(!html.includes('id="rb-schedule-zone"'));
-  for (const key of ['opensAt','closesAt']) for (const part of ['month','day','year','clear']) elements['rb-schedule-' + key + '-' + part] = element();
+  for (const key of ['closesAt']) for (const part of ['month','day','year','clear']) elements['rb-schedule-' + key + '-' + part] = element();
   elements['rb-schedule-error'] = element();
   app.bindEvents();
   assert.ok(!html.includes('type="date"'));
-  for (const key of ['opensAt','closesAt']) {
+  for (const key of ['closesAt']) {
     elements['rb-schedule-' + key + '-month'].value = '09';
     elements['rb-schedule-' + key + '-day'].value = '20';
     elements['rb-schedule-' + key + '-year'].value = '2026';
   }
-  elements['rb-schedule-opensAt-month'].onchange();
-  assert.equal(app.DB.offerSchedule.opensAt,'2026-09-20T04:00:00.000Z');
+  elements['rb-schedule-closesAt-month'].onchange();
+  assert.ok(!html.includes('Scheduled open'));
+  assert.equal(app.DB.offerSchedule.opensAt,undefined);
   assert.equal(app.DB.offerSchedule.closesAt,'2026-09-21T03:59:59.000Z');
   assert.equal(app.DB.offerSchedule.timezone,'America/New_York');
+});
+
+test('manual opening preserves a future close and clears an expired close', () => {
+  const {app} = harness();
+  app.DB.offerSchedule={opensAt:'2020-01-01T00:00:00Z',closesAt:'2099-09-21T03:59:59Z'};
+  app.setOffersLocked(false);
+  assert.equal(app.offersLocked(),false);
+  assert.equal(app.DB.offerSchedule.closesAt,'2099-09-21T03:59:59Z');
+  assert.equal(app.DB.offerSchedule.opensAt,undefined);
+  app.DB.offerSchedule.closesAt='2020-01-01T00:00:00Z';
+  app.setOffersLocked(false);
+  assert.equal(app.DB.offerSchedule,null);
+  assert.equal(app.offersLocked(),false);
 });
 
 test('My Offers expands directly to full pitches without a second disclosure or scroll box', () => {

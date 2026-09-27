@@ -756,7 +756,7 @@ async function loadTeamAvailability(){
 let settingsDraft = null;
 let settingsSaving = false;
 function copySettings(value){ return value === undefined ? undefined : JSON.parse(JSON.stringify(value)); }
-function resetCommitFields(){ UI.commitOverrideRank = ''; UI.commitOverrideTeam = ''; UI.pendingCommitOverride = null; UI.pendingClearCommit = null; }
+function resetCommitFields(){ UI.commitPlayerSearch = ''; UI.commitOverrideRank = ''; UI.commitOverrideTeam = ''; UI.pendingCommitOverride = null; UI.pendingClearCommit = null; }
 function beginSettingsDraft(){
   if (settingsDraft || settingsSaving || !canViewSettings()) return;
   if (remoteSaveTimer) { clearTimeout(remoteSaveTimer); remoteSaveTimer = null; saveDBRemote(); }
@@ -2164,7 +2164,10 @@ function offersLocked(){ return NZCFLOfferWindow.locked(DB); }
 function resetOfferWindow(){ DB.offersLocked = true; DB.offerSchedule = null; UI.scheduleError = null; }
 function setOffersLocked(locked){
   UI.scheduleError = null;
-  DB.offerSchedule = null;
+  if (DB.offerSchedule) {
+    delete DB.offerSchedule.opensAt;
+    if (!locked && Date.parse(DB.offerSchedule.closesAt || '') <= Date.now()) DB.offerSchedule = null;
+  }
   DB.offersLocked = !!locked;
   UI.commitStatus = DB.offersLocked ? 'Offers are locked.' : 'Offers are open.';
   saveDB(); render();
@@ -4033,13 +4036,13 @@ function renderProspectBoardCard(pid, searchAttr, context){
 }
 
 function offerScheduleCaption(key, instant){
-  if (!instant) return key === 'opensAt' ? 'Opens at 12:00 AM on the selected date.' : 'Closes at 11:59 PM on the selected date.';
+  if (!instant) return 'Closes at 11:59 PM on the selected date.';
   const formatted = new Intl.DateTimeFormat('en-US',{timeZone:'America/New_York',month:'short',day:'numeric',year:'numeric',hour:'numeric',minute:'2-digit',timeZoneName:'short'}).format(new Date(instant));
-  return (key === 'opensAt' ? 'Opens ' : 'Closes ') + formatted + '.';
+  return 'Closes ' + formatted + '.';
 }
 function renderOfferSchedule(){
   const schedule = DB.offerSchedule || {};
-  return '<div class="rb-offer-schedule"><div class="rb-schedule-dates">' + [['opensAt','Scheduled open'],['closesAt','Scheduled close']].map(function(pair){
+  return '<div class="rb-offer-schedule"><div class="rb-schedule-dates">' + [['closesAt','Scheduled close']].map(function(pair){
     const date = NZCFLOfferWindow.localTime(schedule[pair[0]],'America/New_York').slice(0,10);
     const parts = date.split('-');
     const year = new Date().getFullYear();
@@ -4145,7 +4148,7 @@ function renderClassSetup(){
   html += '<div class="rb-mono" style="font-size:12px;color:var(--slate);margin-bottom:10px;">Manual commit override</div>';
   if (recruitingStage() !== 'hs') html += '<p class="rb-transfer-limit">Apply or clear a commitment, then save settings to publish.</p>';
   html += '<div class="rb-commit-override-grid' + (stage !== 'hs' ? ' rb-transfer-commit-controls' : '') + '">';
-  html += recruitingStage() !== 'hs' ? '<select class="rb-input" id="rb-commit-override-rank" aria-label="Player"><option value="">Select player</option>' + Object.values(DB.prospects).sort(function(a,b){ return a.name.localeCompare(b.name); }).map(function(p){ return '<option value="' + p.rank + '"' + (String(UI.commitOverrideRank) === String(p.rank) ? ' selected' : '') + '>' + escapeHtml(p.name + (p.transferFrom ? ' — ' + p.transferFrom : '')) + '</option>'; }).join('') + '</select>' : '<input class="rb-input" id="rb-commit-override-rank" inputmode="numeric" placeholder="Rank" value="' + escapeHtml(UI.commitOverrideRank || '') + '" />';
+  html += recruitingStage() !== 'hs' ? '<div class="rb-commit-player-picker"><input type="hidden" id="rb-commit-override-rank" value="' + escapeHtml(UI.commitOverrideRank || '') + '" /><input class="rb-input" id="rb-commit-player-search" role="combobox" aria-label="Search player" aria-autocomplete="list" aria-expanded="false" aria-controls="rb-commit-player-options" autocomplete="off" placeholder="Search or select player" value="' + escapeHtml(UI.commitPlayerSearch || '') + '" /><div id="rb-commit-player-options" role="listbox" aria-label="Players" hidden></div></div>' : '<input class="rb-input" id="rb-commit-override-rank" inputmode="numeric" placeholder="Rank" value="' + escapeHtml(UI.commitOverrideRank || '') + '" />';
   html += '<input class="rb-input" id="rb-commit-override-team" placeholder="Committed team" value="' + escapeHtml(UI.commitOverrideTeam || '') + '" list="rb-commit-override-team-options" />';
   html += '<button class="rb-btn rb-btn-gold" id="rb-apply-commit-override">Apply</button>';
   html += '<button class="rb-btn rb-btn-danger" id="rb-clear-commit-override">Clear commit</button>';
@@ -4562,13 +4565,43 @@ function bindEvents(){
     if (saveSettings) saveSettings.disabled = settingsSaving || !dirty;
     if (discardSettings) discardSettings.hidden = !dirty;
   }
+  const playerSearch = document.getElementById('rb-commit-player-search');
+  const playerOptions = document.getElementById('rb-commit-player-options');
+  if (playerSearch && playerOptions){
+    let choices = [], active = -1;
+    function closePlayers(){ playerOptions.hidden=true; playerSearch.setAttribute('aria-expanded','false'); playerSearch.removeAttribute('aria-activedescendant'); }
+    function choosePlayer(p){
+      UI.commitOverrideRank=String(p.rank); UI.commitPlayerSearch=p.name;
+      document.getElementById('rb-commit-override-rank').value=String(p.rank);
+      playerSearch.value=p.name; closePlayers();
+    }
+    function showPlayers(){
+      const query=playerSearch.value.trim().toLowerCase();
+      choices=Object.values(DB.prospects).filter(p=>p.name.toLowerCase().includes(query)).sort((a,b)=>a.name.localeCompare(b.name));
+      active=-1; playerSearch.removeAttribute('aria-activedescendant');
+      playerOptions.innerHTML=choices.length ? choices.map((p,i)=>'<div role="option" aria-selected="false" id="rb-player-option-'+i+'" data-player-choice="'+i+'"><strong>'+escapeHtml(p.name)+'</strong><span>'+escapeHtml([p.position,p.rating,p.transferFrom || p.homestate].filter(Boolean).join(' · '))+'</span></div>').join('') : '<div class="rb-player-empty">No matching players</div>';
+      playerOptions.hidden=false; playerSearch.setAttribute('aria-expanded','true');
+      playerOptions.querySelectorAll('[data-player-choice]').forEach(el=>{el.onpointerdown=e=>e.preventDefault();el.onclick=()=>choosePlayer(choices[Number(el.getAttribute('data-player-choice'))]);});
+    }
+    playerSearch.onfocus=showPlayers;
+    playerSearch.oninput=function(){ UI.commitOverrideRank=''; document.getElementById('rb-commit-override-rank').value=''; UI.commitPlayerSearch=playerSearch.value; showPlayers(); };
+    playerSearch.onblur=closePlayers;
+    playerSearch.onkeydown=function(e){
+      if(e.key==='Escape'){closePlayers();return;}
+      if(e.key==='ArrowDown' || e.key==='ArrowUp'){
+        e.preventDefault();if(playerOptions.hidden)showPlayers();
+        active=Math.max(0,Math.min(choices.length-1,active+(e.key==='ArrowDown'?1:-1)));
+        playerOptions.querySelectorAll('[data-player-choice]').forEach((el,i)=>{el.setAttribute('aria-selected',i===active?'true':'false');if(i===active){playerSearch.setAttribute('aria-activedescendant',el.id);el.scrollIntoView({block:'nearest'});}});
+      } else if(e.key==='Enter' && !playerOptions.hidden){e.preventDefault();if(choices[active])choosePlayer(choices[active]);else if(choices.length===1)choosePlayer(choices[0]);}
+    };
+  }
   const commitPlayerField = document.getElementById('rb-commit-override-rank');
   if (commitPlayerField) commitPlayerField.onchange = function(){ UI.commitOverrideRank = commitPlayerField.value; };
   const commitTeamField = document.getElementById('rb-commit-override-team');
   if (commitTeamField) commitTeamField.oninput = function(){ UI.commitOverrideTeam = commitTeamField.value; };
   const draftSheet = document.getElementById('rb-commit-sheet-url');
   if (draftSheet && settingsDraft) draftSheet.oninput = function(){ DB.commitSheetUrl = draftSheet.value.trim(); refreshSettingsButtons(); };
-  if (document.getElementById('rb-schedule-opensAt-month')) {
+  if (document.getElementById('rb-schedule-closesAt-month')) {
     function readScheduleTime(key){
       const parts = ['year','month','day'].map(function(part){ return document.getElementById('rb-schedule-' + key + '-' + part).value; });
       if (parts.every(part=>!part)) return '';
@@ -4576,22 +4609,22 @@ function bindEvents(){
       const date = parts.join('-');
       const check = new Date(date + 'T12:00:00Z');
       if (!Number.isFinite(check.getTime()) || check.toISOString().slice(0,10) !== date) throw Error('Choose a valid day for the selected month.');
-      const instant = NZCFLOfferWindow.toUTC(date + (key === 'opensAt' ? 'T00:00' : 'T23:59'),'America/New_York');
-      return key === 'closesAt' ? new Date(Date.parse(instant) + 59000).toISOString() : instant;
+      const instant = NZCFLOfferWindow.toUTC(date + 'T23:59','America/New_York');
+      return new Date(Date.parse(instant) + 59000).toISOString();
     }
     function stageSchedule(){
       try {
-        const schedule = {timezone:'America/New_York', opensAt:readScheduleTime('opensAt'), closesAt:readScheduleTime('closesAt')};
+        const schedule = {timezone:'America/New_York', closesAt:readScheduleTime('closesAt')};
         const error = NZCFLOfferWindow.validate(schedule);
         if (error) throw Error(error);
-        DB.offerSchedule = schedule.opensAt || schedule.closesAt ? schedule : null;
+        DB.offerSchedule = schedule.closesAt ? schedule : null;
         UI.scheduleError = null;
-        ['opensAt','closesAt'].forEach(function(key){ const caption = document.getElementById('rb-schedule-' + key + '-caption'); if (caption) caption.textContent = offerScheduleCaption(key,schedule[key]); });
+        ['closesAt'].forEach(function(key){ const caption = document.getElementById('rb-schedule-' + key + '-caption'); if (caption) caption.textContent = offerScheduleCaption(key,schedule[key]); });
       } catch(e) { UI.scheduleError = e.message; }
       document.getElementById('rb-schedule-error').textContent = UI.scheduleError || '';
       refreshSettingsButtons();
     }
-    ['opensAt','closesAt'].forEach(function(key){
+    ['closesAt'].forEach(function(key){
       ['month','day','year'].forEach(function(part){ document.getElementById('rb-schedule-' + key + '-' + part).onchange = stageSchedule; });
       document.getElementById('rb-schedule-' + key + '-clear').onclick = function(){ ['month','day','year'].forEach(function(part){ document.getElementById('rb-schedule-' + key + '-' + part).value = ''; }); stageSchedule(); };
     });

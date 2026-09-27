@@ -1,10 +1,8 @@
 (function(root){
   function locked(state, now = Date.now()) {
     const schedule = state.offerSchedule || {};
-    const opens = Date.parse(schedule.opensAt || '');
     const closes = Date.parse(schedule.closesAt || '');
     if (Number.isFinite(closes) && now >= closes) return true;
-    if (Number.isFinite(opens)) return now < opens;
     return !!state.offersLocked;
   }
   function localTime(instant, zone) {
@@ -30,8 +28,7 @@
   function validate(schedule) {
     if (!schedule) return '';
     try { new Intl.DateTimeFormat('en', {timeZone:schedule.timezone || 'UTC'}); } catch { return 'Choose a valid timezone.'; }
-    for (const field of ['opensAt','closesAt']) if (schedule[field] && !Number.isFinite(Date.parse(schedule[field]))) return 'Enter valid schedule dates.';
-    if (schedule.opensAt && schedule.closesAt && Date.parse(schedule.closesAt) <= Date.parse(schedule.opensAt)) return 'Closing must be after opening.';
+    for (const field of ['closesAt']) if (schedule[field] && !Number.isFinite(Date.parse(schedule[field]))) return 'Enter valid schedule dates.';
     return '';
   }
   root.NZCFLOfferWindow = Object.freeze({locked,localTime,toUTC,validate});

@@ -3,14 +3,15 @@ import assert from 'node:assert/strict';
 import '../offer-window.js';
 import {onRequestPut} from '../functions/api/league/state.js';
 const {locked,toUTC,localTime,validate} = globalThis.NZCFLOfferWindow;
-test('offer schedules honor exact boundaries and optional open or close', () => {
+test('scheduled close honors boundaries and legacy opening dates cannot unlock offers', () => {
   const state = {offersLocked:true,offerSchedule:{opensAt:'2026-09-15T15:00:00Z',closesAt:'2026-09-16T15:00:00Z'}};
   assert.equal(locked(state,Date.parse('2026-09-15T14:59:59Z')),true);
-  assert.equal(locked(state,Date.parse(state.offerSchedule.opensAt)),false);
+  assert.equal(locked(state,Date.parse(state.offerSchedule.opensAt)),true);
   assert.equal(locked(state,Date.parse(state.offerSchedule.closesAt)),true);
   assert.equal(locked({offersLocked:false,offerSchedule:{closesAt:state.offerSchedule.closesAt}},Date.parse(state.offerSchedule.opensAt)),false);
   assert.equal(locked({offersLocked:true}),true);
-  assert.ok(validate({opensAt:state.offerSchedule.closesAt,closesAt:state.offerSchedule.opensAt}));
+  assert.equal(validate({opensAt:state.offerSchedule.closesAt,closesAt:state.offerSchedule.opensAt}),'');
+  assert.ok(validate({closesAt:'invalid'}));
 });
 test('timezone conversion includes DST and rejects nonexistent or repeated times', () => {
   assert.equal(toUTC('2026-09-15T10:00','America/Chicago'),'2026-09-15T15:00:00.000Z');
