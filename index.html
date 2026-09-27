@@ -3809,7 +3809,7 @@ function renderTeamsPage(){
 function renderPitchBadge(p){
   if (recruitingStage() !== 'cpr') return '';
   if (isPitchRecruit(p)) return '<span class="rb-cpr-pitch-badge">PITCH RECRUIT</span>';
-  return NZCFLCprRules.scholarshipRecruit(p) ? '<span class="rb-cpr-pitch-badge rb-cpr-scholarship-badge">SCHOLARSHIP RECRUIT</span>' : '';
+  return NZCFLCprRules.scholarshipRecruit(p, DB.offersByProspect[p.id] || []) ? '<span class="rb-cpr-pitch-badge rb-cpr-scholarship-badge">SCHOLARSHIP RECRUIT</span>' : '';
 }
 
 function renderCprProfile(p){
@@ -4828,7 +4828,7 @@ function bindEvents(){
       });
       const p = kind === 'board' && recruitingStage() !== 'hs' ? DB.prospects[card.getAttribute('data-open-prospect')] : null;
       const eligible = !p || ((!UI.transferGrade || (p.grade || 'Not listed') === UI.transferGrade) && (!UI.transferYears || String(p.yearsLeft) === String(UI.transferYears)));
-      const recruitType = p && (isPitchRecruit(p) ? 'pitch' : (NZCFLCprRules.scholarshipRecruit(p) ? 'scholarship' : 'walkon'));
+      const recruitType = p && (isPitchRecruit(p) ? 'pitch' : (NZCFLCprRules.scholarshipRecruit(p, DB.offersByProspect[p.id] || []) ? 'scholarship' : 'walkon'));
       const matchesType = recruitingStage() !== 'cpr' || !p || !UI.cprTypeFilter || recruitType === UI.cprTypeFilter;
       const matches = (!q || haystack.indexOf(q) !== -1) && eligible && matchesType;
       if (matches) filteredCounts[bucket] = (filteredCounts[bucket] || 0) + 1;

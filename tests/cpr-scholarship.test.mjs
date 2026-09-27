@@ -11,3 +11,15 @@ test('scholarship cutoffs are inclusive and pitch recruits always qualify',()=>{
     assert.equal(rules.scholarshipRecruit({position,overall:cutoff-1,offerMode:'pitch'}),true);
   }
 });
+
+test('active scholarship offers promote a walk-on until the last one is rescinded',()=>{
+ const player={position:'QB',overall:30};
+ const offers=[{text:'Alabama offers John Smith\nScholarship\n\nWelcome.'},{text:'Army offers John Smith\nScholarship'}];
+ assert.equal(rules.scholarshipRecruit(player,offers),true);
+ offers[0].rescinded=true;
+ assert.equal(rules.scholarshipRecruit(player,offers),true);
+ offers[1].rescinded=true;
+ assert.equal(rules.scholarshipRecruit(player,offers),false);
+ assert.equal(rules.scholarshipRecruit({...player,everScholarship:true},offers),true);
+ assert.equal(rules.scholarshipRecruit(player,[{text:'Army offers John Smith\nWalk-On\n\nYou can earn a scholarship later.'}]),false);
+});

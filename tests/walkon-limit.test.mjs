@@ -24,3 +24,14 @@ for(const stage of ['hs','cpr']) test(stage+' caps walk-on commitments at 15 wit
  assert.match(rules.error(state,state.prospects.pending,{team:'Michigan State',text:'Walk-On'}),/15 walk-on/);
  state.recruitingStage='transfer';assert.equal(rules.error(state,state.prospects.pending,{team:'Michigan State',text:'Walk-On'}),'');
 });
+test('a full CPR walk-on class can offer a scholarship and active promotions avoid auto rescind',()=>{
+ const state={recruitingStage:'cpr',prospects:{},offersByProspect:{}};
+ for(let i=0;i<15;i++){state.prospects[i]={id:String(i),position:'QB',overall:30,commitTeam:'Army'};state.offersByProspect[i]=[{team:'Army',text:'Walk-On'}];}
+ const p={id:'target',position:'QB',overall:30};state.prospects.target=p;
+ state.offersByProspect.target=[{team:'Alabama',text:'Scholarship'},{team:'Army',text:'Walk-On'}];
+ assert.equal(rules.apply(state),0);
+ assert.equal(rules.error(state,p,{team:'Army',text:'Scholarship'}),'');
+ state.offersByProspect.target[0].rescinded=true;
+ assert.equal(rules.apply(state),1);
+ assert.equal(state.offersByProspect.target[1].rescinded,true);
+});
