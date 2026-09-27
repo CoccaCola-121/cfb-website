@@ -3274,9 +3274,7 @@ function renderRescindFilterFields(prefix, includeCount){
   html += '<label><span class="rb-mono" style="font-size:11px;color:var(--slate);">Offer type</span><select class="rb-input" id="' + prefix + '-scholarship"><option value="">Any type</option><option value="scholarship">Scholarship</option><option value="walkon">Walk-on</option></select></label>';
   html += '</div>';
   html += '<div style="margin-bottom:10px;">' + renderPositionChecklist(prefix) + '</div>';
-  html += '<div class="rb-mobile-stack rb-rescind-thresholds" style="display:grid;grid-template-columns:' + (recruitingStage() === 'transfer' ? '1fr 0.8fr' : '1fr 0.8fr 1fr 0.8fr') + ';gap:10px;align-items:end;">';
-  if (recruitingStage() !== 'transfer') html += '<label><span class="rb-mono" style="font-size:11px;color:var(--slate);">Rank filter</span><select class="rb-input" id="' + prefix + '-rank-mode"><option value="worse">Ranks below #</option><option value="better">Ranks # or better</option></select></label>';
-  if (recruitingStage() !== 'transfer') html += '<input class="rb-input" id="' + prefix + '-rank-value" type="number" min="1" aria-label="Rank threshold" placeholder="blank = any rank" />';
+  html += '<div class="rb-mobile-stack rb-rescind-thresholds" style="display:grid;grid-template-columns:1fr 0.8fr;gap:10px;align-items:end;">';
   html += '<label><span class="rb-mono" style="font-size:11px;color:var(--slate);">Overall filter</span><select class="rb-input" id="' + prefix + '-overall-mode"><option value="below">Overall below</option><option value="atLeast">Overall at least</option></select></label>';
   html += '<input class="rb-input" id="' + prefix + '-overall-value" type="number" min="1" max="99" aria-label="Overall threshold" placeholder="blank = any ovr" />';
   html += '</div>';
@@ -4301,8 +4299,9 @@ function renderOfferBlock(o, opts){
   const offerStyle = '--offer-team-color:' + escapeHtml(teamBorderColor(brand)) + ';';
   const badges = visitBadges(o.visits, !!opts.collapsed);
   const wordCount = (recruitingStage() === 'transfer' || (recruitingStage() === 'cpr' && isPitchRecruit(opts.prospect))) && !o.rescinded ? '<span class="rb-offer-word-count">' + NZCFLTransferRules.pitchWordCount(o.text, opts.prospect) + ' / 800 words</span>' : '';
+  const rescindedBadge = o.rescinded ? '<span class="rb-rescinded-badge">Rescinded</span>' : '';
   const header = '<div class="rb-offer-block-header" style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:' + (opts.collapsed ? 'nowrap' : 'wrap') + ';min-width:0;">' +
-    '<span class="rb-offer-team-title">' + renderTeamLogo(brand, 28) + '<strong>' + escapeHtml(o.team) + '</strong></span>' +
+    '<span class="rb-offer-team-title">' + renderTeamLogo(brand, 28) + '<strong>' + escapeHtml(o.team) + '</strong>' + rescindedBadge + '</span>' +
     '<span class="rb-offer-visit-wrap" style="display:flex;gap:6px;flex-wrap:' + (opts.collapsed ? 'nowrap' : 'wrap') + ';align-items:center;min-width:0;overflow:hidden;">' +
       wordCount + (badges || '') +
       '<span class="rb-mono" style="font-size:11px;color:var(--slate);">' + escapeHtml(o.coach || '') + '</span>' +
@@ -4310,21 +4309,17 @@ function renderOfferBlock(o, opts){
   '</div>';
   let html = '';
   if (opts.collapsed){
-    html += '<details class="rb-branded-offer" data-offer-details="1" style="' + offerStyle + 'padding:10px 14px;">';
+    html += '<details class="rb-branded-offer' + (o.rescinded ? ' rb-offer-rescinded' : '') + '" data-offer-details="1" style="' + offerStyle + 'padding:10px 14px;">';
     html += '<summary class="rb-offer-summary" style="list-style:none;cursor:pointer;">' + header + '</summary>';
     html += '<div style="margin-top:8px;">';
   } else {
-    html += '<div class="rb-branded-offer" style="' + offerStyle + 'padding:14px 16px;">';
+    html += '<div class="rb-branded-offer' + (o.rescinded ? ' rb-offer-rescinded' : '') + '" style="' + offerStyle + 'padding:14px 16px;">';
     if (!opts.hideHeader) html += header;
-    else html += wordCount;
+    else html += wordCount + rescindedBadge;
   }
-  if (o.rescinded){
-    html += '<div style="margin-top:8px;"><span class="rb-tag" style="display:inline-block;margin:0;color:var(--alert);border-color:#6F1D1B;background:rgba(111,29,27,0.18);font-weight:600;">Rescinded</span></div>';
-    if (o.rescindReason) html += '<div class="rb-mono" style="font-size:11px;color:var(--slate);margin-top:6px;">' + escapeHtml(o.rescindReason) + '</div>';
-  } else {
-    const scrollStyle = opts.fullText ? '' : 'max-height:140px;overflow:auto;';
-    html += '<div style="font-size:13px;color:var(--chalk);margin-top:6px;white-space:pre-wrap;' + scrollStyle + '" class="rb-scrollbar">' + formatOfferText(o.text, cleanDisplayPromises(o)) + '</div>';
-  }
+  if (o.rescinded && o.rescindReason) html += '<div class="rb-mono" style="font-size:11px;color:var(--slate);margin-top:6px;">' + escapeHtml(o.rescindReason) + '</div>';
+  const scrollStyle = opts.fullText ? '' : 'max-height:140px;overflow:auto;';
+  html += '<div style="font-size:13px;color:var(--chalk);margin-top:6px;white-space:pre-wrap;' + scrollStyle + '" class="rb-scrollbar rb-offer-body">' + formatOfferText(o.text, cleanDisplayPromises(o)) + '</div>';
   const displayPromises = !o.rescinded ? cleanDisplayPromises(o) : [];
   if (displayPromises.length){
     html += '<div style="margin-top:8px;">';

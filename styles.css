@@ -788,3 +788,15 @@ html { scrollbar-gutter: stable; }
 .rb-board-offer-logo { display:flex; align-items:center; justify-content:center; flex:0 0 36px; }
 .rb-board-offer-rescinded > span { border-color:var(--alert) !important; }
 .rb-board-offer-rescinded img { opacity:.4; }
+
+.rb-rescinded-badge { display:inline-flex; padding:4px 7px; border:1px solid var(--alert); border-radius:4px; color:var(--alert); background:rgba(111,29,27,.12); font-size:10px; font-weight:600; white-space:nowrap; }
+.rb-offer-rescinded { border-style:dashed; }
+.rb-offer-rescinded .rb-offer-body { opacity:.8; }
+.rb-offer-team-title { flex-wrap:wrap; }
+@media(max-width:720px) {
+ .rb-offer-block-header { align-items:flex-start !important; }
+ .rb-offer-visit-wrap { flex-wrap:wrap !important; overflow:visible !important; width:100%; }
+ .rb-offer-visit-wrap .rb-mono { overflow-wrap:anywhere; }
+ .rb-rescind-thresholds { grid-template-columns:minmax(0,1fr) !important; }
+ .rb-rescind-thresholds .rb-input { width:100%; box-sizing:border-box; }
+}

@@ -291,7 +291,7 @@ test('offer and commit lists keep balanced markup and full data with mobile name
   }
   const rescind = app.renderConditionalRescinds();
   for (const prefix of ['rb-cond', 'rb-mass']) {
-    for (const field of ['stars', 'scholarship', 'rank-mode', 'rank-value', 'overall-mode', 'overall-value']) {
+    for (const field of ['stars', 'scholarship', 'overall-mode', 'overall-value']) {
       assert.ok(rescind.includes('id="' + prefix + '-' + field + '"'));
     }
   }
@@ -598,7 +598,7 @@ test('stage controls and own offer filtering match each recruiting stage', () =>
     app.DB.recruitingStage = stage;
     const fields = app.renderRescindFilterFields('test',true);
     assert.equal(fields.includes('test-stars'),stage === 'hs');
-    assert.equal(fields.includes('test-rank-value'),stage !== 'transfer');
+    assert.equal(fields.includes('test-rank-value'),false);
     assert.equal(app.renderVisitLedger() === '',stage !== 'hs');
     app.DB.offersByProspect = {r1:[{team:'Michigan State'}],r2:[{team:'Michigan State',rescinded:true},{team:'Alabama'}]};
     app.UI.boardOfferFilter = 'offered';
@@ -823,4 +823,13 @@ test('offer counts exclude rescinded offers',()=>{
  app.DB.offersByProspect.r1=[{team:'Michigan State'},{team:'Alabama',rescinded:true},{team:'Stanford'}];
  assert.equal(app.offerCountForProspect('r1'),2);
  assert.equal(app.offerCountForProspect('missing'),0);
+});
+
+test('rescinded offer retains its text and header status',()=>{
+ const {app}=harness();
+ const html=app.renderOfferBlock({team:'Stanford',text:'The original offer stays readable.',rescinded:true,promises:[],visits:{}},{fullText:true});
+ assert.match(html,/The original offer stays readable/);
+ assert.match(html,/rb-offer-rescinded/);
+ assert.match(html,/rb-offer-team-title[\s\S]*?rb-rescinded-badge/);
+ assert.equal((html.match(/>Rescinded</g)||[]).length,1);
 });
