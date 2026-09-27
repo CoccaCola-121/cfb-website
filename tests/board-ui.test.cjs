@@ -702,6 +702,23 @@ test('manual commit picker filters names and selects with Enter', () => {
   assert.equal(rank.value,'');
 });
 
+test('manual commit team picker filters beneath its input and selects with Enter', () => {
+  const {app,elements} = harness();
+  const search=elements['rb-commit-override-team']=element();
+  search.removeAttribute=()=>{};
+  const options=elements['rb-commit-team-options']=element();
+  options.querySelectorAll=()=>[];
+  app.bindEvents();
+  search.value='michigan state';
+  search.oninput();
+  assert.match(options.innerHTML,/Michigan State/);
+  assert.ok(!options.innerHTML.includes('Alabama'));
+  search.onkeydown({key:'Enter',preventDefault(){}});
+  assert.equal(search.value,'Michigan State');
+  assert.equal(app.UI.commitOverrideTeam,'Michigan State');
+  assert.equal(options.hidden,true);
+});
+
 test('scheduled close uses Eastern end-of-day with manual opening', () => {
   const {app,elements} = harness();
   app.setSession({accessLevel:'commissioner'});

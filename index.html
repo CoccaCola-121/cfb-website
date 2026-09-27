@@ -21,9 +21,7 @@
 <link rel="icon" href="/NZCFL.jpg" type="image/jpeg">
 <link rel="apple-touch-icon" href="/NZCFL.jpg">
 <link rel="manifest" href="/manifest.webmanifest">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Oswald:wght@500;600;700&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="/fonts/fonts.css">
 <link rel="stylesheet" href="/styles.css" onerror="this.onerror=null;this.href='styles.css'">
 </head>
 <body>
@@ -4149,13 +4147,10 @@ function renderClassSetup(){
   if (recruitingStage() !== 'hs') html += '<p class="rb-transfer-limit">Apply or clear a commitment, then save settings to publish.</p>';
   html += '<div class="rb-commit-override-grid' + (stage !== 'hs' ? ' rb-transfer-commit-controls' : '') + '">';
   html += recruitingStage() !== 'hs' ? '<div class="rb-commit-player-picker"><input type="hidden" id="rb-commit-override-rank" value="' + escapeHtml(UI.commitOverrideRank || '') + '" /><input class="rb-input" id="rb-commit-player-search" role="combobox" aria-label="Search player" aria-autocomplete="list" aria-expanded="false" aria-controls="rb-commit-player-options" autocomplete="off" placeholder="Search or select player" value="' + escapeHtml(UI.commitPlayerSearch || '') + '" /><div id="rb-commit-player-options" role="listbox" aria-label="Players" hidden></div></div>' : '<input class="rb-input" id="rb-commit-override-rank" inputmode="numeric" placeholder="Rank" value="' + escapeHtml(UI.commitOverrideRank || '') + '" />';
-  html += '<input class="rb-input" id="rb-commit-override-team" placeholder="Committed team" value="' + escapeHtml(UI.commitOverrideTeam || '') + '" list="rb-commit-override-team-options" />';
+  html += '<div class="rb-commit-team-picker"><input class="rb-input" id="rb-commit-override-team" role="combobox" aria-label="Committed team" aria-autocomplete="list" aria-expanded="false" aria-controls="rb-commit-team-options" autocomplete="off" placeholder="Committed team" value="' + escapeHtml(UI.commitOverrideTeam || '') + '" /><div id="rb-commit-team-options" role="listbox" aria-label="Teams" hidden></div></div>';
   html += '<button class="rb-btn rb-btn-gold" id="rb-apply-commit-override">Apply</button>';
   html += '<button class="rb-btn rb-btn-danger" id="rb-clear-commit-override">Clear commit</button>';
   html += '</div>';
-  html += '<datalist id="rb-commit-override-team-options">';
-  activeTeamBrands().forEach(function(brand){ html += '<option value="' + escapeHtml(brand.region) + '"></option>'; });
-  html += '</datalist>';
   html += '</div>';
   if (UI.commitStatus) html += '<div style="font-size:12px;color:var(--gold);margin-top:8px;">' + escapeHtml(UI.commitStatus) + '</div>';
   if (UI.commitError) html += '<div style="font-size:12px;color:var(--alert);margin-top:8px;">' + escapeHtml(UI.commitError) + '</div>';
@@ -4565,26 +4560,28 @@ function bindEvents(){
     if (saveSettings) saveSettings.disabled = settingsSaving || !dirty;
     if (discardSettings) discardSettings.hidden = !dirty;
   }
-  const playerSearch = document.getElementById('rb-commit-player-search');
-  const playerOptions = document.getElementById('rb-commit-player-options');
+  for (const isTeam of [false,true]) {
+  const playerSearch = document.getElementById(isTeam ? 'rb-commit-override-team' : 'rb-commit-player-search');
+  const playerOptions = document.getElementById(isTeam ? 'rb-commit-team-options' : 'rb-commit-player-options');
   if (playerSearch && playerOptions){
     let choices = [], active = -1;
     function closePlayers(){ playerOptions.hidden=true; playerSearch.setAttribute('aria-expanded','false'); playerSearch.removeAttribute('aria-activedescendant'); }
     function choosePlayer(p){
+      if(isTeam){ UI.commitOverrideTeam=p.name; playerSearch.value=p.name; closePlayers(); return; }
       UI.commitOverrideRank=String(p.rank); UI.commitPlayerSearch=p.name;
       document.getElementById('rb-commit-override-rank').value=String(p.rank);
       playerSearch.value=p.name; closePlayers();
     }
     function showPlayers(){
       const query=playerSearch.value.trim().toLowerCase();
-      choices=Object.values(DB.prospects).filter(p=>p.name.toLowerCase().includes(query)).sort((a,b)=>a.name.localeCompare(b.name));
+      choices=(isTeam ? activeTeamBrands().map(b=>({name:b.region})) : Object.values(DB.prospects)).filter(p=>p.name.toLowerCase().includes(query)).sort((a,b)=>a.name.localeCompare(b.name));
       active=-1; playerSearch.removeAttribute('aria-activedescendant');
-      playerOptions.innerHTML=choices.length ? choices.map((p,i)=>'<div role="option" aria-selected="false" id="rb-player-option-'+i+'" data-player-choice="'+i+'"><strong>'+escapeHtml(p.name)+'</strong><span>'+escapeHtml([p.position,p.rating,p.transferFrom || p.homestate].filter(Boolean).join(' · '))+'</span></div>').join('') : '<div class="rb-player-empty">No matching players</div>';
+      playerOptions.innerHTML=choices.length ? choices.map((p,i)=>'<div role="option" aria-selected="false" id="rb-'+(isTeam?'team':'player')+'-option-'+i+'" data-player-choice="'+i+'"><strong>'+escapeHtml(p.name)+'</strong><span>'+escapeHtml([p.position,p.rating,p.transferFrom || p.homestate].filter(Boolean).join(' · '))+'</span></div>').join('') : '<div class="rb-player-empty">No matching '+(isTeam?'teams':'players')+'</div>';
       playerOptions.hidden=false; playerSearch.setAttribute('aria-expanded','true');
       playerOptions.querySelectorAll('[data-player-choice]').forEach(el=>{el.onpointerdown=e=>e.preventDefault();el.onclick=()=>choosePlayer(choices[Number(el.getAttribute('data-player-choice'))]);});
     }
     playerSearch.onfocus=showPlayers;
-    playerSearch.oninput=function(){ UI.commitOverrideRank=''; document.getElementById('rb-commit-override-rank').value=''; UI.commitPlayerSearch=playerSearch.value; showPlayers(); };
+    playerSearch.oninput=function(){ if(isTeam){UI.commitOverrideTeam=playerSearch.value;showPlayers();return;} UI.commitOverrideRank=''; document.getElementById('rb-commit-override-rank').value=''; UI.commitPlayerSearch=playerSearch.value; showPlayers(); };
     playerSearch.onblur=closePlayers;
     playerSearch.onkeydown=function(e){
       if(e.key==='Escape'){closePlayers();return;}
@@ -4595,10 +4592,9 @@ function bindEvents(){
       } else if(e.key==='Enter' && !playerOptions.hidden){e.preventDefault();if(choices[active])choosePlayer(choices[active]);else if(choices.length===1)choosePlayer(choices[0]);}
     };
   }
+  }
   const commitPlayerField = document.getElementById('rb-commit-override-rank');
   if (commitPlayerField) commitPlayerField.onchange = function(){ UI.commitOverrideRank = commitPlayerField.value; };
-  const commitTeamField = document.getElementById('rb-commit-override-team');
-  if (commitTeamField) commitTeamField.oninput = function(){ UI.commitOverrideTeam = commitTeamField.value; };
   const draftSheet = document.getElementById('rb-commit-sheet-url');
   if (draftSheet && settingsDraft) draftSheet.oninput = function(){ DB.commitSheetUrl = draftSheet.value.trim(); refreshSettingsButtons(); };
   if (document.getElementById('rb-schedule-closesAt-month')) {
