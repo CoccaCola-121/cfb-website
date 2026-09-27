@@ -246,6 +246,7 @@ function applyRoute(route){
   const nextView = route.view || 'feed';
   const nextThreadId = route.threadId || null;
   if (shouldResetBoardFilters(nextView, nextThreadId)) resetBoardFilters();
+  if (UI.view !== nextView && UI.adminActionStatus === 'Team changes saved.') UI.adminActionStatus = null;
   UI.view = nextView;
   UI.threadId = nextThreadId;
   UI.threadSlug = route.threadSlug || '';
@@ -269,6 +270,7 @@ function navigateTo(view, options){
   if (!canLeaveTeamsPage() || !canLeaveSettings(view)) return;
   const nextThreadId = options.threadId != null ? options.threadId : (view === 'thread' ? UI.threadId : null);
   if (shouldResetBoardFilters(view, nextThreadId)) resetBoardFilters();
+  if (UI.view !== view && UI.adminActionStatus === 'Team changes saved.') UI.adminActionStatus = null;
   UI.view = view;
   if (options.threadId != null) { UI.threadId = options.threadId; UI.threadSlug = ''; }
   if (options.prospectId != null) UI.prospectId = options.prospectId;
@@ -2169,7 +2171,7 @@ async function savePendingTeamChanges(){
       await runAdminAccountAction('switch', { discordId: switchChanges[i].discordId, team: switchChanges[i].team, silent: true });
     }
     resetPendingTeamChanges();
-    UI.adminActionStatus = 'Team changes saved.';
+    UI.adminActionStatus = UI.view === 'teams' ? 'Team changes saved.' : null;
     await loadTeamAvailability();
   } catch (e) {
     UI.adminActionError = e.message || 'Could not save team changes.';
