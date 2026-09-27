@@ -18,7 +18,8 @@ export async function onRequestPost({ request, env }) {
   const user = await env.AUTH_KV.get(userKey, 'json');
   if (!user) return json({ ok: false, error: 'No linked account found for that Discord ID.' }, { status: 404 });
 
-  user.accessLevel = nextLevel === 'coach' ? '' : nextLevel;
+  user.accessLevel = nextLevel;
+  delete user.role;
   user.updatedAt = Date.now();
   await env.AUTH_KV.put(userKey, JSON.stringify(user));
 

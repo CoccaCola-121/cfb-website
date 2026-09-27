@@ -60,6 +60,8 @@ export async function onRequestGet({ request, env }) {
     const key = `discord:user:${discord.id}`;
     const existing = await env.AUTH_KV.get(key, 'json');
     const user = {
+      // Refresh Discord profile fields without discarding saved permissions or team data.
+      ...(existing || {}),
       discordId: discord.id,
       username: discord.global_name || discord.username,
       displayName: discord.global_name || discord.username,
