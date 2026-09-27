@@ -3841,12 +3841,11 @@ function cprPreviousSchool(p){
   return p.previousTeam || (p.previousTeams || []).slice(-1)[0] || '';
 }
 function renderCprProfile(p){
-  const tags = (p.coachCreated ? '<span class="rb-cpr-created">Coach-created</span>' : '');
   const team = cprPreviousSchool(p);
   const home = p.homestate ? '<div class="rb-cpr-fact"><span class="rb-cpr-fact-label">Home state</span><strong>' + escapeHtml(p.homestate) + '</strong></div>' : '';
   const previous = '<div class="rb-cpr-fact"><span class="rb-cpr-fact-label">Previous team</span><span class="rb-cpr-previous">' + renderTeamLogo(team && team!=='High School' ? getTeamBranding(team) : {logoUrl:'/nzcfl-free-agent.png'}) + '<strong>' + escapeHtml(team || 'Free Agent') + '</strong></span></div>';
   const eligibility = p.grade ? '<div class="rb-cpr-fact"><span class="rb-cpr-fact-label">Eligibility</span><strong>' + escapeHtml(p.grade) + (p.yearsLeft ? ' · ' + p.yearsLeft + ' year' + (Number(p.yearsLeft)===1 ? '' : 's') + ' left' : '') + '</strong></div>' : '';
-  return '<div class="rb-cpr-profile">' + home + previous + eligibility + tags + '</div>';
+  return '<div class="rb-cpr-profile">' + home + previous + eligibility + '</div>';
 }
 function ensureCprScholarshipThreads(){
   if(recruitingStage()!=='cpr' || !DB.wave1Released)return 0;
@@ -4156,11 +4155,11 @@ function updateBucksEntries(text){
 }
 function renderBucksSettings(){
   const rows=Object.entries(DB.bucksRemaining || {}).filter(([,left])=>left<3).map(([key,left])=>({key,left,team:getTeamBranding(key)?.region || DB.scholarshipCapacity?.teams?.[key]?.team || key})).sort((a,b)=>a.team.localeCompare(b.team));
-  let html='<div class="rb-bucks-settings"><strong>Bucks spots used</strong><p class="rb-auto-note">Unlisted teams have all 3 spots. Enter 0 to remove a team.</p>';
+  let html='<details class="rb-bucks-settings rb-card"><summary>Bucks spots used</summary><p class="rb-auto-note">Unlisted teams have all 3 spots. Enter 0 to remove a team.</p>';
   html+='<textarea class="rb-input" id="rb-bucks-entries" rows="3" aria-label="Teams and Bucks spots used" placeholder="Michigan State, 1&#10;Alabama, 3">'+escapeHtml(UI.bucksEntries || '')+'</textarea><button class="rb-btn" id="rb-bucks-update">Add / update teams</button>';
   if(UI.bucksStatus)html+='<p class="rb-auto-note" role="status">'+escapeHtml(UI.bucksStatus)+'</p>';
   if(rows.length)html+='<div class="rb-bucks-list">'+rows.map(row=>'<div class="rb-bucks-row"><strong>'+escapeHtml(row.team)+'</strong><label>Used<select class="rb-input" data-bucks-used="'+escapeHtml(row.key)+'" aria-label="'+escapeHtml(row.team)+' Bucks spots used">'+[1,2,3].map(n=>'<option value="'+n+'"'+(3-row.left===n?' selected':'')+'>'+n+'</option>').join('')+'</select></label><span>Cap '+(36+row.left)+'</span><button class="rb-btn" data-bucks-remove="'+escapeHtml(row.key)+'" aria-label="Remove '+escapeHtml(row.team)+' Bucks usage">Remove</button></div>').join('')+'</div>';
-  return html+'</div>';
+  return html+'</details>';
 }
 
 function renderAutoCommitSettings(){
@@ -4221,7 +4220,7 @@ function renderClassSetup(){
   html += '<div class="rb-h" style="font-size:18px;margin-bottom:10px;">Recruiting stage</div>';
   html += '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px;">';
   Object.keys(RECRUITING_STAGES).forEach(function(key){
-    html += '<button class="rb-btn ' + (stage === key ? 'rb-btn-gold' : '') + '" data-recruiting-stage="' + escapeHtml(key) + '">' + escapeHtml(RECRUITING_STAGES[key].label) + '</button>';
+    html += '<button class="rb-btn ' + (stage === key ? 'rb-btn-gold' : '') + '" data-recruiting-stage="' + escapeHtml(key) + '"' + (!canUseDangerZone() ? ' disabled' : '') + '>' + escapeHtml(RECRUITING_STAGES[key].label) + '</button>';
   });
   html += '</div>';
   html += '<div class="rb-h" style="font-size:18px;margin-bottom:14px;">' + escapeHtml(stageConfig.setupLabel) + '</div>';

@@ -799,7 +799,7 @@ test('CPR CSV creates qualifying player threads and validates below-threshold ad
   const html=app.renderFeed();
   assert.ok(!html.includes('Not provided'));
   assert.ok(html.includes('PITCH RECRUIT'));
-  assert.ok(html.includes('Coach-created'));
+  assert.ok(!html.includes('Coach-created'));
   assert.ok(!html.includes('Previous team:'));
   assert.ok(!html.includes('Years left:'));
   assert.ok(!html.includes('Pitch prompt'));
@@ -984,4 +984,16 @@ test('only CPR true freshmen with four years left show High School with the leag
  assert.equal(app.cprPreviousSchool({...freshman,grade:'RSFR',previousTeam:''}),'');
  assert.equal(app.cprPreviousSchool({...freshman,yearsLeft:3}),'Alabama');
  app.DB.recruitingStage='transfer';assert.equal(app.cprPreviousSchool(freshman),'Alabama');
+});
+
+
+test('moderators can use routine Settings but cannot switch stages or approve resets',async()=>{
+ const {app}=harness();app.setSession({team:'Michigan State',accessLevel:'moderator',discordId:'mod'});app.DB.recruitingStage='cpr';
+ const html=app.renderClassSetup();
+ for(const id of ['rb-offers-lock-toggle','rb-schedule-closesAt-month','rb-apply-commit-override','rb-clear-commit-override','rb-bucks-update','rb-export-promise-archive','rb-capacity-read','rb-scholarship-refresh','rb-branding-file','rb-save-settings']) assert.ok(html.includes('id="'+id+'"'),id);
+ assert.ok(!html.includes('data-reset-request='));assert.match(html,/data-recruiting-stage="hs" disabled/);
+ app.setRecruitingStage('transfer');assert.equal(app.DB.recruitingStage,'cpr');
+ app.requestReset('offers');app.DB.offersByProspect={r1:[{id:'existing'}]};await app.approveDangerReset();assert.equal(app.DB.offersByProspect.r1.length,1);
+ app.updateBucksEntries('Alabama, 2');assert.equal(app.DB.bucksRemaining.alabama,1);assert.equal(app.hasSettingsChanges(),true);
+ assert.match(html,/<details class="rb-bucks-settings rb-card">/);assert.ok(!html.includes('<details class="rb-bucks-settings rb-card" open'));
 });

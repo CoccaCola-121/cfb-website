@@ -849,7 +849,8 @@ html { scrollbar-gutter: stable; }
   .rb-auto-controls .rb-segmented button { flex:1; }
 }
 
-.rb-bucks-settings { margin-top:18px; font-size:13px; }
+.rb-bucks-settings { margin-top:18px; padding:12px 14px; font-size:13px; }
+.rb-bucks-settings > summary { cursor:pointer; font-weight:600; }
 #rb-bucks-entries { resize:vertical; font-size:13px; margin-bottom:8px; }
 .rb-bucks-list { margin-top:12px; }
 .rb-bucks-row { display:grid; grid-template-columns:minmax(0,1fr) auto auto auto; align-items:center; gap:12px; padding:12px 0; border-bottom:1px solid var(--hairline); font-size:12px; }
