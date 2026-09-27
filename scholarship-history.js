@@ -8,9 +8,9 @@
   function parseSheet(text,tab){
     const rows=parseCsv(text); const header=rows.shift() || [];
     const col=name=>header.findIndex(x=>String(x).trim().toLowerCase()===name.toLowerCase());
-    const id=col('Player ID'), offered=col('Scholly offered?'), current=col('On Scholly?'), upgrade=col('WO Upgrade');
-    if(id<0 || offered<0 || current<0) throw Error(tab+': scholarship columns are missing. Check sheet access and headers.');
-    const players=rows.filter(r=>/^\d+$/.test(r[id] || '')).map(r=>({id:String(r[id]),name:r[0],position:r[col('Position')],everScholarship:yes(r[offered])||yes(r[current])||(upgrade>=0&&yes(r[upgrade])),tab}));
+    const id=col('Player ID'), current=col('On Scholly?');
+    if(id<0 || current<0) throw Error(tab+': scholarship columns are missing. Check sheet access and headers.');
+    const players=rows.filter(r=>/^\d+$/.test(r[id] || '')).map(r=>({id:String(r[id]),name:r[0],position:r[col('Position')],everScholarship:yes(r[current]),tab}));
     return {season:tab==='HS'?Number(header[0]):null,players};
   }
   function apply(roster,prospects,history,snapshot){

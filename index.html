@@ -46,6 +46,7 @@
 <script src="/cpr-rules.js" onerror="this.onerror=null;this.src='cpr-rules.js'"></script>
 <script src="/walkon-limit.js" onerror="this.onerror=null;this.src='walkon-limit.js'"></script>
 <script src="/scholarship-history.js" onerror="this.onerror=null;this.src='scholarship-history.js'"></script>
+<script src="/auto-commits.js" onerror="this.onerror=null;this.src='auto-commits.js'"></script>
 <script src="/offer-window.js" onerror="this.onerror=null;this.src='offer-window.js'"></script>
 <script src="/transfer-rules.js" onerror="this.onerror=null;this.src='transfer-rules.js'"></script>
 <script>
@@ -767,7 +768,7 @@ function restoreSettingsDraft(){
   if (settingsDraft) { Object.keys(DB).forEach(function(key){ delete DB[key]; }); Object.assign(DB, copySettings(settingsDraft.base)); }
   settingsDraft = null;
   UI.scheduleError = null;
-  UI.cprMetadataStatus = null; UI.scholarshipStatus = null;
+  UI.cprMetadataStatus = null; UI.scholarshipStatus = null; UI.capacityStatus = null; UI.autoStatus = null; UI.autoCategory = null;
   UI.transferDraft = null;
   UI.classError = null; UI.classFileName = ''; UI.commitStatus = null; UI.commitError = null;
   UI.brandingStatus = null; UI.brandingError = null; UI.commitEditing = false;
@@ -805,9 +806,19 @@ function queueSettingsAction(kind){
 }
 async function saveSettingsChanges(){
   if (!settingsDraft || settingsSaving || !canViewSettings()) return;
-  if (UI.cprMetadataLoading || UI.scholarshipLoading) { UI.settingsError='Wait for the league export to finish processing.'; render(); return; }
+  if (UI.cprMetadataLoading || UI.scholarshipLoading || UI.capacityLoading) { UI.settingsError='Wait for the league export to finish processing.'; render(); return; }
   if (UI.transferLoading || UI.transferDraft) { UI.settingsError = 'Finish reviewing and loading the transfer class before saving.'; render(); return; }
   if (UI.scheduleError) { UI.settingsError = UI.scheduleError; render(); return; }
+  if (settingsDraft.autoApplied) {
+    const counts=NZCFLAutoCommits.counts(DB);
+    const invalid=(settingsDraft.autoAwards || []).some(function(row){
+      const k=NZCFLAutoCommits.key(row.team);
+      return row.kind==='walkon' ? (counts.walkon[k] || 0)>15 : !DB.scholarshipCapacity?.teams?.[k] || (counts.scholarship[k] || 0)>DB.scholarshipCapacity.teams[k].open+(DB.bucksRemaining?.[k] ?? 3);
+    });
+    if(invalid){UI.settingsError='Team limits changed after applying autos. Discard this draft and produce the autos again.';render();return;}
+  }
+  const capacityError = NZCFLAutoCommits.validate(DB);
+  if (capacityError) { UI.settingsError=capacityError; render(); return; }
   const scheduleError = NZCFLOfferWindow.validate(DB.offerSchedule);
   if (scheduleError) { UI.settingsError = scheduleError; render(); return; }
   const sheet = document.getElementById('rb-commit-sheet-url');
@@ -821,6 +832,7 @@ async function saveSettingsChanges(){
       const response = await fetch('/api/league/state', { credentials: 'include' });
       if (!response.ok) throw new Error('Could not check current league data. Your draft is still here.');
       const current = (await response.json()).state || {};
+      if (transaction.autoApplied && NZCFLAutoCommits.fingerprint(transaction.base) !== NZCFLAutoCommits.fingerprint(current)) throw Error('Offers or team limits changed after this auto preview. Discard this draft and produce the autos again.');
       payload = mergeSettingsValue(transaction.payload, payload, current);
       const saved = await fetch('/api/league/state', { method:'PUT', credentials:'include', headers:{'content-type':'application/json'}, body:JSON.stringify({state:payload, expectedUpdatedAt:current.updatedAt || null}) });
       const result = await saved.json().catch(function(){ return {}; });
@@ -865,6 +877,8 @@ function leagueStatePayload(){
     fullRoster: DB.fullRoster,
     scholarshipHistory: DB.scholarshipHistory || {},
     scholarshipSource: DB.scholarshipSource || null,
+    scholarshipCapacity: DB.scholarshipCapacity || null,
+    bucksRemaining: DB.bucksRemaining || {},
     recruitingStage: recruitingStage(),
     released: DB.released,
     wave1Released: DB.wave1Released,
@@ -900,7 +914,7 @@ function mergeLeagueState(state){
     discordCommitUpdatedAt: DB.discordCommitUpdatedAt,
     commitSeasonEnded: DB.commitSeasonEnded
   });
-  ['scholarshipHistory','scholarshipSource','fullRoster','recruitingStage','released','wave1Released','wave2Released','prospects','threads','offersByProspect','unmatched','teams','teamBranding','commitSheetUrl','commitUpdatedAt','discordCommitUpdatedAt','discordCommitChannelId','commitSeasonEnded','defaultClassLoaded','offersLocked','offerSchedule','dangerApprovals','conditionalRescinds','manualCommitOverrides'].forEach(function(field){
+  ['scholarshipCapacity','bucksRemaining','scholarshipHistory','scholarshipSource','fullRoster','recruitingStage','released','wave1Released','wave2Released','prospects','threads','offersByProspect','unmatched','teams','teamBranding','commitSheetUrl','commitUpdatedAt','discordCommitUpdatedAt','discordCommitChannelId','commitSeasonEnded','defaultClassLoaded','offersLocked','offerSchedule','dangerApprovals','conditionalRescinds','manualCommitOverrides'].forEach(function(field){
     if (Object.prototype.hasOwnProperty.call(state, field)) DB[field] = state[field];
   });
   applyManualCommitOverrides();
@@ -1412,6 +1426,8 @@ function makeThread(title, prospectIds, stars){
 
 function clearRecruitingBoard(){
   resetOfferWindow();
+  DB.scholarshipCapacity = null;
+  UI.autoCategory = null; UI.autoStatus = null;
   DB.fullRoster = [];
   DB.released = {};
   DB.wave1Released = false;
@@ -1439,8 +1455,8 @@ function clearRecruitingBoard(){
   UI.lastSummary = null;
 }
 
-// Temporarily allow one commissioner to confirm destructive actions during testing.
-const REQUIRED_DANGER_APPROVALS = 1;
+// Destructive resets and stage switches require two distinct commissioners.
+const REQUIRED_DANGER_APPROVALS = 2;
 
 function setRecruitingStage(stage){
   if (!canUseDangerZone()) return;
@@ -1776,6 +1792,7 @@ async function applyManualCommitOverride(){
   if (!DB.manualCommitOverrides) DB.manualCommitOverrides = {};
   DB.manualCommitOverrides[pid] = { team: team, name: prospect.name, stage: recruitingStage(), updatedAt: Date.now() };
   prospect.commitTeam = team;
+  delete prospect.commitType;
   applyConditionalRescinds();
   DB.commitUpdatedAt = Date.now();
   resetCommitFields();
@@ -1830,6 +1847,7 @@ async function clearManualCommitOverride(){
   }
   if (DB.manualCommitOverrides) delete DB.manualCommitOverrides[pid];
   prospect.commitTeam = '';
+  delete prospect.commitType;
   applyConditionalRescinds();
   DB.commitUpdatedAt = Date.now();
   resetCommitFields();
@@ -2887,11 +2905,12 @@ function cancelReset(){
 
 async function approveDangerReset(){
   if (!canUseDangerZone() || !SESSION || !UI.confirmReset) return;
+  if (!SESSION.discordId) { UI.settingsError='Sign in with Discord to approve a reset.'; render(); return; }
   const kind = UI.confirmReset;
   DB.dangerApprovals = DB.dangerApprovals || {};
   const current = activeDangerApproval(kind) || { kind: kind, requestedAt: Date.now(), approvals: {} };
   current.approvals = current.approvals || {};
-  current.approvals[SESSION.discordId || SESSION.team || uid('commissioner')] = {
+  current.approvals[SESSION.discordId] = {
     name: SESSION.username || SESSION.team || 'Commissioner',
     team: SESSION.team || '',
     approvedAt: Date.now()
@@ -2924,6 +2943,9 @@ async function confirmReset(){
     UI.rescindError = null;
     UI.assignError = {};
   } else if (UI.confirmReset === 'class'){
+    DB.scholarshipCapacity = null;
+    DB.manualCommitOverrides = {};
+    resetOfferWindow();
     DB.fullRoster = [];
     DB.released = {};
     DB.wave1Released = false;
@@ -3821,6 +3843,19 @@ function renderCprProfile(p){
   const eligibility = p.grade ? '<div class="rb-cpr-fact"><span class="rb-cpr-fact-label">Eligibility</span><strong>' + escapeHtml(p.grade) + (p.yearsLeft ? ' · ' + p.yearsLeft + ' year' + (Number(p.yearsLeft)===1 ? '' : 's') + ' left' : '') + '</strong></div>' : '';
   return '<div class="rb-cpr-profile">' + home + previous + eligibility + tags + '</div>';
 }
+function ensureCprScholarshipThreads(){
+  if(recruitingStage()!=='cpr' || !DB.wave1Released)return 0;
+  let added=0;
+  DB.fullRoster.forEach(function(row){
+    if(!row.everScholarship)return;
+    const id='r'+row.rank;
+    if(!DB.prospects[id]){DB.prospects[id]=prospectFromRosterRow(row,id);added++;}
+    DB.prospects[id].everScholarship=true;
+    DB.released[row.rank]=true;
+    if(!DB.threads.some(thread=>(thread.prospectIds || []).includes(id)))DB.threads.push(makeThread(row.name,[id],null));
+  });
+  return added;
+}
 async function loadCprMetadata(file){
   if (!file || recruitingStage() !== 'cpr' || !settingsDraft || !DB.fullRoster.length || UI.scholarshipLoading) return;
   const draft = settingsDraft;
@@ -3839,6 +3874,7 @@ async function loadCprMetadata(file){
       Object.assign(row,fields);
       const p=DB.prospects['r'+row.rank]; if (p && p.name===row.name) Object.assign(p,fields);
     });
+    ensureCprScholarshipThreads();
     UI.cprMetadataStatus = 'Season ' + result.season + ': matched ' + result.matches.length + ' players. ' + result.unmatched.length + ' unmatched; ' + result.ambiguous.length + ' ambiguous. Save changes to publish.';
   } catch(e) { if (settingsDraft===draft) UI.cprMetadataStatus=e.message; }
   finally {if (worker) worker.terminate(); UI.cprMetadataLoading=false; if (settingsDraft===draft) render();}
@@ -3860,7 +3896,8 @@ async function refreshScholarshipHistory(){
     const result=NZCFLScholarshipHistory.apply(roster,DB.prospects,DB.scholarshipHistory,snapshot);
     DB.scholarshipHistory=result.ledger;
     DB.scholarshipSource={url:snapshot.source,season:snapshot.season,updatedAt:Date.now()};
-    UI.scholarshipStatus='Matched '+result.matched+' players. '+result.unmatched.length+' unmatched'+(result.unmatched.length ? ': '+result.unmatched.join(', ') : '')+'. Save changes to publish.';
+    const added=ensureCprScholarshipThreads();
+    UI.scholarshipStatus=added+' scholarship threads added. Matched '+result.matched+' players. '+result.unmatched.length+' unmatched'+(result.unmatched.length ? ': '+result.unmatched.join(', ') : '')+'. Save changes to publish.';
   }catch(e){if(settingsDraft===draft) UI.scholarshipStatus=e.message;}
   finally {UI.scholarshipLoading=false;if(settingsDraft===draft)render();}
 }
@@ -4051,6 +4088,76 @@ function renderOfferSchedule(){
   }).join('') + '</div><p id="rb-schedule-error" role="alert">' + escapeHtml(UI.scheduleError || '') + '</p></div>';
 }
 
+const DEFAULT_CAPACITY_SHEET='https://docs.google.com/spreadsheets/d/11-87AU--uFWHfHCB3S2IbkVOrSNP2X3x1j_M5s1dFys/edit?gid=1039825625';
+async function readScholarshipCapacity(){
+  if(!settingsDraft || UI.capacityLoading || !canViewSettings())return;
+  if(Object.values(NZCFLAutoCommits.counts(DB).scholarship).some(n=>n>0)){UI.capacityStatus='Starting counts cannot be refreshed after scholarship commitments. This prevents double-counting sheet updates.';render();return;}
+  const link=document.getElementById('rb-capacity-source')?.value || DEFAULT_CAPACITY_SHEET;
+  const match=link.match(/spreadsheets\/d\/([A-Za-z0-9_-]+)/),gid=link.match(/[?#&]gid=(\d+)/);
+  if(!match){UI.capacityStatus='Enter a Google Sheets link.';render();return;}
+  const draft=settingsDraft,roster=DB.fullRoster,stage=recruitingStage();
+  UI.capacityLoading=true;UI.capacityStatus='Reading starting scholarship counts…';render();
+  try{
+    const response=await fetch('/api/admin/scholarship-capacity?sheetId='+encodeURIComponent(match[1])+'&gid='+(gid?gid[1]:'1039825625'),{credentials:'include'});
+    const data=await response.json();if(!response.ok || !data.ok)throw Error(data.error || 'Could not read scholarship counts.');
+    if(settingsDraft!==draft || DB.fullRoster!==roster || recruitingStage()!==stage)return;
+    const teams={};
+    Object.values(data.teams).forEach(row=>{const team=canonicalTeamName(row.team);teams[NZCFLAutoCommits.key(team)]={team,open:row.open};});
+    DB.scholarshipCapacity={source:data.source,updatedAt:Date.now(),stage,teams};
+    UI.capacityStatus=Object.keys(teams).length+' starting balances read. Save changes to publish.';
+    UI.autoCategory=null;
+  }catch(e){if(settingsDraft===draft)UI.capacityStatus=e.message;}
+  finally{UI.capacityLoading=false;if(settingsDraft===draft)render();}
+}
+function stageAutoCommits(){
+  if(!settingsDraft || !canViewSettings() || !UI.autoCategory)return;
+  try{
+    const result=NZCFLAutoCommits.apply(DB,UI.autoCategory);
+    settingsDraft.autoApplied=true;
+    (settingsDraft.autoAwards ||= []).push(...result.commits);
+    UI.autoStatus=result.commits.length+' '+(UI.autoCategory==='walkon'?'walk-on':'scholarship')+' commitments and '+result.rescinds.length+' rescinds staged. Save changes to publish.';
+    applyConditionalRescinds();
+  }catch(e){UI.autoStatus=e.message;}
+  render();
+}
+function renderAutoCommitResults(){
+  if(!UI.autoCategory)return '<p class="rb-auto-note">After offers close, produce scholarship autos first. Produce walk-ons after scholarships are settled.</p>';
+  const result=NZCFLAutoCommits.preview(DB,UI.autoCategory);
+  if(result.errors.length)return '<p class="rb-auto-note" role="status">'+escapeHtml(result.errors.join(' '))+'</p>';
+  const label=UI.autoCategory==='walkon'?'walk-on':'scholarship';
+  let html='<div class="rb-auto-result-heading"><strong>'+result.commits.length+' uncommitted '+label+' auto'+(result.commits.length===1?'':'s')+'</strong><span>'+result.contested+' still contested</span></div>';
+  html+='<p class="rb-auto-note">Lowest overall first, then potential and name. Team limits and newly uncontested offers are included.</p>';
+  if(result.commits.length)html+='<div class="rb-auto-results">'+result.commits.map(row=>'<div class="rb-auto-result"><div><strong>'+escapeHtml(row.name)+'</strong><span>'+escapeHtml(row.position)+' · '+row.overall+'/'+(row.potential ?? '—')+'</span></div><div class="rb-auto-team">'+renderTeamLogo(getTeamBranding(row.team) || {},28)+'<strong>'+escapeHtml(row.team)+'</strong></div></div>').join('')+'</div>';
+  else html+='<p class="rb-auto-note">No uncommitted '+label+' autos right now. Refresh after new commitments or rescinds.</p>';
+  if(result.rescinds.length)html+='<details class="rb-auto-rescinds"><summary>'+result.rescinds.length+' offers become invalid at team limits or conditional rules</summary><ul>'+result.rescinds.map(row=>'<li>'+escapeHtml(DB.prospects[row.prospectId]?.name || row.prospectId)+' · '+escapeHtml(row.team)+'</li>').join('')+'</ul></details>';
+  if(result.commits.length || result.rescinds.length)html+='<button class="rb-btn rb-btn-gold" id="rb-apply-autos">'+(result.commits.length?'Apply '+result.commits.length+' '+label+' autos':'Apply cap rescinds')+'</button><span class="rb-auto-save-note">Publishes with Save changes.</span>';
+  return html;
+}
+function renderAutoCommitSettings(){
+  const cap=DB.scholarshipCapacity,totals=NZCFLAutoCommits.counts(DB);
+  const teams=activeTeamBrands().slice().sort((a,b)=>a.region.localeCompare(b.region));
+  const hasCommits=Object.values(totals.scholarship).some(n=>n>0);
+  let html='<section class="rb-card rb-auto-settings"><div class="rb-h">Auto-commits</div><p class="rb-auto-note">Review uncontested offers within each team’s limits. Scholarship autos come first; walk-ons are capped at 15 per team.</p>';
+  html+='<details class="rb-auto-capacity"'+(!cap?' open':'')+'><summary>Team limits &amp; Bucks allowances'+(cap?' · '+Object.keys(cap.teams).length+' balances saved':'')+'</summary>';
+  html+='<p class="rb-auto-note">Capture column E before recruiting. Website scholarship commits are subtracted from this starting balance; later sheet updates do not change it.</p>';
+  html+='<div class="rb-auto-source"><input class="rb-input" id="rb-capacity-source" aria-label="Scholarship counts sheet" value="'+escapeHtml(cap?.source || DEFAULT_CAPACITY_SHEET)+'" /><button class="rb-btn" id="rb-capacity-read"'+(UI.capacityLoading || hasCommits?' disabled':'')+'>'+(UI.capacityLoading?'Reading…':'Read starting counts')+'</button></div>';
+  if(hasCommits)html+='<p class="rb-auto-note">Starting counts are frozen while scholarship commitments exist.</p>';
+  if(cap)html+='<p class="rb-auto-note">Snapshot: '+escapeHtml(new Date(cap.updatedAt).toLocaleString())+'. Bucks left is the allowance entering this stage: 3 unused, 0 fully used. Keep it updated for each yearly cycle.</p>';
+  else html+='<p class="rb-auto-note">Bucks left: 3 if unused, 2 after using one spot, 1 after using two, or 0 after using all three. This sets a scholarship ceiling of 36 plus the remaining allowance.</p>';
+  if(UI.capacityStatus)html+='<p class="rb-auto-note" role="status">'+escapeHtml(UI.capacityStatus)+'</p>';
+  html+='<input class="rb-input" id="rb-bucks-search" placeholder="Find a team to adjust Bucks spots" aria-label="Filter team limits" /><div class="rb-auto-limits">';
+  for(const brand of teams){
+    const k=NZCFLAutoCommits.key(brand.region),row=cap?.teams?.[k],bucks=DB.bucksRemaining?.[k] ?? 3,room=NZCFLAutoCommits.remaining(DB,brand.region,'scholarship',totals);
+    html+='<div class="rb-auto-limit" data-bucks-team="'+escapeHtml(k)+'"><strong>'+escapeHtml(brand.region)+'</strong><span class="rb-auto-balance">'+(row?'Sheet: '+row.open:'No sheet count')+'</span><label>Bucks left<select class="rb-input" data-bucks-input="'+escapeHtml(k)+'" aria-label="'+escapeHtml(brand.region)+' Bucks spots left">'+[0,1,2,3].map(n=>'<option value="'+n+'"'+(n===bucks?' selected':'')+'>'+n+'</option>').join('')+'</select></label><span class="rb-auto-room" data-bucks-room="'+escapeHtml(k)+'">'+(room===null?'—':room)+' open <small>Cap '+(36+bucks)+'</small></span></div>';
+  }
+  html+='</div></details><div class="rb-auto-controls"><div class="rb-segmented" aria-label="Auto-commit category"><button data-auto-category="scholarship" aria-pressed="'+(UI.autoCategory==='scholarship')+'">Scholarship autos</button>';
+  if(recruitingStage()!=='transfer')html+='<button data-auto-category="walkon" aria-pressed="'+(UI.autoCategory==='walkon')+'">Walk-on autos</button>';
+  html+='</div><button class="rb-btn" id="rb-auto-refresh">Refresh autos</button></div>';
+  if(UI.autoStatus)html+='<p class="rb-auto-note" role="status">'+escapeHtml(UI.autoStatus)+'</p>';
+  html+='<div id="rb-auto-results">'+renderAutoCommitResults()+'</div></section>';
+  return html;
+}
+
 function pendingCommitChanges(){
   if (!settingsDraft) return [];
   const base = settingsDraft.base;
@@ -4101,7 +4208,7 @@ function renderClassSetup(){
   html += '<span class="rb-mono" style="font-size:12px;color:var(--slate);margin-left:10px;">' + escapeHtml(UI.classFileName || (DB.fullRoster.length ? (stageConfig.usesDefaultClass && DB.defaultClassLoaded ? DEFAULT_CLASS_NAME : stageConfig.label + (stage === 'transfer' ? ' PDF' : ' CSV')) : 'No file selected')) + '</span>';
   if (stage === 'transfer') html += renderTransferImportPreview();
   if (stage === 'cpr') html += '<div class="rb-cpr-export"><div class="rb-h" style="font-size:15px;">Player history</div><p>Upload the league .json or .json.gz export to add previous team and eligibility.</p><input type="file" class="rb-file-input" id="rb-cpr-export" accept=".json,.gz,application/json,application/gzip"' + (!DB.fullRoster.length || UI.cprMetadataLoading ? ' disabled' : '') + ' /><label class="rb-file-label" for="rb-cpr-export">Upload league export</label>' + (!DB.fullRoster.length ? '<p>Load the CPR CSV first.</p>' : '') + (UI.cprMetadataStatus ? '<p role="status">' + escapeHtml(UI.cprMetadataStatus) + '</p>' : '') + '</div>';
-  if (stage === 'cpr') html += '<div class="rb-cpr-export"><div class="rb-h" style="font-size:15px;">Scholarship history</div><p>Link the scholarship sheet after importing the league export. Confirmed scholarships stay with the player, even if ratings drop.</p><input class="rb-input" id="rb-scholarship-source" aria-label="Scholarship Google Sheet" value="' + escapeHtml(DB.scholarshipSource?.url || 'https://docs.google.com/spreadsheets/d/1K39AsZ2AqAh2hjxDGT7XTm2WrAnACsJcfDcZNlmmTAA/edit') + '" /><button class="rb-btn" id="rb-scholarship-refresh"' + (UI.scholarshipLoading || UI.cprMetadataLoading || !DB.fullRoster.length ? ' disabled' : '') + '>Read scholarship history</button>' + (DB.scholarshipSource ? '<p>Saved source: class ' + DB.scholarshipSource.season + '</p>' : '') + (UI.scholarshipStatus ? '<p role="status">' + escapeHtml(UI.scholarshipStatus) + '</p>' : '') + '</div>';
+  if (stage === 'cpr') html += '<div class="rb-cpr-export"><div class="rb-h" style="font-size:15px;">Scholarship history</div><p>Link the scholarship sheet after importing the league export. “On Scholly?” (column O) marks scholarship recruits and creates their threads, even below the rating cutoff.</p><input class="rb-input" id="rb-scholarship-source" aria-label="Scholarship Google Sheet" value="' + escapeHtml(DB.scholarshipSource?.url || 'https://docs.google.com/spreadsheets/d/1K39AsZ2AqAh2hjxDGT7XTm2WrAnACsJcfDcZNlmmTAA/edit') + '" /><button class="rb-btn" id="rb-scholarship-refresh"' + (UI.scholarshipLoading || UI.cprMetadataLoading || !DB.fullRoster.length ? ' disabled' : '') + '>Read scholarship history</button>' + (DB.scholarshipSource ? '<p>Saved source: class ' + DB.scholarshipSource.season + '</p>' : '') + (UI.scholarshipStatus ? '<p role="status">' + escapeHtml(UI.scholarshipStatus) + '</p>' : '') + '</div>';
 
   if (UI.classError) html += '<div style="font-size:12px;color:var(--alert);margin-top:8px;">' + escapeHtml(UI.classError) + '</div>';
   html += '</div>';
@@ -4159,6 +4266,8 @@ function renderClassSetup(){
   if (!settingsDraft && UI.commitOverrideStatus) html += '<div style="font-size:12px;color:var(--gold);margin-top:8px;">' + escapeHtml(UI.commitOverrideStatus) + '</div>';
   if (UI.commitOverrideError) html += '<div style="font-size:12px;color:var(--alert);margin-top:8px;">' + escapeHtml(UI.commitOverrideError) + '</div>';
   html += '</div>';
+
+  html += renderAutoCommitSettings();
 
   // Backup settings are hidden until setup is requested.
   html += '<div class="rb-card" style="padding:20px 24px;max-width:640px;margin-top:14px;">';
@@ -4560,6 +4669,35 @@ function bindEvents(){
     if (saveSettings) saveSettings.disabled = settingsSaving || !dirty;
     if (discardSettings) discardSettings.hidden = !dirty;
   }
+  const capacityRead=document.getElementById('rb-capacity-read');
+  if(capacityRead)capacityRead.onclick=readScholarshipCapacity;
+  const autoApply=document.getElementById('rb-apply-autos');
+  if(autoApply)autoApply.onclick=stageAutoCommits;
+  document.querySelectorAll('[data-auto-category]').forEach(el=>{el.onclick=function(){UI.autoCategory=el.getAttribute('data-auto-category');render();};});
+  const autoRefresh=document.getElementById('rb-auto-refresh');
+  if(autoRefresh)autoRefresh.onclick=async function(){
+    if(hasSettingsChanges()){UI.autoStatus='Save or discard your pending changes before refreshing live offers.';render();return;}
+    try{
+      if(apiAvailable()){
+        const response=await fetch('/api/league/state',{credentials:'include'});
+        const data=await response.json();if(!response.ok || !data.state)throw Error('Could not refresh league data.');
+        Object.assign(DB,data.state);settingsDraft=null;beginSettingsDraft();
+      }
+      UI.autoCategory ||= 'scholarship';UI.autoStatus='Updated from the latest offers and commitments.';
+    }catch(e){UI.autoStatus=e.message;}
+    render();
+  };
+  const bucksSearch=document.getElementById('rb-bucks-search');
+  if(bucksSearch)bucksSearch.oninput=function(){const q=NZCFLAutoCommits.key(bucksSearch.value);document.querySelectorAll('[data-bucks-team]').forEach(row=>{row.hidden=!row.getAttribute('data-bucks-team').includes(q);});};
+  document.querySelectorAll('[data-bucks-input]').forEach(el=>{el.onchange=function(){
+    const k=el.getAttribute('data-bucks-input');(DB.bucksRemaining ||= {})[k]=Number(el.value);
+    const room=NZCFLAutoCommits.remaining(DB,k,'scholarship');
+    const text=el.closest('[data-bucks-team]').querySelector('[data-bucks-room]');
+    text.innerHTML=(room===null?'—':room)+' open <small>Cap '+(36+Number(el.value))+'</small>';
+    const results=document.getElementById('rb-auto-results');if(results)results.innerHTML=renderAutoCommitResults();
+    const apply=document.getElementById('rb-apply-autos');if(apply)apply.onclick=stageAutoCommits;
+    refreshSettingsButtons();
+  };});
   for (const isTeam of [false,true]) {
   const playerSearch = document.getElementById(isTeam ? 'rb-commit-override-team' : 'rb-commit-player-search');
   const playerOptions = document.getElementById(isTeam ? 'rb-commit-team-options' : 'rb-commit-player-options');

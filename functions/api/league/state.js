@@ -2,6 +2,7 @@ import '../../../transfer-rules.js';
 import '../../../offer-window.js';
 import '../../../cpr-rules.js';
 import '../../../walkon-limit.js';
+import '../../../auto-commits.js';
 import { json } from '../../_lib/auth.js';
 import { queueLeagueBackup } from '../../_lib/backup.js';
 import { readLeagueState, writeLeagueState } from '../../_lib/league-state.js';
@@ -16,6 +17,10 @@ export async function onRequestPut({ request, env, waitUntil }) {
   const incoming = body.state || body;
   const previous = await readLeagueState(env);
   if (Object.prototype.hasOwnProperty.call(body,'expectedUpdatedAt') && (previous && previous.updatedAt || null) !== body.expectedUpdatedAt) return json({ok:false,error:'The league changed before saving. Your draft is intact; try Save again.'},{status:409});
+  // Preserve new settings when an older open browser tab submits its existing payload.
+  for (const field of ['scholarshipCapacity','bucksRemaining']) {
+    if (!Object.prototype.hasOwnProperty.call(incoming,field) && previous && Object.prototype.hasOwnProperty.call(previous,field)) incoming[field]=previous[field];
+  }
   if (incoming.recruitingStage === 'cpr') {
     const roster = incoming.fullRoster || [];
     const leaders = globalThis.NZCFLCprRules.leaders(roster);
@@ -27,6 +32,8 @@ export async function onRequestPut({ request, env, waitUntil }) {
       } catch(error) { return json({ok:false,error:error.message},{status:400}); }
     }
   }
+  const capacityError = globalThis.NZCFLAutoCommits.validate(incoming);
+  if (capacityError) return json({ok:false,error:capacityError},{status:400});
   const scheduleError = globalThis.NZCFLOfferWindow.validate(incoming.offerSchedule);
   if (scheduleError) return json({ok:false,error:scheduleError},{status:400});
   for (const [pid, offers] of Object.entries(incoming.offersByProspect || {})) {

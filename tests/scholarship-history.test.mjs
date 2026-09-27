@@ -5,10 +5,10 @@ import '../cpr-rules.js';
 import {sanitizeState} from '../functions/_lib/league-state.js';
 const {parseSheet,apply}=globalThis.NZCFLScholarshipHistory;
 const header='2064,Position,Player ID,Scholly offered?,On Scholly?,WO Upgrade,CPR\n';
-test('sheet parsing uses player IDs and explicit scholarship evidence',()=>{
+test('sheet parsing uses player IDs and only On Scholly evidence',()=>{
  const data=parseSheet(header+'"Jones, John",QB,12,TRUE,No,FALSE,FALSE\nA,TE,13,FALSE,No,FALSE,TRUE\nB,S,14,FALSE,No,TRUE,FALSE\nC,K,15,FALSE,Yes,FALSE,FALSE','HS');
  assert.equal(data.season,2064);
- assert.deepEqual(data.players.map(p=>p.everScholarship),[true,false,true,true]);
+ assert.deepEqual(data.players.map(p=>p.everScholarship),[false,false,false,true]);
  assert.equal(data.players[0].name,'Jones, John');
  assert.throws(()=>parseSheet('<html>sign in</html>','SR'),/columns are missing/);
 });

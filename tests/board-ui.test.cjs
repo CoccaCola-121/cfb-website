@@ -10,7 +10,7 @@ const script = page.match(/<script>([\s\S]*?)<\/script>/)[1];
 const boot = script.lastIndexOf('\napplyRoute(routeFromPath(window.location.pathname));');
 assert(boot > 0, 'The app bootstrap must be identifiable without executing network requests.');
 const source = script.slice(0, boot) + `
-  globalThis.app = { DB, UI, buildPromiseArchive, parseCsvRows, offerCountForProspect, refreshScholarshipHistory, submitCprOffer, renderSubmitModal, createCprPlayer, loadClassData, resetOfferWindow, setOffersLocked, offersLocked, pendingCommitChanges, restoreSettingsDraft, renderOfferBlock, renderRescindFilterFields, renderVisitLedger, visibleBoardProspectIds, setRecruitingStage, requestReset, approveDangerReset, beginSettingsDraft, hasSettingsChanges, canLeaveSettings, saveSettingsChanges, saveDBNow, leagueStatePayload, mergeSettingsValue, updateCommitsFromSheet, runBackupNow, setTransferFilter, renderTransferFilters, renderClassSetup, requestManualCommitOverride, applyManualCommitOverride, requestClearCommit, clearManualCommitOverride, applyManualCommitOverrides, clearRecruitingBoard, findProspectFromSheetRow, transferCardStyle, parseFullClass, prospectFromRosterRow, confirmTransferImport, releaseSingleStageBoard, addOfferDirect, render, renderNav, navigateTo, setReady(){ dbReady = true; sessionReady = true; }, renderFeed, renderBoardSearchResults, renderTeamsPage,
+  globalThis.app = { DB, UI, ensureCprScholarshipThreads, renderAutoCommitSettings, stageAutoCommits, readScholarshipCapacity, buildPromiseArchive, parseCsvRows, offerCountForProspect, refreshScholarshipHistory, submitCprOffer, renderSubmitModal, createCprPlayer, loadClassData, resetOfferWindow, setOffersLocked, offersLocked, pendingCommitChanges, restoreSettingsDraft, renderOfferBlock, renderRescindFilterFields, renderVisitLedger, visibleBoardProspectIds, setRecruitingStage, requestReset, approveDangerReset, beginSettingsDraft, hasSettingsChanges, canLeaveSettings, saveSettingsChanges, saveDBNow, leagueStatePayload, mergeSettingsValue, updateCommitsFromSheet, runBackupNow, setTransferFilter, renderTransferFilters, renderClassSetup, requestManualCommitOverride, applyManualCommitOverride, requestClearCommit, clearManualCommitOverride, applyManualCommitOverrides, clearRecruitingBoard, findProspectFromSheetRow, transferCardStyle, parseFullClass, prospectFromRosterRow, confirmTransferImport, releaseSingleStageBoard, addOfferDirect, render, renderNav, navigateTo, setReady(){ dbReady = true; sessionReady = true; }, renderFeed, renderBoardSearchResults, renderTeamsPage,
     renderThreadProspectList, renderProspectDetail, builtInTeamBranding, getTeamBranding, activeTeamBrands,
     mobileRecruitName, renderRecruitName, renderMyOffers, renderCommitsForTeam, renderTeamOffers, renderConditionalRescinds, renderRecruitValues, teamBorderColor, bindEvents, applyDefaultClassData, releaseWave1, releaseWave2,
     setSession(value){ SESSION = value; } };
@@ -65,6 +65,7 @@ function harness() {
   vm.runInContext(fs.readFileSync(path.join(rootDir, 'walkon-limit.js'), 'utf8'), context);
   vm.runInContext(fs.readFileSync(path.join(rootDir, 'scholarship-history.js'), 'utf8'), context);
   vm.runInContext(fs.readFileSync(path.join(rootDir, 'offer-window.js'), 'utf8'), context);
+  vm.runInContext(fs.readFileSync(path.join(rootDir, 'auto-commits.js'), 'utf8'), context);
   vm.runInContext(fs.readFileSync(path.join(rootDir, 'transfer-rules.js'), 'utf8'), context);
   vm.runInContext(source, context);
   const { app } = context;
@@ -562,7 +563,7 @@ for (const stage of ['transfer','cpr']) test(stage + ' position counts follow sl
   assert.equal(elements['rb-board-result-count'].textContent, '2 players');
 });
 
- test('one commissioner can stage resets and stage switches while coaches cannot', async () => {
+ test('two distinct commissioners must approve resets and stage switches; coaches cannot', async () => {
   const {app} = harness();
   app.setRecruitingStage('transfer');
   assert.ok(!app.UI.confirmReset);
@@ -571,11 +572,19 @@ for (const stage of ['transfer','cpr']) test(stage + ' position counts follow sl
   app.setRecruitingStage('transfer');
   assert.equal(app.UI.confirmReset,'stage:transfer');
   await app.approveDangerReset();
+  assert.equal(app.DB.recruitingStage,'hs');
+  await app.approveDangerReset();
+  assert.equal(app.DB.recruitingStage,'hs');
+  app.setSession({accessLevel:'commissioner',discordId:'second'});
+  await app.approveDangerReset();
   assert.equal(app.DB.recruitingStage,'transfer');
   assert.equal(Object.keys(app.DB.prospects).length,0);
   assert.equal(app.hasSettingsChanges(),true);
   app.DB.offersByProspect = {r1:[{team:'Test'}]};
   app.requestReset('offers');
+  await app.approveDangerReset();
+  assert.equal(Object.keys(app.DB.offersByProspect).length,1);
+  app.setSession({accessLevel:'commissioner',discordId:'test'});
   await app.approveDangerReset();
   assert.equal(Object.keys(app.DB.offersByProspect).length,0);
 });
@@ -902,4 +911,53 @@ test('promise CSV contains only winner names, teams, and three escaped promises'
  assert.equal(rows[1][2],'I promise a role in the rotation.');
  assert.equal(rows[1][3],'I promise weekly film sessions.');
  assert.equal(rows[1][4],'');
+});
+
+test('auto settings preview, staged commitments, and discard use the settings draft',()=>{
+ const {app}=harness();app.setSession({accessLevel:'commissioner'});
+ app.DB.recruitingStage='cpr';app.DB.offersLocked=true;
+ app.DB.prospects={r2:{id:'r2',rank:2,name:'Morgan Baker',position:'WR',rating:'54/68',overall:54,potential:68}};
+ app.DB.offersByProspect={r2:[{id:'o1',team:'Michigan State',text:'Scholarship'}]};
+ app.DB.scholarshipCapacity={stage:'cpr',updatedAt:Date.now(),teams:{'michigan state':{team:'Michigan State',open:1}}};
+ app.UI.autoCategory='scholarship';app.beginSettingsDraft();
+ assert.match(app.renderAutoCommitSettings(),/1 uncommitted scholarship auto/);
+ assert.equal(app.DB.prospects.r2.commitTeam,undefined);
+ app.stageAutoCommits();assert.equal(app.DB.prospects.r2.commitTeam,'Michigan State');
+ assert.equal(app.hasSettingsChanges(),true);
+ assert.match(app.renderAutoCommitSettings(),/No uncommitted scholarship autos/);
+ app.restoreSettingsDraft();assert.equal(app.DB.prospects.r2.commitTeam,undefined);
+ assert.equal(app.DB.manualCommitOverrides.r2,undefined);
+});
+
+test('scholarship starting balances are captured and cannot refresh after commitments',async()=>{
+ const {app,context,elements}=harness();app.setSession({accessLevel:'commissioner'});app.DB.recruitingStage='cpr';app.DB.prospects={};app.beginSettingsDraft();
+ elements['rb-capacity-source']={value:'https://docs.google.com/spreadsheets/d/11-87AU--uFWHfHCB3S2IbkVOrSNP2X3x1j_M5s1dFys/edit?gid=1039825625'};
+ let reads=0;context.fetch=async()=>{reads++;return {ok:true,json:async()=>({ok:true,teams:{'michigan state':{team:'Michigan State',open:2}},source:'https://docs.google.com/spreadsheets/d/source'})};};
+ await app.readScholarshipCapacity();assert.equal(app.DB.scholarshipCapacity.teams['michigan state'].open,2);assert.equal(app.DB.scholarshipCapacity.stage,'cpr');
+ app.DB.prospects.r1={id:'r1',name:'Committed',position:'QB',overall:50,commitTeam:'Michigan State'};
+ await app.readScholarshipCapacity();assert.equal(reads,1);assert.match(app.UI.capacityStatus,/cannot be refreshed/);
+ app.restoreSettingsDraft();assert.equal(app.DB.scholarshipCapacity,undefined);
+});
+
+test('new class clears starting balances but retains manually tracked yearly Bucks allowances',()=>{
+ const {app}=harness();app.DB.scholarshipCapacity={stage:'cpr',teams:{}};app.DB.bucksRemaining={alabama:1};app.clearRecruitingBoard();
+ assert.equal(app.DB.scholarshipCapacity,null);assert.equal(app.DB.bucksRemaining.alabama,1);
+});
+
+test('below-threshold scholarship players gain threads after scholarship import without duplicates',()=>{
+ const {app}=harness();app.DB.recruitingStage='cpr';app.DB.wave1Released=true;app.DB.prospects={};app.DB.threads=[];app.DB.released={};
+ app.DB.fullRoster=[{rank:1,name:'John Marks',position:'QB',overall:26,potential:44,rating:'26/44',everScholarship:true},{rank:2,name:'Piotr Lewandowski',position:'RB',overall:33,potential:52,rating:'33/52',everScholarship:true},{rank:3,name:'Joe Jack-Kurdyla',position:'WR',overall:30,potential:46,rating:'30/46',everScholarship:true},{rank:4,name:'Joey Bosa Jr.',position:'DL',overall:31,potential:56,rating:'31/56',everScholarship:true},{rank:5,name:'Walk-on below cutoff',position:'QB',overall:26,potential:44}];
+ assert.equal(app.ensureCprScholarshipThreads(),4);assert.equal(Object.keys(app.DB.prospects).length,4);assert.equal(app.DB.threads.length,4);
+ assert.equal(app.ensureCprScholarshipThreads(),0);assert.equal(app.DB.threads.length,4);
+ assert.equal(app.DB.prospects.r1.everScholarship,true);assert.equal(app.DB.prospects.r5,undefined);
+});
+
+test('auto batches refuse stale live offers and preserve the draft',async()=>{
+ const {app,context}=harness();app.setSession({accessLevel:'commissioner'});app.DB.recruitingStage='cpr';app.DB.offersLocked=true;
+ app.DB.prospects={r2:{id:'r2',rank:2,name:'Morgan Baker',position:'WR',rating:'54/68',overall:54,potential:68}};
+ app.DB.offersByProspect={r2:[{id:'o1',team:'Michigan State',text:'Scholarship'}]};app.DB.scholarshipCapacity={stage:'cpr',teams:{'michigan state':{team:'Michigan State',open:1}}};
+ app.beginSettingsDraft();const live=JSON.parse(JSON.stringify(app.leagueStatePayload()));app.UI.autoCategory='scholarship';app.stageAutoCommits();
+ live.offersByProspect.r2.push({id:'o2',team:'Alabama',text:'Scholarship'});context.window.location.protocol='https:';let puts=0;
+ context.fetch=async(url,options={})=>{if(options.method==='PUT')puts++;return {ok:true,json:async()=>({state:live})};};
+ await app.saveSettingsChanges();assert.equal(puts,0);assert.match(app.UI.settingsError,/changed after this auto preview/);assert.equal(app.hasSettingsChanges(),true);
 });

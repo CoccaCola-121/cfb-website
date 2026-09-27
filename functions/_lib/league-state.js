@@ -9,6 +9,8 @@ const STATE_FIELDS = [
   'fullRoster',
   'scholarshipHistory',
   'scholarshipSource',
+  'scholarshipCapacity',
+  'bucksRemaining',
   'recruitingStage',
   'released',
   'wave1Released',

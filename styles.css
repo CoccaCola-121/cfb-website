@@ -819,3 +819,49 @@ html { scrollbar-gutter: stable; }
 @media(max-width:720px) { .rb-transfer-commit-controls :is(.rb-commit-player-picker,.rb-commit-team-picker) > .rb-input { font-size:16px; } }
 
 .rb-team-filter-row { margin-top:18px; }
+
+.rb-auto-settings { padding:20px 24px; margin-top:14px; max-width:860px; }
+.rb-auto-settings > .rb-h { font-size:18px; }
+.rb-auto-note, .rb-auto-save-note { font-size:12px; color:var(--slate); line-height:1.6; }
+.rb-auto-note { margin:10px 0 14px; }
+.rb-auto-capacity { padding:12px 0; border-top:1px solid var(--hairline); border-bottom:1px solid var(--hairline); }
+.rb-auto-capacity > summary { cursor:pointer; font-size:13px; font-weight:600; }
+.rb-auto-source { display:flex; gap:8px; align-items:center; }
+.rb-auto-source .rb-input { min-width:0; font-size:12px; }
+.rb-auto-source .rb-btn { flex-shrink:0; font-size:12px; }
+#rb-bucks-search { font-size:13px; margin:8px 0; }
+.rb-auto-limits { max-height:310px; overflow:auto; overscroll-behavior:contain; }
+.rb-auto-limit { display:grid; grid-template-columns:minmax(0,1fr) 75px 100px 80px; align-items:center; gap:12px; padding:12px 4px; border-bottom:1px solid var(--hairline); font-size:12px; }
+.rb-auto-limit[hidden] { display:none; }
+.rb-auto-limit > strong { overflow-wrap:anywhere; }
+.rb-auto-limit label { display:flex; align-items:center; gap:6px; color:var(--slate); font-size:11px; }
+.rb-auto-limit select { width:46px; padding:6px; font-size:13px; }
+.rb-auto-balance { color:var(--slate); }
+.rb-auto-room { text-align:right; font-weight:600; }
+.rb-auto-room small { display:block; color:var(--slate); font-weight:400; }
+.rb-auto-controls { display:flex; flex-wrap:wrap; gap:10px; align-items:center; justify-content:space-between; margin:18px 0; }
+.rb-auto-controls .rb-segmented button { font-size:12px; padding:8px 12px; }
+.rb-auto-controls > .rb-btn { font-size:12px; }
+.rb-auto-result-heading { display:flex; justify-content:space-between; flex-wrap:wrap; gap:8px; font-size:13px; }
+.rb-auto-result-heading > span { color:var(--slate); font-size:12px; }
+.rb-auto-results { display:grid; gap:8px; margin-bottom:14px; }
+.rb-auto-result { display:flex; flex-wrap:wrap; justify-content:space-between; align-items:center; gap:12px; padding:12px; background:var(--panel-alt); border:1px solid var(--hairline); border-radius:6px; font-size:13px; }
+.rb-auto-result > div:first-child > span { display:block; color:var(--slate); font-size:11px; margin-top:3px; }
+.rb-auto-team { display:flex; align-items:center; gap:8px; }
+.rb-auto-save-note { display:inline-block; margin:8px; }
+.rb-auto-rescinds { font-size:12px; margin:12px 0; color:var(--slate); }
+.rb-auto-rescinds > summary { cursor:pointer; }
+@media(max-width:720px){
+  .rb-auto-settings { padding:16px; }
+  .rb-auto-source { flex-direction:column; align-items:stretch; }
+  .rb-auto-limit { grid-template-columns:minmax(0,1fr) 90px; gap:6px 12px; padding:12px 0; }
+  .rb-auto-limit > strong { grid-column:1; grid-row:1; }
+  .rb-auto-balance { grid-column:1; grid-row:2; }
+  .rb-auto-limit label { grid-column:2; grid-row:1; justify-content:flex-end; }
+  .rb-auto-room { grid-column:2; grid-row:2; }
+  .rb-auto-room small { display:inline; margin-left:4px; }
+  .rb-auto-source .rb-input, #rb-bucks-search, .rb-auto-limit select { font-size:16px; }
+  .rb-auto-controls { align-items:stretch; }
+  .rb-auto-controls .rb-segmented { width:100%; display:flex; }
+  .rb-auto-controls .rb-segmented button { flex:1; }
+}

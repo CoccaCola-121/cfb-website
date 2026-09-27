@@ -12,7 +12,7 @@
     return header.some(line=>/^(?:scholarship|scholarship offer)\s*[.!:]?$/i.test(line.replace(/[*_`]/g,'').trim()) || /\boffers?\b.*\bscholarship\b/i.test(line));
   }
   const normalize = value => String(value || '').trim().replace(/\s+/g,' ').toLowerCase();
-  function qualify(player){ return Object.hasOwn(thresholds,player.position) && player.overall >= thresholds[player.position]; }
+  function qualify(player){ return player.everScholarship === true || (Object.hasOwn(thresholds,player.position) && player.overall >= thresholds[player.position]); }
   function leaders(roster){
     const best = {};
     roster.forEach(p => { const old=best[p.position]; if (!old || p.overall>old.overall || (p.overall===old.overall && p.potential>old.potential)) best[p.position]=p; });
