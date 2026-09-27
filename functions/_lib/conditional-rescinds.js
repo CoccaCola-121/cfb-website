@@ -97,8 +97,6 @@ export function applyConditionalRescinds(state, options = {}) {
         if (!offer || offer.rescinded || teamKey(offer.team) !== teamKey(team)) return;
         if (!ruleMatchesProspect(rule, prospect, offer)) return;
         offer.rescinded = true;
-        offer.text = 'rescinded';
-        offer.promises = [];
         offer.rescindedAt = now;
         offer.rescindReason = `Conditional rescind: ${rule.name || 'rule met'}`;
         offer.conditionalRescindRuleId = rule.id || '';

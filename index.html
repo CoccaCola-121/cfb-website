@@ -46,6 +46,7 @@
 <script src="team-branding.js"></script>
 <script src="default-class-2062.js"></script>
 <script src="/cpr-rules.js" onerror="this.onerror=null;this.src='cpr-rules.js'"></script>
+<script src="/walkon-limit.js" onerror="this.onerror=null;this.src='walkon-limit.js'"></script>
 <script src="/scholarship-history.js" onerror="this.onerror=null;this.src='scholarship-history.js'"></script>
 <script src="/offer-window.js" onerror="this.onerror=null;this.src='offer-window.js'"></script>
 <script src="/transfer-rules.js" onerror="this.onerror=null;this.src='transfer-rules.js'"></script>
@@ -2369,6 +2370,7 @@ function conditionalRuleMatchesProspect(rule, prospect, offer){
 }
 
 function applyConditionalRescinds(){
+  NZCFLWalkonLimit.apply(DB);
   const rules = normalizeConditionalRules();
   const results = [];
   rules.forEach(function(rule){
@@ -2389,8 +2391,6 @@ function applyConditionalRescinds(){
         if (!offer || offer.rescinded || teamKey(offer.team) !== teamKey(rule.team)) return;
         if (!conditionalRuleMatchesProspect(rule, prospect, offer)) return;
         offer.rescinded = true;
-        offer.text = 'rescinded';
-        offer.promises = [];
         offer.rescindedAt = Date.now();
         offer.rescindReason = 'Conditional rescind: ' + (rule.name || 'rule met');
         offer.conditionalRescindRuleId = rule.id || '';
@@ -2411,8 +2411,6 @@ function rescindOffer(prospectId, team){
   const offer = findOfferForTeam(prospectId, team);
   if (!offer) return;
   offer.rescinded = true;
-  offer.text = 'rescinded';
-  offer.promises = [];
   offer.rescindedAt = Date.now();
   saveDB(); render();
 }
@@ -2431,8 +2429,6 @@ function rescindOfferById(prospectId, offerId){
     render(); return;
   }
   offer.rescinded = true;
-  offer.text = 'rescinded';
-  offer.promises = [];
   offer.rescindedAt = Date.now();
   UI.rescindError = null;
   saveDB(); render();
@@ -2473,6 +2469,8 @@ function confirmSingleRescind(){
 function addOfferDirect(prospectId, team, coach, text, promises, visits){
   if (offersLocked()) return { ok: false, error: 'Offer denied: offers are locked.' };
   const prospect = DB.prospects[prospectId];
+  const capError = NZCFLWalkonLimit.error(DB, prospect, {team:team,text:text});
+  if (capError) return {ok:false,error:capError};
   const pitchError = NZCFLTransferRules.pitchLimitError(text, prospect, recruitingStage());
   if (pitchError) return { ok: false, error: pitchError };
   if (prospect && prospect.commitTeam) return { ok: false, error: 'Offer denied: #' + prospect.rank + ' ' + prospect.name + ' has committed to ' + prospect.commitTeam + '.' };
@@ -3422,8 +3420,6 @@ function confirmMassRescind(){
   matches.forEach(function(row){
     if (!checked[row.prospectId + ':' + row.offer.id]) return;
     row.offer.rescinded = true;
-    row.offer.text = 'rescinded';
-    row.offer.promises = [];
     row.offer.rescindedAt = Date.now();
     row.offer.rescindReason = 'Mass rescind: ' + rescindFilterSummary(rule);
     count++;

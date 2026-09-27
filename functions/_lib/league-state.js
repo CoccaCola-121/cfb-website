@@ -1,3 +1,5 @@
+import '../../cpr-rules.js';
+import '../../walkon-limit.js';
 import '../../transfer-rules.js';
 import { teamKey } from './teams-util.js';
 
@@ -45,6 +47,7 @@ export async function readLeagueState(env) {
 }
 
 export async function writeLeagueState(env, state) {
+  globalThis.NZCFLWalkonLimit.apply(state);
   const clean = sanitizeState(globalThis.NZCFLTransferRules.cleanCommitOverrides(state || {}));
   await env.AUTH_KV.put(STATE_KEY, JSON.stringify(clean));
   return clean;

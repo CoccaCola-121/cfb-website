@@ -62,6 +62,7 @@ function harness() {
   });
   vm.runInContext(fs.readFileSync(path.join(rootDir, 'team-branding.js'), 'utf8'), context);
   vm.runInContext(fs.readFileSync(path.join(rootDir, 'cpr-rules.js'), 'utf8'), context);
+  vm.runInContext(fs.readFileSync(path.join(rootDir, 'walkon-limit.js'), 'utf8'), context);
   vm.runInContext(fs.readFileSync(path.join(rootDir, 'scholarship-history.js'), 'utf8'), context);
   vm.runInContext(fs.readFileSync(path.join(rootDir, 'offer-window.js'), 'utf8'), context);
   vm.runInContext(fs.readFileSync(path.join(rootDir, 'transfer-rules.js'), 'utf8'), context);

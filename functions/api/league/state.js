@@ -1,6 +1,7 @@
 import '../../../transfer-rules.js';
 import '../../../offer-window.js';
 import '../../../cpr-rules.js';
+import '../../../walkon-limit.js';
 import { json } from '../../_lib/auth.js';
 import { queueLeagueBackup } from '../../_lib/backup.js';
 import { readLeagueState, writeLeagueState } from '../../_lib/league-state.js';
@@ -33,6 +34,10 @@ export async function onRequestPut({ request, env, waitUntil }) {
     for (const offer of (Array.isArray(offers) ? offers : [])) {
       const old = ((previous && previous.offersByProspect || {})[pid] || []).find(item => item.id === offer.id);
       if (!old && !offer.rescinded && previous && globalThis.NZCFLOfferWindow.locked(previous)) return json({ok:false,error:'Offers are locked.'},{status:403});
+      if (!old && !offer.rescinded) {
+        const capError = globalThis.NZCFLWalkonLimit.error(incoming, prospect, offer);
+        if (capError) return json({ok:false,error:capError},{status:400});
+      }
       if (old && old.text === offer.text) continue;
       const error = globalThis.NZCFLTransferRules.pitchLimitError(offer.text, prospect, incoming.recruitingStage);
       if (error) return json({ ok: false, error }, { status: 400 });
