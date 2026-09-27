@@ -10,7 +10,7 @@ const script = page.match(/<script>([\s\S]*?)<\/script>/)[1];
 const boot = script.lastIndexOf('\napplyRoute(routeFromPath(window.location.pathname));');
 assert(boot > 0, 'The app bootstrap must be identifiable without executing network requests.');
 const source = script.slice(0, boot) + `
-  globalThis.app = { DB, UI, ensureCprScholarshipThreads, renderAutoCommitSettings, stageAutoCommits, readScholarshipCapacity, buildPromiseArchive, parseCsvRows, offerCountForProspect, refreshScholarshipHistory, submitCprOffer, renderSubmitModal, createCprPlayer, loadClassData, resetOfferWindow, setOffersLocked, offersLocked, pendingCommitChanges, restoreSettingsDraft, renderOfferBlock, renderRescindFilterFields, renderVisitLedger, visibleBoardProspectIds, setRecruitingStage, requestReset, approveDangerReset, beginSettingsDraft, hasSettingsChanges, canLeaveSettings, saveSettingsChanges, saveDBNow, leagueStatePayload, mergeSettingsValue, updateCommitsFromSheet, runBackupNow, setTransferFilter, renderTransferFilters, renderClassSetup, requestManualCommitOverride, applyManualCommitOverride, requestClearCommit, clearManualCommitOverride, applyManualCommitOverrides, clearRecruitingBoard, findProspectFromSheetRow, transferCardStyle, parseFullClass, prospectFromRosterRow, confirmTransferImport, releaseSingleStageBoard, addOfferDirect, render, renderNav, navigateTo, setReady(){ dbReady = true; sessionReady = true; }, renderFeed, renderBoardSearchResults, renderTeamsPage,
+  globalThis.app = { DB, UI, updateBucksEntries, renderBucksSettings, renderCprProfile, cprPreviousSchool, ensureCprScholarshipThreads, renderAutoCommitSettings, stageAutoCommits, readScholarshipCapacity, buildPromiseArchive, parseCsvRows, offerCountForProspect, refreshScholarshipHistory, submitCprOffer, renderSubmitModal, createCprPlayer, loadClassData, resetOfferWindow, setOffersLocked, offersLocked, pendingCommitChanges, restoreSettingsDraft, renderOfferBlock, renderRescindFilterFields, renderVisitLedger, visibleBoardProspectIds, setRecruitingStage, requestReset, approveDangerReset, beginSettingsDraft, hasSettingsChanges, canLeaveSettings, saveSettingsChanges, saveDBNow, leagueStatePayload, mergeSettingsValue, updateCommitsFromSheet, runBackupNow, setTransferFilter, renderTransferFilters, renderClassSetup, requestManualCommitOverride, applyManualCommitOverride, requestClearCommit, clearManualCommitOverride, applyManualCommitOverrides, clearRecruitingBoard, findProspectFromSheetRow, transferCardStyle, parseFullClass, prospectFromRosterRow, confirmTransferImport, releaseSingleStageBoard, addOfferDirect, render, renderNav, navigateTo, setReady(){ dbReady = true; sessionReady = true; }, renderFeed, renderBoardSearchResults, renderTeamsPage,
     renderThreadProspectList, renderProspectDetail, builtInTeamBranding, getTeamBranding, activeTeamBrands,
     mobileRecruitName, renderRecruitName, renderMyOffers, renderCommitsForTeam, renderTeamOffers, renderConditionalRescinds, renderRecruitValues, teamBorderColor, bindEvents, applyDefaultClassData, releaseWave1, releaseWave2,
     setSession(value){ SESSION = value; } };
@@ -960,4 +960,28 @@ test('auto batches refuse stale live offers and preserve the draft',async()=>{
  live.offersByProspect.r2.push({id:'o2',team:'Alabama',text:'Scholarship'});context.window.location.protocol='https:';let puts=0;
  context.fetch=async(url,options={})=>{if(options.method==='PUT')puts++;return {ok:true,json:async()=>({state:live})};};
  await app.saveSettingsChanges();assert.equal(puts,0);assert.match(app.UI.settingsError,/changed after this auto preview/);assert.equal(app.hasSettingsChanges(),true);
+});
+
+
+test('bulk Bucks entries update only named exceptions and validate the whole batch',()=>{
+ const {app}=harness();app.DB.bucksRemaining={stanford:2};
+ assert.equal(app.updateBucksEntries('Michigan State, 1, Alabama, 3'),2);
+ assert.equal(app.DB.bucksRemaining['michigan state'],2);assert.equal(app.DB.bucksRemaining.alabama,0);assert.equal(app.DB.bucksRemaining.stanford,2);
+ const before=JSON.stringify(app.DB.bucksRemaining);
+ assert.throws(()=>app.updateBucksEntries('Alabama, 2\nUnknown College, 1'),/Unknown team/);assert.equal(JSON.stringify(app.DB.bucksRemaining),before);
+ assert.throws(()=>app.updateBucksEntries('Alabama, 4'),/0–3/);
+ assert.throws(()=>app.updateBucksEntries('Alabama, 1, Alabama, 2'),/Conflicting/);
+ app.updateBucksEntries('Michigan State\t2\nAlabama\t0');assert.equal(app.DB.bucksRemaining['michigan state'],1);assert.equal(app.DB.bucksRemaining.alabama,undefined);
+ const html=app.renderBucksSettings();assert.match(html,/Michigan State/);assert.match(html,/Stanford/);assert.ok(!html.includes('Air Force'));assert.ok(!html.includes('data-bucks-used="alabama"'));
+});
+
+test('only CPR true freshmen with four years left show High School with the league logo',()=>{
+ const {app}=harness();app.DB.recruitingStage='cpr';
+ const freshman={grade:'FR',yearsLeft:4,previousTeam:'Alabama'};
+ assert.equal(app.cprPreviousSchool(freshman),'High School');
+ const html=app.renderCprProfile(freshman);assert.match(html,/>High School</);assert.match(html,/nzcfl-free-agent.png/);assert.ok(!html.includes('Alabama'));
+ assert.equal(app.cprPreviousSchool({...freshman,grade:'RS FR'}),'Alabama');
+ assert.equal(app.cprPreviousSchool({...freshman,grade:'RSFR',previousTeam:''}),'');
+ assert.equal(app.cprPreviousSchool({...freshman,yearsLeft:3}),'Alabama');
+ app.DB.recruitingStage='transfer';assert.equal(app.cprPreviousSchool(freshman),'Alabama');
 });
