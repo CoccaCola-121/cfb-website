@@ -4046,8 +4046,12 @@ function renderProspectBoardCard(pid, searchAttr, context){
   else if (recruitingStage() === 'cpr') html += renderCprProfile(p);
   else if (!p.commitTeam) html += renderStorylineLine(p.storyline, 'margin-top:6px;');
   if (offers.length && !p.commitTeam){
-    html += '<div style="margin-top:10px;border-top:1px solid var(--hairline);padding-top:10px;display:flex;flex-direction:column;gap:10px;">';
-    offers.forEach(function(o){ html += renderOfferBlock(o, { prospect: p, collapsed: true }); });
+    html += '<div class="rb-board-offer-logos" role="list" aria-label="Offering teams">';
+    offers.forEach(function(o){
+      const label = o.team + (o.rescinded ? ' (rescinded)' : '');
+      const brand = getTeamBranding(o.team);
+      html += '<span role="listitem" class="rb-board-offer-logo' + (o.rescinded ? ' rb-board-offer-rescinded' : '') + '" title="' + escapeHtml(label) + '" aria-label="' + escapeHtml(label) + '">' + renderTeamLogo(brand && brand.logoUrl ? brand : {logoUrl:'/nzcfl-free-agent.png'}, 28) + '</span>';
+    });
     html += '</div>';
   }
   html += '</div>';

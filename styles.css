@@ -783,3 +783,7 @@ html { scrollbar-gutter: stable; }
 .rb-board-filter-top { display:flex; align-items:center; justify-content:space-between; gap:8px 16px; flex-wrap:wrap; }
 .rb-board-filter-top > :first-child { flex:1 1 auto; min-width:0; }
 #rb-board-result-count { color:var(--slate); font-size:11px; white-space:nowrap; margin-left:auto; padding-bottom:10px; }
+
+.rb-board-offer-logos { display:flex; flex-wrap:wrap; align-items:center; gap:12px; padding:12px 14px; margin-top:12px; border:1px solid var(--hairline); border-radius:6px; background:var(--panel-alt); }
+.rb-board-offer-logo { display:flex; align-items:center; justify-content:center; flex:0 0 36px; }
+.rb-board-offer-rescinded { opacity:.4; }
