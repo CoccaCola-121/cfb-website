@@ -3980,13 +3980,13 @@ function renderBoardSearchResults(query){
   return html || '<div class="rb-card" style="padding:28px;text-align:center;color:var(--slate);" role="status">No recruits match that search.</div>';
 }
 
-const TRANSFER_GRADES = ['RS FR', 'SO', 'RS SO', 'JR', 'RS JR', 'SR', 'RS SR'];
+const TRANSFER_GRADES = ['FR', 'RS FR', 'SO', 'RS SO', 'JR', 'RS JR', 'SR', 'RS SR'];
 
 function setTransferFilter(mode, value){
   UI.transferFilterMode = mode === 'grade' ? 'grade' : 'years';
   UI.transferGrade = ''; UI.transferYears = '';
   if (value == null) return;
-  if (UI.transferFilterMode === 'grade') UI.transferGrade = TRANSFER_GRADES[Math.max(0, Math.min(6, Math.round(value)))] || '';
+  if (UI.transferFilterMode === 'grade') UI.transferGrade = TRANSFER_GRADES[Math.max(0, Math.min(TRANSFER_GRADES.length - 1, Math.round(value)))] || '';
   else UI.transferYears = String(Math.max(1, Math.min(4, Math.round(value))));
 }
 
@@ -3999,7 +3999,7 @@ function renderTransferFilters(){
   const ticks = gradeMode ? TRANSFER_GRADES : ['1','2','3','4'];
   const selected = gradeMode ? UI.transferGrade : UI.transferYears;
   const value = gradeMode ? Math.max(0, TRANSFER_GRADES.indexOf(selected)) : (Number(selected) || 1);
-  return '<div class="rb-transfer-filters"><div class="rb-transfer-filter-heading"><div class="rb-segmented" aria-label="Filter by">' + [['years','Years left'],['grade','Grade']].map(function(item){ return '<button type="button" data-transfer-filter-mode="' + item[0] + '" aria-pressed="' + ((gradeMode ? 'grade' : 'years') === item[0]) + '">' + item[1] + '</button>'; }).join('') + '</div><button type="button" class="rb-transfer-filter-reset" id="rb-transfer-filter-reset">Show all</button></div><div class="rb-transfer-slider-heading"><label for="rb-transfer-slider">' + (gradeMode ? 'Grade' : 'Years left') + '</label><output id="rb-transfer-slider-value" for="rb-transfer-slider">' + transferFilterLabel() + '</output></div><input id="rb-transfer-slider" class="rb-transfer-slider" type="range" min="' + (gradeMode ? 0 : 1) + '" max="' + (gradeMode ? 6 : 4) + '" step="1" value="' + value + '" aria-valuetext="' + transferFilterLabel() + '" /><div class="rb-transfer-slider-ticks" style="--tick-count:' + ticks.length + '">' + ticks.map(function(tick,i){ return '<span data-transfer-slider-tick="' + (gradeMode ? i : i+1) + '" class="' + (selected && value === (gradeMode ? i : i+1) ? 'rb-transfer-tick-active' : '') + '">' + tick + '</span>'; }).join('') + '</div></div>';
+  return '<div class="rb-transfer-filters"><div class="rb-transfer-filter-heading"><div class="rb-segmented" aria-label="Filter by">' + [['years','Years left'],['grade','Grade']].map(function(item){ return '<button type="button" data-transfer-filter-mode="' + item[0] + '" aria-pressed="' + ((gradeMode ? 'grade' : 'years') === item[0]) + '">' + item[1] + '</button>'; }).join('') + '</div><button type="button" class="rb-transfer-filter-reset" id="rb-transfer-filter-reset">Show all</button></div><div class="rb-transfer-slider-heading"><label for="rb-transfer-slider">' + (gradeMode ? 'Grade' : 'Years left') + '</label><output id="rb-transfer-slider-value" for="rb-transfer-slider">' + transferFilterLabel() + '</output></div><input id="rb-transfer-slider" class="rb-transfer-slider" type="range" min="' + (gradeMode ? 0 : 1) + '" max="' + (gradeMode ? TRANSFER_GRADES.length - 1 : 4) + '" step="1" value="' + value + '" aria-valuetext="' + transferFilterLabel() + '" /><div class="rb-transfer-slider-ticks" style="--tick-count:' + ticks.length + '">' + ticks.map(function(tick,i){ return '<span data-transfer-slider-tick="' + (gradeMode ? i : i+1) + '" class="' + (selected && value === (gradeMode ? i : i+1) ? 'rb-transfer-tick-active' : '') + '">' + tick + '</span>'; }).join('') + '</div></div>';
 }
 
 function renderThreadProspectList(t){

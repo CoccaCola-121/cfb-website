@@ -442,8 +442,13 @@ test('transfer sliders use fixed stops and only one eligibility filter at a time
   assert.equal(app.UI.transferYears,'');
   const html = app.renderTransferFilters();
   assert.equal((html.match(/type="range"/g)||[]).length,1);
-  for(const grade of ['RS FR','SO','RS SO','JR','RS JR','SR','RS SR']) assert.ok(html.includes('>'+grade+'</span>'));
-  app.setTransferFilter('grade',4);
+  for(const grade of ['FR','RS FR','SO','RS SO','JR','RS JR','SR','RS SR']) assert.ok(html.includes('>'+grade+'</span>'));
+  assert.match(html,/type="range" min="0" max="7"/);
+  for (const [index, grade] of ['FR','RS FR','SO','RS SO','JR','RS JR','SR','RS SR'].entries()) {
+    app.setTransferFilter('grade',index);
+    assert.equal(app.UI.transferGrade,grade);
+  }
+  app.setTransferFilter('grade',5);
   assert.equal(app.UI.transferGrade,'RS JR');
   assert.equal(app.UI.transferYears,'');
   app.setTransferFilter('years',null);
@@ -545,11 +550,11 @@ for (const stage of ['transfer','cpr']) test(stage + ' position counts follow sl
   assert.deepEqual(counts(), ['1','1']);
   assert.equal(elements['rb-board-result-count'].textContent, '2 players');
   app.setTransferFilter('grade',null);
-  elements['rb-transfer-slider'].value = '3';
+  elements['rb-transfer-slider'].value = '4';
   elements['rb-transfer-slider'].oninput();
   assert.deepEqual(counts(), ['1','0']);
   assert.equal(elements['rb-board-result-count'].textContent, '1 player');
-  elements['rb-transfer-slider'].value = '2';
+  elements['rb-transfer-slider'].value = '3';
   elements['rb-transfer-slider'].oninput();
   assert.deepEqual(counts(), ['0','1']);
   assert.equal(getCards()[0].style.display,'none');
