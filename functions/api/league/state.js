@@ -24,9 +24,10 @@ export async function onRequestPut({ request, env, waitUntil }) {
   if (incoming.recruitingStage === 'cpr') {
     const roster = incoming.fullRoster || [];
     const leaders = globalThis.NZCFLCprRules.leaders(roster);
+    const matchPlayer = globalThis.NZCFLCprRules.createMatcher(roster);
     for (const [id,p] of Object.entries(incoming.prospects || {})) {
       try {
-        const row = globalThis.NZCFLCprRules.match(roster,p);
+        const row = matchPlayer(p);
         if (id !== 'r' + row.rank) throw Error('Player ID must match the uploaded CSV.');
         p.offerMode = leaders[row.position] === row ? 'pitch' : 'values';
       } catch(error) { return json({ok:false,error:error.message},{status:400}); }

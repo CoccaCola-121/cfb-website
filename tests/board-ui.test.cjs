@@ -10,7 +10,7 @@ const script = page.match(/<script>([\s\S]*?)<\/script>/)[1];
 const boot = script.lastIndexOf('\napplyRoute(routeFromPath(window.location.pathname));');
 assert(boot > 0, 'The app bootstrap must be identifiable without executing network requests.');
 const source = script.slice(0, boot) + `
-  globalThis.app = { DB, UI, updateBucksEntries, renderBucksSettings, renderCprProfile, cprPreviousSchool, ensureCprScholarshipThreads, renderAutoCommitSettings, stageAutoCommits, readScholarshipCapacity, buildPromiseArchive, parseCsvRows, offerCountForProspect, refreshScholarshipHistory, submitCprOffer, renderSubmitModal, createCprPlayer, loadClassData, resetOfferWindow, setOffersLocked, offersLocked, pendingCommitChanges, restoreSettingsDraft, renderOfferBlock, renderRescindFilterFields, renderVisitLedger, visibleBoardProspectIds, setRecruitingStage, requestReset, approveDangerReset, beginSettingsDraft, hasSettingsChanges, canLeaveSettings, saveSettingsChanges, saveDBNow, leagueStatePayload, mergeSettingsValue, updateCommitsFromSheet, runBackupNow, setTransferFilter, renderTransferFilters, renderClassSetup, requestManualCommitOverride, applyManualCommitOverride, requestClearCommit, clearManualCommitOverride, applyManualCommitOverrides, clearRecruitingBoard, findProspectFromSheetRow, transferCardStyle, parseFullClass, prospectFromRosterRow, confirmTransferImport, releaseSingleStageBoard, addOfferDirect, render, renderNav, navigateTo, applyRoute, setReady(){ dbReady = true; sessionReady = true; }, renderFeed, renderBoardSearchResults, renderTeamsPage,
+  globalThis.app = { DB, UI, extractPromises, cleanDisplayPromises, readCprBoard, updateBucksEntries, renderBucksSettings, renderCprProfile, cprPreviousSchool, ensureCprScholarshipThreads, renderAutoCommitSettings, stageAutoCommits, readScholarshipCapacity, buildPromiseArchive, parseCsvRows, offerCountForProspect, refreshScholarshipHistory, submitCprOffer, renderSubmitModal, createCprPlayer, loadClassData, resetOfferWindow, setOffersLocked, offersLocked, pendingCommitChanges, restoreSettingsDraft, renderOfferBlock, renderRescindFilterFields, renderVisitLedger, visibleBoardProspectIds, setRecruitingStage, requestReset, approveDangerReset, beginSettingsDraft, hasSettingsChanges, canLeaveSettings, saveSettingsChanges, saveDBNow, leagueStatePayload, mergeSettingsValue, updateCommitsFromSheet, runBackupNow, setTransferFilter, renderTransferFilters, renderClassSetup, requestManualCommitOverride, applyManualCommitOverride, requestClearCommit, clearManualCommitOverride, applyManualCommitOverrides, clearRecruitingBoard, findProspectFromSheetRow, transferCardStyle, parseFullClass, prospectFromRosterRow, confirmTransferImport, releaseSingleStageBoard, addOfferDirect, render, renderNav, navigateTo, applyRoute, setReady(){ dbReady = true; sessionReady = true; }, renderFeed, renderBoardSearchResults, renderTeamsPage,
     renderThreadProspectList, renderProspectDetail, builtInTeamBranding, getTeamBranding, activeTeamBrands,
     mobileRecruitName, renderRecruitName, renderMyOffers, renderCommitsForTeam, renderTeamOffers, renderConditionalRescinds, renderRecruitValues, teamBorderColor, bindEvents, applyDefaultClassData, releaseWave1, releaseWave2,
     setSession(value){ SESSION = value; } };
@@ -608,7 +608,7 @@ test('only high school settings expose commit sheets; all stages retain manual o
   }
 });
 
-test('stage controls and own offer filtering match each recruiting stage', () => {
+test('stage controls and public offer filtering match each recruiting stage', () => {
   for (const stage of ['hs','transfer','cpr']) {
     const {app} = harness();
     app.DB.recruitingStage = stage;
@@ -618,9 +618,9 @@ test('stage controls and own offer filtering match each recruiting stage', () =>
     assert.equal(app.renderVisitLedger() === '',stage !== 'hs');
     app.DB.offersByProspect = {r1:[{team:'Michigan State'}],r2:[{team:'Michigan State',rescinded:true},{team:'Alabama'}]};
     app.UI.boardOfferFilter = 'offered';
-    assert.deepEqual(Array.from(app.visibleBoardProspectIds(app.DB.threads[0])),['r1']);
+    assert.deepEqual(Array.from(app.visibleBoardProspectIds(app.DB.threads[0])),['r1','r2']);
     app.UI.boardOfferFilter = 'unoffered';
-    assert.deepEqual(Array.from(app.visibleBoardProspectIds(app.DB.threads[0])),['r2']);
+    assert.deepEqual(Array.from(app.visibleBoardProspectIds(app.DB.threads[0])),[]);
     app.UI.boardCommitFilter = 'committed';
     assert.equal(app.visibleBoardProspectIds(app.DB.threads[0]).length,0);
   }
@@ -1015,4 +1015,30 @@ test('team save notice clears on navigation and does not return with browser his
   app.UI.adminActionStatus = 'Team changes saved.';
   app.applyRoute({ view: 'feed' });
   assert.equal(app.UI.adminActionStatus, null);
+});
+
+
+test('starred promises override casual promise wording in the same paragraph, including stored offers', () => {
+  const {app}=harness();
+  const text='Playing Time: Here at LSU, we promise you that you will have a lot of playing time. Our position needs work. *I promise you will start right away*';
+  const promises=app.extractPromises(text);
+  assert.equal(promises.length,1);
+  assert.equal(promises[0].text,'I promise you will start right away');
+  assert.equal(app.cleanDisplayPromises({text,promises:[{text:'we promise you that you will have a lot of playing time.'}]}).length,1);
+  assert.equal(app.cleanDisplayPromises({text,promises:[]})[0].text,promises[0].text);
+  assert.equal(app.extractPromises(text+'\n\nI promise we will keep our coach.').length,2);
+});
+
+test('CPR board reads recover from temporary HTML responses without writing', async () => {
+  const {app,context}=harness();
+  context.setTimeout=fn=>{fn();return 0;};
+  let requests=0;
+  context.fetch=async (url,options)=>{
+    assert.equal(options.method,undefined);
+    requests++;
+    if(requests===1)return {ok:true,json:async()=>{throw Error('Unexpected token <');}};
+    return {ok:true,json:async()=>({state:{recruitingStage:'cpr'}})};
+  };
+  assert.equal((await app.readCprBoard()).state.recruitingStage,'cpr');
+  assert.equal(requests,2);
 });

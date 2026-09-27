@@ -18,11 +18,19 @@
     roster.forEach(p => { const old=best[p.position]; if (!old || p.overall>old.overall || (p.overall===old.overall && p.potential>old.potential)) best[p.position]=p; });
     return best;
   }
-  function match(roster,input){
-    const matches = roster.filter(p => normalize(p.name)===normalize(input.name) && p.position===String(input.position || '').toUpperCase() && Number(p.overall)===Number(input.overall) && Number(p.potential)===Number(input.potential));
-    if (matches.length!==1) throw Error(matches.length ? 'Multiple CSV players match these details. Ask a commissioner to resolve the duplicate.' : 'No free agent in the uploaded CSV matches that name, position, overall and potential.');
-    return matches[0];
+  function playerKey(input){
+    return JSON.stringify([normalize(input.name),String(input.position || '').toUpperCase(),Number(input.overall),Number(input.potential)]);
   }
+  function createMatcher(roster){
+    const index = new Map();
+    roster.forEach(p=>{const key=playerKey(p); const rows=index.get(key) || []; rows.push(p); index.set(key,rows);});
+    return input=>{
+      const matches=index.get(playerKey(input)) || [];
+      if (matches.length!==1) throw Error(matches.length ? 'Multiple CSV players match these details. Ask a commissioner to resolve the duplicate.' : 'No free agent in the uploaded CSV matches that name, position, overall and potential.');
+      return matches[0];
+    };
+  }
+  function match(roster,input){ return createMatcher(roster)(input); }
   function resolveOffer(roster,text,input = {}){
     const header = normalize(String(text || '').split(/\r?\n/).slice(0,5).join(' ').replace(/[*_`]/g,''));
     const escape = value => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -37,5 +45,5 @@
     if (matches.length !== 1) throw Error(matches.length ? 'More than one player matches. Enter the player name and position below.' : 'No matching free agent found in the CSV. Enter the player name and position below.');
     return matches[0];
   }
-  root.NZCFLCprRules = Object.freeze({thresholds,scholarshipCutoffs,scholarshipRecruit,scholarshipOffer,qualify,leaders,match,resolveOffer});
+  root.NZCFLCprRules = Object.freeze({thresholds,scholarshipCutoffs,scholarshipRecruit,scholarshipOffer,qualify,leaders,match,createMatcher,resolveOffer});
 })(globalThis);

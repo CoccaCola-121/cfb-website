@@ -638,7 +638,7 @@ function visibleBoardProspectIds(t){
     const p = DB.prospects[pid];
     const filter = UI.boardCommitFilter || (UI.hideCommittedBoards ? 'uncommitted' : 'all');
     if (!p) return false;
-    const offered = !!(SESSION && (DB.offersByProspect[pid] || []).some(function(o){ return o.team === SESSION.team && !o.rescinded; }));
+    const offered = (DB.offersByProspect[pid] || []).some(function(o){ return !o.rescinded; });
     if (UI.boardOfferFilter === 'offered' && !offered) return false;
     if (UI.boardOfferFilter === 'unoffered' && offered) return false;
     if (filter === 'committed') return !!p.commitTeam;
@@ -2549,14 +2549,22 @@ function extractPromises(text){
     const title = findPitchTitle(text, start) || promiseCategory(promise).replace(/_/g, ' ');
     promises.push({ text: promise, title: title, category: promiseCategory(promise) });
   };
-  const re = /\*\*([\s\S]*?)\*\*/g;
+  const emphasized = [];
+  const re = /(\*{1,3})([^*]+)\1/g;
   let match;
   while ((match = re.exec(text || ''))){
-    addPromise(match[1], match.index);
+    if (isLikelyPromiseText(match[2])) {
+      emphasized.push({start:match.index,end:re.lastIndex});
+      addPromise(match[2], match.index);
+    }
   }
   const plainStartRe = /\b(?:I|we)\s+promise\b/gi;
   while ((match = plainStartRe.exec(text))){
     const start = match.index;
+    const previousBreak = text.lastIndexOf('\n\n', start);
+    const paragraphStart = previousBreak < 0 ? 0 : previousBreak + 2;
+    const paragraphEnd = text.indexOf('\n\n', start);
+    if (emphasized.some(p => p.start >= paragraphStart && p.start < (paragraphEnd < 0 ? text.length : paragraphEnd))) continue;
     const rest = text.slice(start);
     const nextHeaderMatch = rest.slice(1).match(/\n\s*[A-Za-z][A-Za-z &/-]{1,34}:\s*/);
     const nextHeader = nextHeaderMatch ? nextHeaderMatch.index + 1 : rest.length;
@@ -2588,7 +2596,7 @@ function sanitizePromiseText(text){
 }
 
 function cleanDisplayPromises(offer){
-  const source = (offer && offer.promises && offer.promises.length) ? offer.promises : extractPromises((offer && offer.text) || '');
+  const source = offer && offer.text ? extractPromises(offer.text) : ((offer && offer.promises) || []);
   const seen = {};
   const cleaned = [];
   (source || []).forEach(function(p){
@@ -2783,6 +2791,21 @@ function parseOfferSheet(rawText){
   };
 }
 
+async function readCprBoard(){
+  for (let attempt=0; attempt<3; attempt++){
+    try {
+      const response=await fetch('/api/league/state',{credentials:'include',cache:'no-store'});
+      if (!response.ok) throw Error('Board unavailable');
+      const data=await response.json();
+      if (!data || !data.state) throw Error('Board unavailable');
+      return data;
+    } catch(error){
+      if (attempt===2) throw Error('The board is temporarily unavailable. Your offer text is safe here; please try again.');
+      await new Promise(resolve=>setTimeout(resolve,300*(attempt+1)));
+    }
+  }
+}
+
 async function submitCprOffer(rawText){
   if (!SESSION || UI.submitting || !rawText.trim()) return;
   const nameInput = document.getElementById('rb-cpr-offer-name');
@@ -2793,9 +2816,7 @@ async function submitCprOffer(rawText){
   try {
     let current;
     if (apiAvailable()) {
-      const response=await fetch('/api/league/state',{credentials:'include'});
-      if (!response.ok) throw Error('Could not check the CPR board. Try again.');
-      current=(await response.json()).state;
+      current=(await readCprBoard()).state;
       if (!current || current.recruitingStage !== 'cpr') throw Error('The CPR board is no longer active.');
       mergeLeagueState(current);
     }
@@ -2809,7 +2830,7 @@ async function submitCprOffer(rawText){
     if (!result.ok) throw Error(result.error);
     if (apiAvailable()) {
       const response=await fetch('/api/league/state',{method:'PUT',credentials:'include',headers:{'content-type':'application/json'},body:JSON.stringify({state:leagueStatePayload(),expectedUpdatedAt:current.updatedAt || null})});
-      const saved=await response.json();
+      const saved=await response.json().catch(function(){ throw Error('The server could not confirm your offer. Your text is still here. Check My Offers before trying again.'); });
       if (!response.ok || !saved.ok) throw Error(saved.error || 'Could not save your offer. Try again.');
       mergeLeagueState(saved.state);
     } else await saveDBNow();
@@ -4024,7 +4045,7 @@ function renderThreadProspectList(t){
     html += '<button type="button" data-board-commit-filter="' + option[0] + '" aria-pressed="' + (commitFilter === option[0] ? 'true' : 'false') + '">' + option[1] + '</button>';
   });
   html += '</div></div>';
-  html += '<div class="rb-filter-row"><div class="rb-segmented" aria-label="Your offer status">' + [['offered','Offered'],['all','All'],['unoffered','Unoffered']].map(function(option){ return '<button type="button" data-board-offer-filter="' + option[0] + '" aria-pressed="' + ((UI.boardOfferFilter || 'all') === option[0]) + '">' + option[1] + '</button>'; }).join('') + '</div></div>';
+  html += '<div class="rb-filter-row"><div class="rb-segmented" aria-label="Offer status">' + [['offered','Offered'],['all','All'],['unoffered','Unoffered']].map(function(option){ return '<button type="button" data-board-offer-filter="' + option[0] + '" aria-pressed="' + ((UI.boardOfferFilter || 'all') === option[0]) + '">' + option[1] + '</button>'; }).join('') + '</div></div>';
   html += '</div>';
   if (recruitingStage() !== 'hs') html += '</div>';
   html += '</div>';
@@ -4036,7 +4057,7 @@ function renderThreadProspectList(t){
     const searchText = [recruitingStage() !== 'hs' ? '' : p.rank + ' #' + p.rank, p.name, p.homestate, p.hometown, p.transferFrom, cprPreviousSchool(p)].join(' ').toLowerCase();
     html += renderProspectBoardCard(pid, searchText, cardContext);
   });
-  if (!visibleIds.length) html += '<div class="rb-card" style="padding:28px;text-align:center;color:var(--slate);">No ' + (ended ? 'free agents' : 'uncommitted prospects') + ' on this board.</div>';
+  if (!visibleIds.length) html += '<div class="rb-card" style="padding:28px;text-align:center;color:var(--slate);">No players match these filters.</div>';
   html += '</div>';
   return html;
 }
