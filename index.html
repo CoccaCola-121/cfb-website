@@ -3145,7 +3145,7 @@ function renderNav(){
   return html + '</nav></header>';
 }
 
-function renderSummaryBanner(){
+function summaryBannerText(){
   const s = UI.lastSummary;
   let text;
   if (s.error) text = 'Something went wrong reading that offer sheet. Try again.';
@@ -3155,8 +3155,12 @@ function renderSummaryBanner(){
     text = s.unmatched ? 'Offer submitted; ' + s.unmatched + ' need manual review below.' : 'Offer submitted';
     if (seconds) text += ' · ' + seconds + 's';
   }
-  return '<div class="rb-card" style="padding:10px 16px;margin-bottom:14px;display:flex;justify-content:space-between;align-items:center;font-size:13px;">' +
-    '<span>' + escapeHtml(text) + '</span>' +
+  return text;
+}
+
+function renderSummaryBanner(){
+  return '<div id="rb-summary-banner" class="rb-card" style="padding:10px 16px;margin-bottom:14px;display:flex;justify-content:space-between;align-items:center;font-size:13px;">' +
+    '<span id="rb-summary-text">' + escapeHtml(summaryBannerText()) + '</span>' +
     '<a href="#" id="rb-dismiss-summary" style="color:var(--slate);text-decoration:none;">dismiss</a>' +
   '</div>';
 }
@@ -3165,23 +3169,23 @@ function renderAccessDenied(){
   return '<div class="rb-card" style="padding:32px;text-align:center;color:var(--slate);">Moderator or commissioner access required.</div>';
 }
 
+function dismissSummaryBanner(){
+  UI.lastSummary = null;
+  if (summaryTimer) clearTimeout(summaryTimer);
+  summaryTimer = null;
+  const banner = document.getElementById('rb-summary-banner');
+  if (banner) banner.remove();
+}
+
 function scheduleSummaryCountdown(){
-  if (summaryTimer) {
-    clearTimeout(summaryTimer);
-    summaryTimer = null;
-  }
+  if (summaryTimer) clearTimeout(summaryTimer);
+  summaryTimer = null;
   if (!UI.lastSummary || !UI.lastSummary.dismissAt) return;
   const ms = UI.lastSummary.dismissAt - Date.now();
-  if (ms <= 0){
-    UI.lastSummary = null;
-    render();
-    return;
-  }
-  summaryTimer = setTimeout(function(){
-    if (!UI.lastSummary || !UI.lastSummary.dismissAt) return;
-    if (Date.now() >= UI.lastSummary.dismissAt) UI.lastSummary = null;
-    render();
-  }, Math.min(1000, ms));
+  if (ms <= 0){ dismissSummaryBanner(); return; }
+  const text = document.getElementById('rb-summary-text');
+  if (text) text.textContent = summaryBannerText();
+  summaryTimer = setTimeout(scheduleSummaryCountdown, Math.min(1000, ms));
 }
 
 function scrollPageTop(smooth){
@@ -5178,7 +5182,7 @@ function bindEvents(){
   if (logoutLink) logoutLink.onclick = function(e){ e.preventDefault(); if (canLeaveTeamsPage()) logout(); };
 
   const dismissSummary = document.getElementById('rb-dismiss-summary');
-  if (dismissSummary) dismissSummary.onclick = function(e){ e.preventDefault(); UI.lastSummary = null; render(); };
+  if (dismissSummary) dismissSummary.onclick = function(e){ e.preventDefault(); dismissSummaryBanner(); };
 
   const teamSearch = document.getElementById('rb-team-search');
   if (teamSearch) teamSearch.oninput = function(){

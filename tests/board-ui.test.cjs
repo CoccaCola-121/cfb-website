@@ -10,7 +10,7 @@ const script = page.match(/<script>([\s\S]*?)<\/script>/)[1];
 const boot = script.lastIndexOf('\napplyRoute(routeFromPath(window.location.pathname));');
 assert(boot > 0, 'The app bootstrap must be identifiable without executing network requests.');
 const source = script.slice(0, boot) + `
-  globalThis.app = { DB, UI, bindFloatingSubmit, extractPromises, cleanDisplayPromises, readCprBoard, updateBucksEntries, renderBucksSettings, renderCprProfile, cprPreviousSchool, ensureCprScholarshipThreads, renderAutoCommitSettings, stageAutoCommits, readScholarshipCapacity, buildPromiseArchive, parseCsvRows, offerCountForProspect, refreshScholarshipHistory, submitCprOffer, renderSubmitModal, createCprPlayer, loadClassData, resetOfferWindow, setOffersLocked, offersLocked, pendingCommitChanges, restoreSettingsDraft, renderOfferBlock, renderRescindFilterFields, renderVisitLedger, visibleBoardProspectIds, setRecruitingStage, requestReset, approveDangerReset, beginSettingsDraft, hasSettingsChanges, canLeaveSettings, saveSettingsChanges, saveDBNow, leagueStatePayload, mergeSettingsValue, updateCommitsFromSheet, runBackupNow, setTransferFilter, renderTransferFilters, renderClassSetup, requestManualCommitOverride, applyManualCommitOverride, requestClearCommit, clearManualCommitOverride, applyManualCommitOverrides, clearRecruitingBoard, findProspectFromSheetRow, transferCardStyle, parseFullClass, prospectFromRosterRow, confirmTransferImport, releaseSingleStageBoard, addOfferDirect, render, renderNav, navigateTo, applyRoute, setReady(){ dbReady = true; sessionReady = true; }, renderFeed, renderBoardSearchResults, renderTeamsPage,
+  globalThis.app = { DB, UI, scheduleSummaryCountdown, dismissSummaryBanner, bindFloatingSubmit, extractPromises, cleanDisplayPromises, readCprBoard, updateBucksEntries, renderBucksSettings, renderCprProfile, cprPreviousSchool, ensureCprScholarshipThreads, renderAutoCommitSettings, stageAutoCommits, readScholarshipCapacity, buildPromiseArchive, parseCsvRows, offerCountForProspect, refreshScholarshipHistory, submitCprOffer, renderSubmitModal, createCprPlayer, loadClassData, resetOfferWindow, setOffersLocked, offersLocked, pendingCommitChanges, restoreSettingsDraft, renderOfferBlock, renderRescindFilterFields, renderVisitLedger, visibleBoardProspectIds, setRecruitingStage, requestReset, approveDangerReset, beginSettingsDraft, hasSettingsChanges, canLeaveSettings, saveSettingsChanges, saveDBNow, leagueStatePayload, mergeSettingsValue, updateCommitsFromSheet, runBackupNow, setTransferFilter, renderTransferFilters, renderClassSetup, requestManualCommitOverride, applyManualCommitOverride, requestClearCommit, clearManualCommitOverride, applyManualCommitOverrides, clearRecruitingBoard, findProspectFromSheetRow, transferCardStyle, parseFullClass, prospectFromRosterRow, confirmTransferImport, releaseSingleStageBoard, addOfferDirect, render, renderNav, navigateTo, applyRoute, setReady(){ dbReady = true; sessionReady = true; }, renderFeed, renderBoardSearchResults, renderTeamsPage,
     renderThreadProspectList, renderProspectDetail, builtInTeamBranding, getTeamBranding, activeTeamBrands,
     mobileRecruitName, renderRecruitName, renderMyOffers, renderCommitsForTeam, renderTeamOffers, renderConditionalRescinds, renderRecruitValues, teamBorderColor, bindEvents, applyDefaultClassData, releaseWave1, releaseWave2,
     setSession(value){ SESSION = value; } };
@@ -1068,4 +1068,34 @@ test('floating submit appears only after the original passes above the viewport 
   delete elements['rb-floating-submit'];
   app.bindFloatingSubmit();
   assert.equal(disconnected,true);
+});
+
+
+test('offer confirmation countdown and dismissal preserve the open submission form', () => {
+  const {app,context,elements}=harness();
+  const input=elements['rb-sheet-text']=element();
+  input.value='My next offer draft';
+  const name=elements['rb-cpr-offer-name']=element(); name.value='Derrick Miller';
+  const position=elements['rb-cpr-offer-position']=element(); position.value='WR';
+  elements['rb-summary-text']=element();
+  let removed=false, tick;
+  elements['rb-summary-banner']={remove(){removed=true;}};
+  context.setTimeout=fn=>{tick=fn;return 1;};
+  Object.defineProperty(elements['rb-app'],'innerHTML',{set(){throw Error('Countdown must not redraw the page');}});
+  app.UI.showSubmitModal=true;
+  app.UI.lastSummary={matched:1,dismissAt:Date.now()+6000};
+  app.scheduleSummaryCountdown();
+  tick();
+  assert.match(elements['rb-summary-text'].textContent,/Offer submitted/);
+  app.UI.lastSummary.dismissAt=Date.now()-1;
+  tick();
+  assert.equal(removed,true);
+  assert.equal(app.UI.lastSummary,null);
+  assert.equal(input.value,'My next offer draft');
+  assert.equal(name.value,'Derrick Miller');
+  assert.equal(position.value,'WR');
+  assert.equal(app.UI.showSubmitModal,true);
+  app.UI.lastSummary={matched:1};
+  app.dismissSummaryBanner();
+  assert.equal(input.value,'My next offer draft');
 });
