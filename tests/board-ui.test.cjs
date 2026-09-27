@@ -10,7 +10,7 @@ const script = page.match(/<script>([\s\S]*?)<\/script>/)[1];
 const boot = script.lastIndexOf('\napplyRoute(routeFromPath(window.location.pathname));');
 assert(boot > 0, 'The app bootstrap must be identifiable without executing network requests.');
 const source = script.slice(0, boot) + `
-  globalThis.app = { DB, UI, offerCountForProspect, refreshScholarshipHistory, submitCprOffer, renderSubmitModal, createCprPlayer, loadClassData, resetOfferWindow, setOffersLocked, offersLocked, pendingCommitChanges, restoreSettingsDraft, renderOfferBlock, renderRescindFilterFields, renderVisitLedger, visibleBoardProspectIds, setRecruitingStage, requestReset, approveDangerReset, beginSettingsDraft, hasSettingsChanges, canLeaveSettings, saveSettingsChanges, saveDBNow, leagueStatePayload, mergeSettingsValue, updateCommitsFromSheet, runBackupNow, setTransferFilter, renderTransferFilters, renderClassSetup, requestManualCommitOverride, applyManualCommitOverride, requestClearCommit, clearManualCommitOverride, applyManualCommitOverrides, clearRecruitingBoard, findProspectFromSheetRow, transferCardStyle, parseFullClass, prospectFromRosterRow, confirmTransferImport, releaseSingleStageBoard, addOfferDirect, render, renderNav, navigateTo, setReady(){ dbReady = true; sessionReady = true; }, renderFeed, renderBoardSearchResults, renderTeamsPage,
+  globalThis.app = { DB, UI, buildPromiseArchive, parseCsvRows, offerCountForProspect, refreshScholarshipHistory, submitCprOffer, renderSubmitModal, createCprPlayer, loadClassData, resetOfferWindow, setOffersLocked, offersLocked, pendingCommitChanges, restoreSettingsDraft, renderOfferBlock, renderRescindFilterFields, renderVisitLedger, visibleBoardProspectIds, setRecruitingStage, requestReset, approveDangerReset, beginSettingsDraft, hasSettingsChanges, canLeaveSettings, saveSettingsChanges, saveDBNow, leagueStatePayload, mergeSettingsValue, updateCommitsFromSheet, runBackupNow, setTransferFilter, renderTransferFilters, renderClassSetup, requestManualCommitOverride, applyManualCommitOverride, requestClearCommit, clearManualCommitOverride, applyManualCommitOverrides, clearRecruitingBoard, findProspectFromSheetRow, transferCardStyle, parseFullClass, prospectFromRosterRow, confirmTransferImport, releaseSingleStageBoard, addOfferDirect, render, renderNav, navigateTo, setReady(){ dbReady = true; sessionReady = true; }, renderFeed, renderBoardSearchResults, renderTeamsPage,
     renderThreadProspectList, renderProspectDetail, builtInTeamBranding, getTeamBranding, activeTeamBrands,
     mobileRecruitName, renderRecruitName, renderMyOffers, renderCommitsForTeam, renderTeamOffers, renderConditionalRescinds, renderRecruitValues, teamBorderColor, bindEvents, applyDefaultClassData, releaseWave1, releaseWave2,
     setSession(value){ SESSION = value; } };
@@ -832,4 +832,18 @@ test('rescinded offer retains its text and header status',()=>{
  assert.match(html,/rb-offer-rescinded/);
  assert.match(html,/rb-offer-team-title[\s\S]*?rb-rescinded-badge/);
  assert.equal((html.match(/>Rescinded</g)||[]).length,1);
+});
+
+test('promise CSV contains only winner names, teams, and three escaped promises',()=>{
+ const {app}=harness();
+ app.DB.prospects.r1.name='Jordan "Jay", Able';
+ app.DB.offersByProspect.r1=[{team:'Alabama',text:'',promises:[{text:'I promise weekly film sessions.'}]},{team:'Boise State',rescinded:true,text:'',promises:[{text:'I promise a starting role.'}]},{team:'Boise State',text:'',promises:[{text:'I promise a role in the rotation.'},{text:'I promise weekly film sessions.'}]}];
+ const rows=app.parseCsvRows(app.buildPromiseArchive());
+ assert.equal(rows.length,2);
+ assert.equal(rows[0].join('|'),'Name|Committed Team|Promise 1|Promise 2|Promise 3');
+ assert.equal(rows[1][0],'Jordan "Jay", Able');
+ assert.equal(rows[1][1],'Boise State');
+ assert.equal(rows[1][2],'I promise a role in the rotation.');
+ assert.equal(rows[1][3],'I promise weekly film sessions.');
+ assert.equal(rows[1][4],'');
 });

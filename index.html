@@ -2598,48 +2598,28 @@ function titleForPromise(offer, promise){
 }
 
 function buildPromiseArchive(){
-  const rows = Object.keys(DB.prospects || {}).map(function(pid){ return DB.prospects[pid]; }).filter(function(p){
-    return p && p.commitTeam;
-  }).sort(function(a,b){ return a.rank - b.rank; }).map(function(p){
-    const winningOffers = (DB.offersByProspect[p.id] || []).filter(function(o){
-      return !o.rescinded && o.team && teamKey(o.team) === teamKey(p.commitTeam);
-    });
+  const rows = [['Name', 'Committed Team', 'Promise 1', 'Promise 2', 'Promise 3']];
+  Object.values(DB.prospects || {}).filter(function(p){ return p && p.commitTeam; }).sort(function(a,b){ return a.rank - b.rank; }).forEach(function(p){
     const promises = [];
-    winningOffers.forEach(function(o){
-      cleanDisplayPromises(o).forEach(function(pr){
-        promises.push({
-          category: String(titleForPromise(o, pr)).replace(/_/g, ' '),
-          promise: pr.text
-        });
-      });
+    (DB.offersByProspect[p.id] || []).filter(function(o){
+      return !o.rescinded && o.team && teamKey(o.team) === teamKey(p.commitTeam);
+    }).forEach(function(o){
+      cleanDisplayPromises(o).forEach(function(pr){ if (!promises.includes(pr.text)) promises.push(pr.text); });
     });
-    return {
-      rank: p.rank,
-      name: p.name,
-      position: p.position,
-      rating: p.rating,
-      hometown: p.hometown,
-      committedTeam: p.commitTeam,
-      promises: promises
-    };
-  }).filter(function(row){ return row.promises.length; });
-
-  return {
-    exportedAt: new Date().toISOString(),
-    className: UI.classFileName || DEFAULT_CLASS_NAME,
-    commitSheetUrl: DB.commitSheetUrl || '',
-    commitsWithPromises: rows.length,
-    commits: rows
-  };
+    rows.push([p.name, p.commitTeam, promises[0] || '', promises[1] || '', promises[2] || '']);
+  });
+  return rows.map(function(row){
+    return row.map(function(value){ return '"' + String(value || '').replace(/"/g, '""') + '"'; }).join(',');
+  }).join('\r\n') + '\r\n';
 }
 
 function exportPromiseArchive(){
   const data = buildPromiseArchive();
-  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+  const blob = new Blob(['\uFEFF', data], { type: 'text/csv;charset=utf-8' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = 'nzcfl-promise-archive-' + new Date().toISOString().slice(0, 10) + '.json';
+  a.download = 'nzcfl-promise-archive-' + new Date().toISOString().slice(0, 10) + '.csv';
   document.body.appendChild(a);
   a.click();
   a.remove();
@@ -4223,7 +4203,7 @@ function renderClassSetup(){
   html += '<div class="rb-card" style="padding:20px 24px;max-width:640px;margin-top:14px;">';
   html += '<div class="rb-h" style="font-size:16px;margin-bottom:8px;">Promise Archive</div>';
   html += '<div class="rb-mono" style="font-size:12px;color:var(--slate);margin-bottom:12px;">Exports committed winners and their promises only.</div>';
-  html += '<button class="rb-btn rb-btn-gold" id="rb-export-promise-archive">Export promise archive</button>';
+  html += '<button class="rb-btn rb-btn-gold" id="rb-export-promise-archive">Export promises CSV</button>';
   html += '</div>';
   if (canUseDangerZone()){
     html += '<div class="rb-card" style="padding:20px 24px;max-width:640px;margin-top:14px;border-color:#6F1D1B;">';
