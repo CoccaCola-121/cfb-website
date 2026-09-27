@@ -2816,6 +2816,18 @@ function renderQuickWalkon(p){
   if (!canQuickOfferWalkon(p)) return '';
   return '<button type="button" class="rb-btn" data-quick-walkon="' + escapeHtml(p.id) + '"' + (offersLocked() || UI.submitting ? ' disabled' : '') + '>Offer walk-on</button>';
 }
+function requestQuickWalkon(pid){
+  if (!canQuickOfferWalkon(DB.prospects[pid]) || offersLocked() || UI.submitting) return;
+  UI.pendingQuickWalkon = pid;
+  render();
+}
+function renderQuickWalkonConfirm(){
+  const p=DB.prospects[UI.pendingQuickWalkon];
+  if (!p || !SESSION) return '';
+  const text=SESSION.team + ' offers ' + p.position + ' ' + p.name + '\n\nWalk-On';
+  return '<div style="position:fixed;inset:0;background:rgba(0,0,0,.72);display:flex;align-items:center;justify-content:center;z-index:65;"><div class="rb-card" role="dialog" aria-modal="true" aria-labelledby="rb-quick-confirm-title" style="padding:24px;width:460px;max-width:90vw;"><div class="rb-h" id="rb-quick-confirm-title" style="font-size:20px;margin-bottom:16px;">Submit walk-on offer?</div><p style="white-space:pre-wrap;margin:0 0 20px;">' + escapeHtml(text) + '</p><div style="display:flex;justify-content:flex-end;gap:8px;flex-wrap:wrap;"><button class="rb-btn" id="rb-cancel-quick-walkon">Cancel</button><button class="rb-btn rb-btn-gold" id="rb-confirm-quick-walkon">Submit offer</button></div></div></div>';
+}
+
 async function quickOfferWalkon(pid){
   const p=DB.prospects[pid];
   if (!canQuickOfferWalkon(p) || offersLocked() || UI.submitting) return;
@@ -3054,6 +3066,7 @@ function render(){
   if (UI.pendingClearCommit) html += renderClearCommitConfirmModal();
   if (UI.pendingMassRescind) html += renderMassRescindModal();
   if (UI.pendingMassRescindFinal) html += renderMassRescindFinalModal();
+  if (UI.pendingQuickWalkon) html += renderQuickWalkonConfirm();
   if (UI.pendingSingleRescind) html += renderSingleRescindConfirmModal();
   if (UI.teamAdminModal) html += renderTeamAdminModal();
   if (UI.confirmReset) html += renderResetConfirmModal();
@@ -4744,7 +4757,11 @@ function bindFloatingSubmit(){
 
 function bindEvents(){
   bindFloatingSubmit();
-  document.querySelectorAll('[data-quick-walkon]').forEach(function(button){ button.onclick=function(e){ e.preventDefault(); e.stopPropagation(); quickOfferWalkon(button.getAttribute('data-quick-walkon')); }; });
+  document.querySelectorAll('[data-quick-walkon]').forEach(function(button){ button.onclick=function(e){ e.preventDefault(); e.stopPropagation(); requestQuickWalkon(button.getAttribute('data-quick-walkon')); }; });
+  const cancelQuick=document.getElementById('rb-cancel-quick-walkon');
+  if (cancelQuick) cancelQuick.onclick=function(){ UI.pendingQuickWalkon=null; render(); };
+  const confirmQuick=document.getElementById('rb-confirm-quick-walkon');
+  if (confirmQuick) confirmQuick.onclick=function(){ const pid=UI.pendingQuickWalkon; UI.pendingQuickWalkon=null; render(); quickOfferWalkon(pid); };
   const scholarshipRefresh=document.getElementById('rb-scholarship-refresh');
   if(scholarshipRefresh) scholarshipRefresh.onclick=refreshScholarshipHistory;
   const cprExport=document.getElementById('rb-cpr-export');
