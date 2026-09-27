@@ -817,3 +817,5 @@ html { scrollbar-gutter: stable; }
 .rb-transfer-commit-controls > .rb-commit-team-picker { grid-column:1 / -1; }
 .rb-transfer-commit-controls :is(.rb-commit-player-picker,.rb-commit-team-picker) > .rb-input { font-size:14px; padding:8px 11px; min-height:36px; width:100%; box-sizing:border-box; }
 @media(max-width:720px) { .rb-transfer-commit-controls :is(.rb-commit-player-picker,.rb-commit-team-picker) > .rb-input { font-size:16px; } }
+
+.rb-team-filter-row { margin-top:18px; }
