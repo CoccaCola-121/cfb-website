@@ -2806,7 +2806,23 @@ async function readCprBoard(){
   }
 }
 
-async function submitCprOffer(rawText){
+function canQuickOfferWalkon(p){
+  return !!(SESSION && SESSION.team && recruitingStage() === 'cpr' && p && DB.prospects[p.id] &&
+    DB.threads.some(t=>(t.prospectIds || []).includes(p.id)) && !p.commitTeam && !isPitchRecruit(p) &&
+    !NZCFLCprRules.scholarshipRecruit(p, DB.offersByProspect[p.id] || []) &&
+    !findAnyOfferForTeam(p.id, SESSION.team));
+}
+function renderQuickWalkon(p){
+  if (!canQuickOfferWalkon(p)) return '';
+  return '<button type="button" class="rb-btn" data-quick-walkon="' + escapeHtml(p.id) + '"' + (offersLocked() || UI.submitting ? ' disabled' : '') + '>Offer walk-on</button>';
+}
+async function quickOfferWalkon(pid){
+  const p=DB.prospects[pid];
+  if (!canQuickOfferWalkon(p) || offersLocked() || UI.submitting) return;
+  await submitCprOffer(SESSION.team + ' offers ' + p.position + ' ' + p.name + '\n\nWalk-On', pid);
+}
+
+async function submitCprOffer(rawText, quickId){
   if (!SESSION || UI.submitting || !rawText.trim()) return;
   const nameInput = document.getElementById('rb-cpr-offer-name');
   const posInput = document.getElementById('rb-cpr-offer-position');
@@ -2821,7 +2837,9 @@ async function submitCprOffer(rawText){
       mergeLeagueState(current);
     }
     if (offersLocked()) throw Error('Offers are locked.');
-    const row = UI.submitTargetId && DB.prospects[UI.submitTargetId] ? DB.prospects[UI.submitTargetId] : NZCFLCprRules.resolveOffer(DB.fullRoster,rawText,input);
+    if (quickId && !canQuickOfferWalkon(DB.prospects[quickId])) throw Error('This player is no longer eligible for a quick walk-on offer.');
+    const row = quickId ? DB.prospects[quickId] : UI.submitTargetId && DB.prospects[UI.submitTargetId] ? DB.prospects[UI.submitTargetId] : NZCFLCprRules.resolveOffer(DB.fullRoster,rawText,input);
+    if (quickId) rawText=SESSION.team + ' offers ' + row.position + ' ' + row.name + '\n\nWalk-On';
     const error=NZCFLTransferRules.pitchLimitError(rawText,row,'cpr');
     if (error) throw Error(error);
     snapshot=copySettings(DB);
@@ -2839,8 +2857,9 @@ async function submitCprOffer(rawText){
     render();
   } catch(e) {
     if (snapshot) { Object.keys(DB).forEach(key=>delete DB[key]); Object.assign(DB,snapshot); }
-    const error=document.getElementById('rb-submit-error'); if (error) error.textContent=e.message;
-  } finally { UI.submitting=false; }
+    if (quickId) { UI.lastSummary={errorText:e.message}; render(); }
+    else { const error=document.getElementById('rb-submit-error'); if (error) error.textContent=e.message; }
+  } finally { UI.submitting=false; if (quickId) render(); }
 }
 
 async function submitOfferSheet(rawText){
@@ -4098,6 +4117,8 @@ function renderProspectBoardCard(pid, searchAttr, context){
     });
     html += '</div>';
   }
+  const quickOffer = renderQuickWalkon(p);
+  if (quickOffer) html += '<div class="rb-quick-offer-row">' + quickOffer + '</div>';
   html += '</div>';
   return html;
 }
@@ -4378,6 +4399,7 @@ function renderProspectDetail(){
   html += '</div>';
   html += '<div style="display:flex;align-items:center;justify-content:flex-end;gap:10px;flex-wrap:wrap;">' + renderPitchBadge(p) +
     (SESSION && !p.commitTeam ? (sessionOffer ? '<button class="rb-btn" disabled title="Your team already has an offer on this recruit">Offer submitted</button>' : (offersLocked() ? '<button class="rb-btn" disabled title="Offers are locked">Offers locked</button>' : '<button class="rb-btn rb-btn-gold" data-open-submit="' + escapeHtml(p.id) + '">Submit offer</button>')) : '') +
+    renderQuickWalkon(p) +
     (p.commitTeam ? renderCommittedTag(p.commitTeam, true, { view: 'prospect', prospectId: p.id, label: p.name }) : '') +
     (recruitingStage() !== 'hs' ? '' : '<span>' + starsOrLabel(p.stars) + '</span>') + '</div>';
   html += '</div>';
@@ -4724,6 +4746,7 @@ function bindFloatingSubmit(){
 
 function bindEvents(){
   bindFloatingSubmit();
+  document.querySelectorAll('[data-quick-walkon]').forEach(function(button){ button.onclick=function(e){ e.preventDefault(); e.stopPropagation(); quickOfferWalkon(button.getAttribute('data-quick-walkon')); }; });
   const scholarshipRefresh=document.getElementById('rb-scholarship-refresh');
   if(scholarshipRefresh) scholarshipRefresh.onclick=refreshScholarshipHistory;
   const cprExport=document.getElementById('rb-cpr-export');

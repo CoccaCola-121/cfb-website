@@ -868,3 +868,6 @@ html { scrollbar-gutter: stable; }
 .rb-floating-submit { position:fixed; bottom: max(12px, env(safe-area-inset-bottom)); left:0; right:0; margin:0; pointer-events:none; }
 .rb-floating-submit[hidden] { display:none; }
 .rb-floating-submit > .rb-card { pointer-events:auto; box-shadow:0 4px 20px rgba(0,0,0,.3); }
+
+.rb-quick-offer-row { display:flex; justify-content:flex-end; margin-top:12px; }
+.rb-quick-offer-row .rb-btn { font-size:12px; padding:8px 12px; }

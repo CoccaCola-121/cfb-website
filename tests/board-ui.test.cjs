@@ -10,7 +10,7 @@ const script = page.match(/<script>([\s\S]*?)<\/script>/)[1];
 const boot = script.lastIndexOf('\napplyRoute(routeFromPath(window.location.pathname));');
 assert(boot > 0, 'The app bootstrap must be identifiable without executing network requests.');
 const source = script.slice(0, boot) + `
-  globalThis.app = { DB, UI, scheduleSummaryCountdown, dismissSummaryBanner, bindFloatingSubmit, extractPromises, cleanDisplayPromises, readCprBoard, updateBucksEntries, renderBucksSettings, renderCprProfile, cprPreviousSchool, ensureCprScholarshipThreads, renderAutoCommitSettings, stageAutoCommits, readScholarshipCapacity, buildPromiseArchive, parseCsvRows, offerCountForProspect, refreshScholarshipHistory, submitCprOffer, renderSubmitModal, createCprPlayer, loadClassData, resetOfferWindow, setOffersLocked, offersLocked, pendingCommitChanges, restoreSettingsDraft, renderOfferBlock, renderRescindFilterFields, renderVisitLedger, visibleBoardProspectIds, setRecruitingStage, requestReset, approveDangerReset, beginSettingsDraft, hasSettingsChanges, canLeaveSettings, saveSettingsChanges, saveDBNow, leagueStatePayload, mergeSettingsValue, updateCommitsFromSheet, runBackupNow, setTransferFilter, renderTransferFilters, renderClassSetup, requestManualCommitOverride, applyManualCommitOverride, requestClearCommit, clearManualCommitOverride, applyManualCommitOverrides, clearRecruitingBoard, findProspectFromSheetRow, transferCardStyle, parseFullClass, prospectFromRosterRow, confirmTransferImport, releaseSingleStageBoard, addOfferDirect, render, renderNav, navigateTo, applyRoute, setReady(){ dbReady = true; sessionReady = true; }, renderFeed, renderBoardSearchResults, renderTeamsPage,
+  globalThis.app = { DB, UI, canQuickOfferWalkon, quickOfferWalkon, renderQuickWalkon, renderProspectBoardCard, scheduleSummaryCountdown, dismissSummaryBanner, bindFloatingSubmit, extractPromises, cleanDisplayPromises, readCprBoard, updateBucksEntries, renderBucksSettings, renderCprProfile, cprPreviousSchool, ensureCprScholarshipThreads, renderAutoCommitSettings, stageAutoCommits, readScholarshipCapacity, buildPromiseArchive, parseCsvRows, offerCountForProspect, refreshScholarshipHistory, submitCprOffer, renderSubmitModal, createCprPlayer, loadClassData, resetOfferWindow, setOffersLocked, offersLocked, pendingCommitChanges, restoreSettingsDraft, renderOfferBlock, renderRescindFilterFields, renderVisitLedger, visibleBoardProspectIds, setRecruitingStage, requestReset, approveDangerReset, beginSettingsDraft, hasSettingsChanges, canLeaveSettings, saveSettingsChanges, saveDBNow, leagueStatePayload, mergeSettingsValue, updateCommitsFromSheet, runBackupNow, setTransferFilter, renderTransferFilters, renderClassSetup, requestManualCommitOverride, applyManualCommitOverride, requestClearCommit, clearManualCommitOverride, applyManualCommitOverrides, clearRecruitingBoard, findProspectFromSheetRow, transferCardStyle, parseFullClass, prospectFromRosterRow, confirmTransferImport, releaseSingleStageBoard, addOfferDirect, render, renderNav, navigateTo, applyRoute, setReady(){ dbReady = true; sessionReady = true; }, renderFeed, renderBoardSearchResults, renderTeamsPage,
     renderThreadProspectList, renderProspectDetail, builtInTeamBranding, getTeamBranding, activeTeamBrands,
     mobileRecruitName, renderRecruitName, renderMyOffers, renderCommitsForTeam, renderTeamOffers, renderConditionalRescinds, renderRecruitValues, teamBorderColor, bindEvents, applyDefaultClassData, releaseWave1, releaseWave2,
     setSession(value){ SESSION = value; } };
@@ -1098,4 +1098,29 @@ test('offer confirmation countdown and dismissal preserve the open submission fo
   app.UI.lastSummary={matched:1};
   app.dismissSummaryBanner();
   assert.equal(input.value,'My next offer draft');
+});
+
+
+test('quick walk-on offers use the exact format and only existing eligible CPR threads', async () => {
+  const {app}=harness();
+  app.DB.recruitingStage='cpr'; app.clearRecruitingBoard();
+  app.loadClassData('Name,Pos,Team,Ovr,Pot\nTop K,K,FA,70,75\nK. J. Thompson,K,FA,60,65');
+  app.releaseSingleStageBoard(); app.DB.offersLocked=false;
+  const p=app.DB.prospects.r2;
+  assert.equal(app.canQuickOfferWalkon(p),true);
+  assert.match(app.renderProspectBoardCard('r2'),/data-quick-walkon="r2"/);
+  app.UI.prospectId='r2';
+  assert.match(app.renderProspectDetail(),/data-quick-walkon="r2"/);
+  assert.equal(app.renderQuickWalkon(app.DB.prospects.r1),'');
+  app.DB.offersByProspect.r2=[{team:'Alabama',offerType:'scholarship'}];
+  assert.equal(app.canQuickOfferWalkon(p),false);
+  app.DB.offersByProspect.r2=[];
+  p.commitTeam='Alabama'; assert.equal(app.canQuickOfferWalkon(p),false); p.commitTeam='';
+  await app.quickOfferWalkon('r2');
+  assert.equal(app.DB.offersByProspect.r2.length,1);
+  assert.equal(app.DB.offersByProspect.r2[0].text,'Michigan State offers K K. J. Thompson\n\nWalk-On');
+  assert.equal(app.canQuickOfferWalkon(p),false);
+  await app.quickOfferWalkon('r2');
+  assert.equal(app.DB.offersByProspect.r2.length,1);
+  assert.equal(app.DB.threads.length,2);
 });
