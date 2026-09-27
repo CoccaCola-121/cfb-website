@@ -4007,7 +4007,7 @@ function renderProspectBoardCard(pid, searchAttr, context){
   const ended = context ? context.ended : recruitingEndedForCurrentStage();
   const currentThread = context ? context.thread : (UI.view === 'thread' ? DB.threads.find(function(t){ return t.id === UI.threadId; }) : null);
   const commitReturn = currentThread ? { view: 'thread', threadId: currentThread.id, label: currentThread.title } : { view: 'feed', label: 'Prospect Board' };
-  let html = '<div class="rb-card rb-mobile-tight" data-prospect-card="1" data-position-bucket="' + escapeHtml(bucket) + '" data-search="' + escapeHtml(searchText) + '" data-open-prospect="' + pid + '" style="padding:14px 18px;cursor:pointer;' + (p.transferFrom ? transferCardStyle(p) : (p.commitTeam ? committedCardStyle(p.commitTeam) : '')) + '">';
+  let html = '<div class="rb-card rb-mobile-tight" data-prospect-card="1" data-position-bucket="' + escapeHtml(bucket) + '" data-search="' + escapeHtml(searchText) + '" data-open-prospect="' + pid + '" style="padding:14px 18px;cursor:pointer;' + (p.transferFrom ? transferCardStyle(p) : (p.commitTeam ? committedCardStyle(p.commitTeam) : '')) + (p.commitTeam ? 'background:linear-gradient(' + teamBorderColor(getTeamBranding(p.commitTeam)) + '18,' + teamBorderColor(getTeamBranding(p.commitTeam)) + '18),var(--panel);' : '') + '">';
   html += '<div style="display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:10px;">';
   html += '<div class="rb-list-identity" style="min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' +
     '<span class="rb-mono" style="color:var(--slate);">' + recruitNumber(p) + '</span> ' +
