@@ -533,16 +533,19 @@ for (const stage of ['transfer','cpr']) test(stage + ' position counts follow sl
   assert.match(results.innerHTML, /id="rb-transfer-slider"/);
   const original = context.document.querySelectorAll;
   context.document.querySelectorAll = selector => selector === '[data-position-filter]' ? chips : original(selector);
+  elements['rb-board-result-count'] = element();
   elements['rb-transfer-filter-controls'] = element();
   elements['rb-transfer-slider'] = element();
   elements['rb-transfer-filter-reset'] = element();
   app.bindEvents();
   const counts = () => chips.map(chip => chip.count.textContent);
   assert.deepEqual(counts(), ['1','1']);
+  assert.equal(elements['rb-board-result-count'].textContent, '2 players');
   app.setTransferFilter('grade',null);
   elements['rb-transfer-slider'].value = '3';
   elements['rb-transfer-slider'].oninput();
   assert.deepEqual(counts(), ['1','0']);
+  assert.equal(elements['rb-board-result-count'].textContent, '1 player');
   elements['rb-transfer-slider'].value = '2';
   elements['rb-transfer-slider'].oninput();
   assert.deepEqual(counts(), ['0','1']);
@@ -551,8 +554,10 @@ for (const stage of ['transfer','cpr']) test(stage + ' position counts follow sl
   elements['rb-transfer-slider'].value = '4';
   elements['rb-transfer-slider'].oninput();
   assert.deepEqual(counts(), ['0','0']);
+  assert.equal(elements['rb-board-result-count'].textContent, '0 players');
   elements['rb-transfer-filter-reset'].onclick();
   assert.deepEqual(counts(), ['1','1']);
+  assert.equal(elements['rb-board-result-count'].textContent, '2 players');
 });
 
  test('one commissioner can stage resets and stage switches while coaches cannot', async () => {

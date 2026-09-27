@@ -3994,7 +3994,7 @@ function renderThreadProspectList(t){
   html += '<div class="rb-card" style="padding:14px 16px;margin-bottom:14px;">';
   const visibleIds = visibleBoardProspectIds(t);
   if (recruitingStage() === 'transfer') visibleIds.sort(function(a,b){ const pa = DB.prospects[a], pb = DB.prospects[b]; return (pa.sourceOrder ?? pa.rank) - (pb.sourceOrder ?? pb.rank); });
-  html += renderPositionCounts(visibleIds, function(pid){ return DB.prospects[pid] && DB.prospects[pid].position; }, filterKey);
+  html += '<div class="rb-board-filter-top">' + renderPositionCounts(visibleIds, function(pid){ return DB.prospects[pid] && DB.prospects[pid].position; }, filterKey) + '<span id="rb-board-result-count" role="status" aria-live="polite">' + visibleIds.length + ' players</span></div>';
   html += '<input class="rb-input" data-thread-search="' + t.id + '" placeholder="' + (recruitingStage() !== 'hs' ? 'Search players by name, home state or previous school' : 'Search recruits by name, rank, hometown or school') + '" />';
   if (recruitingStage() !== 'hs') {
     html += '<div class="rb-transfer-filter-row"><div id="rb-transfer-filter-controls">' + renderTransferFilters() + '</div>';
@@ -4842,6 +4842,7 @@ function bindEvents(){
       if (key.indexOf(kind + ':') === 0) activeKeys[key] = true;
     });
     const filteredCounts = {};
+    let visibleCount = 0;
     document.querySelectorAll(selector).forEach(function(card){
       const haystack = card.getAttribute('data-search') || '';
       const bucket = card.getAttribute('data-position-bucket') || '';
@@ -4857,7 +4858,12 @@ function bindEvents(){
       const matches = (!q || haystack.indexOf(q) !== -1) && eligible && matchesType;
       if (matches) filteredCounts[bucket] = (filteredCounts[bucket] || 0) + 1;
       card.style.display = matches && !hiddenByPosition ? '' : 'none';
+      if (matches && !hiddenByPosition) visibleCount++;
     });
+    if (kind === 'board') {
+      const total = document.getElementById('rb-board-result-count');
+      if (total) total.textContent = visibleCount + (visibleCount === 1 ? ' player' : ' players');
+    }
     if (kind === 'board' && recruitingStage() !== 'hs') {
       document.querySelectorAll('[data-position-filter]').forEach(function(chip){
         if (!activeKeys[chip.getAttribute('data-position-filter')]) return;

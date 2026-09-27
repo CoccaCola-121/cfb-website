@@ -779,3 +779,7 @@ html { scrollbar-gutter: stable; }
 #rb-scholarship-source { width:100%; max-width:640px; display:block; margin:10px 0; font-size:13px; }
 #rb-scholarship-refresh { font-size:12px; padding:9px 12px; }
 .rb-cpr-export [role="status"] { max-height:180px; overflow:auto; overflow-wrap:anywhere; }
+
+.rb-board-filter-top { display:flex; align-items:center; justify-content:space-between; gap:8px 16px; flex-wrap:wrap; }
+.rb-board-filter-top > :first-child { flex:1 1 auto; min-width:0; }
+#rb-board-result-count { color:var(--slate); font-size:11px; white-space:nowrap; margin-left:auto; padding-bottom:10px; }
