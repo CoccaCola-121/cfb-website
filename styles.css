@@ -786,4 +786,5 @@ html { scrollbar-gutter: stable; }
 
 .rb-board-offer-logos { display:flex; flex-wrap:wrap; align-items:center; gap:12px; padding:12px 14px; margin-top:12px; border:1px solid var(--hairline); border-radius:6px; background:var(--panel-alt); }
 .rb-board-offer-logo { display:flex; align-items:center; justify-content:center; flex:0 0 36px; }
-.rb-board-offer-rescinded { opacity:.4; }
+.rb-board-offer-rescinded > span { border-color:var(--alert) !important; }
+.rb-board-offer-rescinded img { opacity:.4; }

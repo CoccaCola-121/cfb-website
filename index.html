@@ -619,7 +619,7 @@ function teamBorderColor(brand){
 }
 
 function offerCountForProspect(pid){
-  return (DB.offersByProspect[pid] || []).length;
+  return (DB.offersByProspect[pid] || []).filter(function(offer){ return !offer.rescinded; }).length;
 }
 
 function offerCountTag(pid){
@@ -2805,7 +2805,7 @@ async function submitCprOffer(rawText){
     if (error) throw Error(error);
     snapshot=copySettings(DB);
     const pid=createCprPlayer(row);
-    const result=addOfferDirect(pid,SESSION.team,(DB.teams[SESSION.team] || {}).coach,rawText,extractPromises(rawText),{});
+    const result=addOfferDirect(pid,SESSION.team,((DB.teams[SESSION.team] || {}).coach || SESSION.username || ''),rawText,extractPromises(rawText),{});
     if (!result.ok) throw Error(result.error);
     if (apiAvailable()) {
       const response=await fetch('/api/league/state',{method:'PUT',credentials:'include',headers:{'content-type':'application/json'},body:JSON.stringify({state:leagueStatePayload(),expectedUpdatedAt:current.updatedAt || null})});
@@ -2847,10 +2847,10 @@ async function submitOfferSheet(rawText){
       const visits = detectVisits(item.offerText || rawText, item.visits);
       const pid = UI.submitTargetId || (item.rank ? 'r' + item.rank : null);
       if (pid && DB.prospects[pid]){
-        const result = addOfferDirect(pid, SESSION.team, (DB.teams[SESSION.team] || {}).coach, item.offerText, item.promises, visits);
+        const result = addOfferDirect(pid, SESSION.team, ((DB.teams[SESSION.team] || {}).coach || SESSION.username || ''), item.offerText, item.promises, visits);
         if (result.ok) matched++; else limitError = result.error;
       } else {
-        DB.unmatched.push({ id: uid('u'), team: SESSION.team, coach: (DB.teams[SESSION.team] || {}).coach,
+        DB.unmatched.push({ id: uid('u'), team: SESSION.team, coach: ((DB.teams[SESSION.team] || {}).coach || SESSION.username || ''),
           offerText: item.offerText || rawText, promises: item.promises || [], visits: visits, createdAt: Date.now() });
         unmatched++;
       }
