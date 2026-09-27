@@ -4103,7 +4103,7 @@ function renderProspectBoardCard(pid, searchAttr, context){
     '<span class="rb-mono" style="color:var(--slate);font-size:13px;">' + escapeHtml(p.position) + (p.rating ? '<span class="rb-recruit-rating"> &middot; ' + escapeHtml(p.rating) + '</span>' : '') + '</span>' +
     (p.hometown && recruitingStage() !== 'cpr' ? '<span class="rb-desktop-only" style="color:var(--slate);font-size:13px;"> &middot; <span title="' + escapeHtml(p.hometown) + '">' + escapeHtml(shortText(p.hometown, 28)) + '</span></span>' : '') +
   '</div>';
-  html += '<div style="display:flex;align-items:center;gap:8px;white-space:nowrap;">' + renderPitchBadge(p) + (p.commitTeam || ended ? '' : offerCountTag(pid)) + (p.commitTeam ? renderCommittedTag(p.commitTeam, true, commitReturn) : (ended ? freeAgentTag() : '')) + '</div>';
+  html += '<div style="display:flex;align-items:center;gap:8px;white-space:nowrap;">' + renderPitchBadge(p) + (p.commitTeam || ended ? '' : offerCountTag(pid)) + renderQuickWalkon(p) + (p.commitTeam ? renderCommittedTag(p.commitTeam, true, commitReturn) : (ended ? freeAgentTag() : '')) + '</div>';
   html += '</div>';
   if (recruitingStage() === 'transfer') html += renderTransferProfile(p, false);
   else if (recruitingStage() === 'cpr') html += renderCprProfile(p);
@@ -4117,8 +4117,6 @@ function renderProspectBoardCard(pid, searchAttr, context){
     });
     html += '</div>';
   }
-  const quickOffer = renderQuickWalkon(p);
-  if (quickOffer) html += '<div class="rb-quick-offer-row">' + quickOffer + '</div>';
   html += '</div>';
   return html;
 }
