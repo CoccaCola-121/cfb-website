@@ -3027,6 +3027,7 @@ function render(){
   else if (UI.view === 'teams') html += renderTeamsPage();
   else if (UI.view === 'teamcommits') html += renderTeamCommits();
   else if (UI.view === 'teamoffers') html += renderTeamOffers();
+  if (UI.view === 'feed' && SESSION && !UI.showSubmitModal && html.includes('id="rb-open-submit"')) html += '<div id="rb-floating-submit" class="rb-settings-save rb-floating-submit" hidden><div class="rb-card"><button class="rb-btn rb-btn-gold" id="rb-floating-submit-button"' + (offersLocked() ? ' disabled' : '') + '>Submit offer</button></div></div>';
   if (UI.showSubmitModal) html += renderSubmitModal();
   if (UI.editOfferTarget) html += renderEditOfferModal();
   if (UI.pendingVisitEdit) html += renderVisitConfirmModal();
@@ -4699,7 +4700,26 @@ function renderResetConfirmModal(){
 
 // ---------- Events ----------
 
+let boardSubmitObserver = null;
+function bindFloatingSubmit(){
+  if (boardSubmitObserver) { boardSubmitObserver.disconnect(); boardSubmitObserver = null; }
+  const original = document.getElementById('rb-open-submit');
+  const floating = document.getElementById('rb-floating-submit');
+  const button = document.getElementById('rb-floating-submit-button');
+  if (!original || !floating || !button) return;
+  button.onclick = function(){ if (original.onclick) original.onclick(); };
+  const update = function(rect){ floating.hidden = rect.bottom > 0; };
+  update(original.getBoundingClientRect());
+  if (window.IntersectionObserver) {
+    boardSubmitObserver = new window.IntersectionObserver(function(entries){
+      entries.forEach(function(entry){ if (entry.target === original) update(entry.boundingClientRect); });
+    }, {threshold:0});
+    boardSubmitObserver.observe(original);
+  }
+}
+
 function bindEvents(){
+  bindFloatingSubmit();
   const scholarshipRefresh=document.getElementById('rb-scholarship-refresh');
   if(scholarshipRefresh) scholarshipRefresh.onclick=refreshScholarshipHistory;
   const cprExport=document.getElementById('rb-cpr-export');
