@@ -207,6 +207,7 @@ button, a, input, select, textarea, summary { -webkit-tap-highlight-color: trans
 .rb-offer-lock-toggle input:checked + .rb-switch-track { background: #6F1D1B; border-color: #B33A32; }
 .rb-mobile-only { display: none; }
 .rb-my-offer-summary-grid {
+  min-height: 44px;
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
