@@ -907,7 +907,7 @@ function leagueStatePayload(){
 }
 
 function mergeLeagueState(state){
-  if (settingsDraft && !settingsSaving) return false;
+  if (UI.submitting || (settingsDraft && !settingsSaving)) return false;
   if (!state || typeof state !== 'object') return false;
   const before = JSON.stringify({
     offersByProspect: DB.offersByProspect,
@@ -943,7 +943,7 @@ async function syncLeagueState(renderAfter, options){
     if (!res.ok) return false;
     const data = await res.json();
     const changed = mergeLeagueState(data.state);
-    if (changed && renderAfter) render();
+    if (changed && renderAfter && !UI.showSubmitModal && !UI.editOfferTarget) render();
     return changed;
   } catch (e) {
     return false;
@@ -2560,7 +2560,7 @@ function extractPromises(text){
       addPromise(match[2], match.index);
     }
   }
-  const plainStartRe = /\b(?:I|we)\s+promise\b/gi;
+  const plainStartRe = /\b(?:(?:I|we)\s+promise\b|Promise\s*:)/gi;
   while ((match = plainStartRe.exec(text))){
     const start = match.index;
     const previousBreak = text.lastIndexOf('\n\n', start);
@@ -2587,7 +2587,7 @@ function extractPromises(text){
 
 function isLikelyPromiseText(text){
   const out = String(text || '').replace(/\*\*/g, '').replace(/\s+/g, ' ').trim();
-  return out.length >= 18 && /\b(?:i|we)\s+promise\b/i.test(out);
+  return out.length >= 18 && /\b(?:(?:i|we)\s+promise\b|promise\s*:)/i.test(out);
 }
 
 function sanitizePromiseText(text){
@@ -2837,6 +2837,8 @@ async function quickOfferWalkon(pid){
 }
 
 async function submitCprOffer(rawText, quickId){
+  const draftKey=offerDraftKey();
+  if (!quickId) captureOfferDraft();
   if (!SESSION || UI.submitting || !rawText.trim()) return;
   const nameInput = document.getElementById('rb-cpr-offer-name');
   const posInput = document.getElementById('rb-cpr-offer-position');
@@ -2866,6 +2868,7 @@ async function submitCprOffer(rawText, quickId){
       if (!response.ok || !saved.ok) throw Error(saved.error || 'Could not save your offer. Try again.');
       mergeLeagueState(saved.state);
     } else await saveDBNow();
+    if (!quickId) clearOfferDraft(draftKey);
     UI.submitting=false; UI.showSubmitModal=false; UI.submitTargetId=null;
     UI.lastSummary={matched:1,unmatched:0,total:1,dismissAt:Date.now()+6000};
     render();
@@ -2877,6 +2880,8 @@ async function submitCprOffer(rawText, quickId){
 }
 
 async function submitOfferSheet(rawText){
+  const draftKey=offerDraftKey();
+  captureOfferDraft();
   if (recruitingStage() === 'cpr') return submitCprOffer(rawText);
   if (!SESSION || !rawText.trim()) return;
   if (offersLocked()){
@@ -2916,7 +2921,9 @@ async function submitOfferSheet(rawText){
   UI.submitting = false;
   UI.showSubmitModal = false;
   UI.submitTargetId = null;
-  await saveDBNow(); render();
+  await saveDBNow();
+  if (UI.lastSummary && (UI.lastSummary.matched || UI.lastSummary.unmatched)) clearOfferDraft(draftKey);
+  render();
 }
 
 function assignUnmatched(id, rankValue){
@@ -4496,7 +4503,31 @@ function renderOfferBlock(o, opts){
   return html;
 }
 
+const offerDrafts = {};
+function offerDraftKey(){
+  return 'recruithq:offer-draft:' + [SESSION && (SESSION.discordId || SESSION.team), recruitingStage(), UI.submitTargetId || 'board'].join(':');
+}
+function readOfferDraft(){
+  const key=offerDraftKey();
+  if (offerDrafts[key]) return offerDrafts[key];
+  try { return offerDrafts[key]=JSON.parse(window.localStorage.getItem(key) || '{}'); } catch(e){ return {}; }
+}
+function captureOfferDraft(){
+  const text=document.getElementById('rb-sheet-text');
+  if (!text) return;
+  const name=document.getElementById('rb-cpr-offer-name');
+  const position=document.getElementById('rb-cpr-offer-position');
+  const draft={text:text.value,name:name ? name.value : '',position:position ? position.value : ''};
+  const key=offerDraftKey(); offerDrafts[key]=draft;
+  try { window.localStorage.setItem(key,JSON.stringify(draft)); } catch(e) {}
+}
+function clearOfferDraft(key){
+  delete offerDrafts[key];
+  try { window.localStorage.removeItem(key); } catch(e) {}
+}
+
 function renderSubmitModal(){
+  const draft=readOfferDraft();
   const target = UI.submitTargetId && DB.prospects[UI.submitTargetId] ? DB.prospects[UI.submitTargetId] : null;
   const locked = offersLocked();
   const pitchOffer = recruitingStageConfig().pitchOnly || isPitchRecruit(target);
@@ -4510,9 +4541,9 @@ function renderSubmitModal(){
       '<div style="font-size:12px;color:var(--slate);margin-bottom:12px;">' +
         submitHelp +
       '</div>' +
-      (recruitingStage() === 'cpr' && !target ? '<div class="rb-cpr-offer-identity"><label>Player name (if not clear in offer)<input class="rb-input" id="rb-cpr-offer-name" /></label><label>Position<select class="rb-input" id="rb-cpr-offer-position"><option value="">Detect from offer</option>' + Object.keys(NZCFLCprRules.thresholds).map(pos=>'<option>' + pos + '</option>').join('') + '</select></label></div>' : '') +
+      (recruitingStage() === 'cpr' && !target ? '<div class="rb-cpr-offer-identity"><label>Player name (if not clear in offer)<input class="rb-input" id="rb-cpr-offer-name" value="' + escapeHtml(draft.name || '') + '" /></label><label>Position<select class="rb-input" id="rb-cpr-offer-position"><option value="">Detect from offer</option>' + Object.keys(NZCFLCprRules.thresholds).map(pos=>'<option' + (draft.position === pos ? ' selected' : '') + '>' + pos + '</option>').join('') + '</select></label></div>' : '') +
       '<p id="rb-submit-error" role="alert" style="color:var(--alert);font-size:12px;"></p>' +
-      '<textarea class="rb-textarea rb-scrollbar" id="rb-sheet-text" rows="10" placeholder="' + escapeHtml(placeholder) + '" ' + (locked ? 'disabled' : '') + '></textarea>' +
+      '<textarea class="rb-textarea rb-scrollbar" id="rb-sheet-text" rows="10" placeholder="' + escapeHtml(placeholder) + '" ' + (locked ? 'disabled' : '') + '>' + escapeHtml(draft.text || '') + '</textarea>' +
       (pitchOffer || recruitingStage() === 'cpr' ? '<div id="rb-pitch-count" role="status" class="rb-transfer-limit">0 / 800 words · standalone offer header excluded</div>' : '') +
       '<div style="display:flex;justify-content:flex-end;gap:8px;margin-top:14px;">' +
         '<button class="rb-btn" data-close-modal="1">Cancel</button>' +
@@ -4952,6 +4983,15 @@ function bindEvents(){
     if (status && recruitingStage() === 'cpr' && !isPitchRecruit(prospect)) { status.textContent = prospect ? 'Standard offer recruit' : 'Pitch recruits have an 800-word limit.'; return; }
     if (status) { status.textContent = count + ' / 800 words · standalone offer header excluded'; status.style.color = count > 800 ? 'var(--alert)' : 'var(--slate)'; }
   };
+  if (pitchInput){
+    const updateCount=pitchInput.oninput;
+    pitchInput.oninput=function(){ captureOfferDraft(); if(updateCount) updateCount(); };
+    ['rb-cpr-offer-name','rb-cpr-offer-position'].forEach(function(id){
+      const field=document.getElementById(id);
+      if(field) { field.oninput=captureOfferDraft; field.onchange=captureOfferDraft; }
+    });
+    if(updateCount) updateCount();
+  }
   const submitSheetBtn = document.getElementById('rb-submit-sheet-btn');
   if (submitSheetBtn) submitSheetBtn.onclick = function(){
     const text = document.getElementById('rb-sheet-text').value;

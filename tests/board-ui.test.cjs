@@ -10,7 +10,7 @@ const script = page.match(/<script>([\s\S]*?)<\/script>/)[1];
 const boot = script.lastIndexOf('\napplyRoute(routeFromPath(window.location.pathname));');
 assert(boot > 0, 'The app bootstrap must be identifiable without executing network requests.');
 const source = script.slice(0, boot) + `
-  globalThis.app = { DB, UI, applyConditionalRescinds, readRescindRuleForm, validateRescindRuleDraft, requestQuickWalkon, renderQuickWalkonConfirm, canQuickOfferWalkon, quickOfferWalkon, renderQuickWalkon, renderProspectBoardCard, scheduleSummaryCountdown, dismissSummaryBanner, bindFloatingSubmit, extractPromises, cleanDisplayPromises, readCprBoard, updateBucksEntries, renderBucksSettings, renderCprProfile, cprPreviousSchool, ensureCprScholarshipThreads, renderAutoCommitSettings, stageAutoCommits, readScholarshipCapacity, buildPromiseArchive, parseCsvRows, offerCountForProspect, refreshScholarshipHistory, submitCprOffer, renderSubmitModal, createCprPlayer, loadClassData, resetOfferWindow, setOffersLocked, offersLocked, pendingCommitChanges, restoreSettingsDraft, renderOfferBlock, renderRescindFilterFields, renderVisitLedger, visibleBoardProspectIds, setRecruitingStage, requestReset, approveDangerReset, beginSettingsDraft, hasSettingsChanges, canLeaveSettings, saveSettingsChanges, saveDBNow, leagueStatePayload, mergeSettingsValue, updateCommitsFromSheet, runBackupNow, setTransferFilter, renderTransferFilters, renderClassSetup, requestManualCommitOverride, applyManualCommitOverride, requestClearCommit, clearManualCommitOverride, applyManualCommitOverrides, clearRecruitingBoard, findProspectFromSheetRow, transferCardStyle, parseFullClass, prospectFromRosterRow, confirmTransferImport, releaseSingleStageBoard, addOfferDirect, render, renderNav, navigateTo, applyRoute, setReady(){ dbReady = true; sessionReady = true; }, renderFeed, renderBoardSearchResults, renderTeamsPage,
+  globalThis.app = { DB, UI, captureOfferDraft, readOfferDraft, clearOfferDraft, offerDraftKey, applyConditionalRescinds, readRescindRuleForm, validateRescindRuleDraft, requestQuickWalkon, renderQuickWalkonConfirm, canQuickOfferWalkon, quickOfferWalkon, renderQuickWalkon, renderProspectBoardCard, scheduleSummaryCountdown, dismissSummaryBanner, bindFloatingSubmit, extractPromises, cleanDisplayPromises, readCprBoard, updateBucksEntries, renderBucksSettings, renderCprProfile, cprPreviousSchool, ensureCprScholarshipThreads, renderAutoCommitSettings, stageAutoCommits, readScholarshipCapacity, buildPromiseArchive, parseCsvRows, offerCountForProspect, refreshScholarshipHistory, submitCprOffer, renderSubmitModal, createCprPlayer, loadClassData, resetOfferWindow, setOffersLocked, offersLocked, pendingCommitChanges, restoreSettingsDraft, renderOfferBlock, renderRescindFilterFields, renderVisitLedger, visibleBoardProspectIds, setRecruitingStage, requestReset, approveDangerReset, beginSettingsDraft, hasSettingsChanges, canLeaveSettings, saveSettingsChanges, saveDBNow, leagueStatePayload, mergeSettingsValue, updateCommitsFromSheet, runBackupNow, setTransferFilter, renderTransferFilters, renderClassSetup, requestManualCommitOverride, applyManualCommitOverride, requestClearCommit, clearManualCommitOverride, applyManualCommitOverrides, clearRecruitingBoard, findProspectFromSheetRow, transferCardStyle, parseFullClass, prospectFromRosterRow, confirmTransferImport, releaseSingleStageBoard, addOfferDirect, render, renderNav, navigateTo, applyRoute, setReady(){ dbReady = true; sessionReady = true; }, renderFeed, renderBoardSearchResults, renderTeamsPage,
     renderThreadProspectList, renderProspectDetail, builtInTeamBranding, getTeamBranding, activeTeamBrands,
     mobileRecruitName, renderRecruitName, renderMyOffers, renderCommitsForTeam, renderTeamOffers, renderConditionalRescinds, renderRecruitValues, teamBorderColor, bindEvents, applyDefaultClassData, releaseWave1, releaseWave2,
     setSession(value){ SESSION = value; } };
@@ -1153,4 +1153,35 @@ test('relative overall rules save without a number and use lowest commit in the 
  assert.equal(app.DB.offersByProspect.c[0].rescinded,true);
  assert.equal(app.DB.offersByProspect.d[0].rescinded,true);
  assert.equal(!!app.DB.offersByProspect.e[0].rescinded,false);
+});
+
+
+test('explicit Promise labels are extracted from existing ASU-style pitches', () => {
+ const {app}=harness();
+ const text="ASU offers Dewayne Mustipher\nScholarship\n\nLocation:\n\nTempe has a great atmosphere. Promise: You’ll help us win 5+ home games.\n\nPlaying Time:\n\nWe need experienced players. Promise: I’ll make you the starter for the next two seasons\n\nCoach:\n\nWe develop players. Promise: I'll coach for you, your whole career and sign a contract extension";
+ const promises=app.cleanDisplayPromises({text,promises:[]});
+ assert.equal(promises.length,3);
+ assert.deepEqual(Array.from(promises,p=>p.title),['Location','Playing Time','Coach']);
+ assert.match(promises[1].text,/starter for the next two seasons/);
+});
+
+test('offer drafts survive redraws and refreshes, are isolated by player, and clear after confirmed submission', async () => {
+ const storage=new Map();
+ const wire=h=>{h.context.window.localStorage={getItem:k=>storage.get(k)||null,setItem:(k,v)=>storage.set(k,v),removeItem:k=>storage.delete(k)};};
+ const h=harness();wire(h);const {app,elements}=h;
+ app.DB.recruitingStage='cpr';app.UI.submitTargetId=null;
+ elements['rb-sheet-text']={value:'Michigan State offers Low S\nWalk-On'};
+ elements['rb-cpr-offer-name']={value:'Low S'};
+ elements['rb-cpr-offer-position']={value:'S'};
+ app.captureOfferDraft();
+ assert.match(app.renderSubmitModal(),/Michigan State offers Low S/);
+ const next=harness();wire(next);next.app.DB.recruitingStage='cpr';
+ assert.equal(next.app.readOfferDraft().text,elements['rb-sheet-text'].value);
+ next.app.UI.submitTargetId='another';assert.equal(next.app.readOfferDraft().text,undefined);
+ app.clearRecruitingBoard();app.DB.recruitingStage='cpr';
+ app.loadClassData('Name,Pos,Team,Ovr,Pot\nTop S,S,FA,40,60\nLow S,S,FA,29,45');
+ app.releaseSingleStageBoard();app.DB.offersLocked=false;
+ await app.submitCprOffer(elements['rb-sheet-text'].value);
+ assert.equal(storage.has(app.offerDraftKey()),false);
+ assert.equal(app.DB.offersByProspect.r2.length,1);
 });
