@@ -3769,16 +3769,20 @@ function ownOfferTypeBadge(o,p){
   return '<span class="rb-tag rb-own-offer-type rb-own-offer-status" aria-label="Offer status" style="display:inline-flex;align-items:center;background:rgba(140,146,158,.09);border:1px solid var(--hairline);border-radius:20px;color:var(--slate);font-size:11px;font-weight:600;letter-spacing:.04em;padding:5px 10px;cursor:default;user-select:none;">'+(type==='walkon'?'Walk-On':'Scholarship')+'</span>'+ (type==='walkon' && SESSION && teamKey(o.team)===teamKey(SESSION.team) && !o.rescinded && !p.commitTeam && !offersLocked() ? '<button class="rb-btn rb-btn-gold rb-upgrade-small" data-amend-action="upgrade" data-amend-prospect="'+escapeHtml(p.id)+'" data-amend-offer="'+escapeHtml(o.id)+'">Upgrade</button>' : '');
 }
 
+function renderListPageHeading(title, subtitle){
+  return '<div class="rb-list-page-heading" style="margin-bottom:18px;"><div class="rb-h" style="font-size:20px;margin-bottom:4px;">' + escapeHtml(title) + '</div>' +
+    '<div style="font-size:13px;color:var(--slate);">' + escapeHtml(subtitle) + '</div></div>';
+}
+
 function renderMyOffers(){
   if (!SESSION){
     return '<div class="rb-card" style="padding:32px;text-align:center;color:var(--slate);">Log in to view your offers.</div>';
   }
   const rows = getOfferRowsForTeam(SESSION.team);
   const filterKey = positionFilterKey('offers', SESSION.team);
-  let html = renderVisitLedger();
+  let html = renderListPageHeading('My Offers', rows.length + ' offer' + (rows.length === 1 ? '' : 's') + ' from ' + SESSION.team + '.');
+  html += renderVisitLedger();
   html += '<div class="rb-card" style="padding:18px 20px;margin-bottom:14px;">';
-  html += '<div class="rb-h" style="font-size:18px;margin-bottom:6px;">My Offers</div>';
-  html += '<div style="font-size:13px;color:var(--slate);margin-bottom:12px;">' + rows.length + ' offer' + (rows.length === 1 ? '' : 's') + ' from ' + escapeHtml(SESSION.team) + '.</div>';
   html += renderPositionCounts(rows, function(row){ return row.prospect && row.prospect.position; }, filterKey);
   html += '<div style="margin-bottom:12px;"><button class="rb-btn rb-btn-gold" id="rb-open-submit" ' + (offersLocked() ? 'disabled title="Offers are locked"' : '') + '>' + (offersLocked() ? 'Offers locked' : 'Submit offer') + '</button></div>';
   if (recruitingStage() === 'cpr') html += '<p class="rb-transfer-limit">Your offer goes to the matching player thread, or creates one from the free-agent list.</p>';
@@ -3844,9 +3848,8 @@ function renderPromiseChips(offers){
 function renderCommitsForTeam(team, title){
   const commits = getCommitRowsForTeam(team);
   const filterKey = positionFilterKey('commits', team);
-  let html = '<div class="rb-card" style="padding:18px 20px;margin-bottom:14px;">';
-  html += '<div class="rb-h" style="font-size:18px;margin-bottom:6px;">' + escapeHtml(title) + '</div>';
-  html += '<div style="font-size:13px;color:var(--slate);margin-bottom:12px;">' + commits.length + ' commit' + (commits.length === 1 ? '' : 's') + ' for ' + escapeHtml(team) + '.</div>';
+  let html = renderListPageHeading(title, commits.length + ' commit' + (commits.length === 1 ? '' : 's') + ' for ' + team + '.');
+  html += '<div class="rb-card" style="padding:18px 20px;margin-bottom:14px;">';
   html += renderPositionCounts(commits, function(p){ return p && p.position; }, filterKey);
   html += renderOwnTypeFilter('commits');
   html += '<input class="rb-input" id="rb-my-commit-search" placeholder="' + (recruitingStage() === 'transfer' ? 'Search commits by player name or promise' : 'Search commits by recruit name, rank, hometown, or promise') + '" />';
@@ -3904,9 +3907,8 @@ function renderTeamOffers(){
   const rows = getOfferRowsForTeam(team);
   const filterKey = positionFilterKey('offers', team);
   let html = '<div style="margin-bottom:16px;display:flex;gap:10px;align-items:center;flex-wrap:wrap;"><button class="rb-btn" data-nav="teams">&larr; Back to Teams</button><button class="rb-btn" data-open-team-commits-button="' + escapeHtml(team) + '">View Commits</button></div>';
+  html += renderListPageHeading(team + ' Offers', rows.length + ' offer' + (rows.length === 1 ? '' : 's') + ' from ' + team + '.');
   html += '<div class="rb-card" style="padding:18px 20px;margin-bottom:14px;">';
-  html += '<div class="rb-h" style="font-size:18px;margin-bottom:6px;">' + escapeHtml(team) + ' Offers</div>';
-  html += '<div style="font-size:13px;color:var(--slate);margin-bottom:12px;">' + rows.length + ' offer' + (rows.length === 1 ? '' : 's') + ' from ' + escapeHtml(team) + '.</div>';
   html += renderPositionCounts(rows, function(row){ return row.prospect && row.prospect.position; }, filterKey);
   html += renderOwnTypeFilter('teamoffers');
   html += '<input class="rb-input" id="rb-my-offer-search" placeholder="' + (recruitingStage() === 'transfer' ? 'Search offers by player name' : 'Search offers by recruit name, rank, or hometown') + '" />';
@@ -3949,9 +3951,8 @@ function renderTeamsPage(){
     if (UI.teamFilterCoached && !link) return false;
     return !q || haystack.indexOf(q) !== -1;
   });
-  let html = '<div class="rb-card" style="padding:18px 20px;margin-bottom:14px;">';
-  html += '<div class="rb-h" style="font-size:18px;margin-bottom:6px;">Teams</div>';
-  html += '<div style="font-size:13px;color:var(--slate);margin-bottom:12px;">' + teams.length + ' teams &middot; ' + Object.keys(UI.teamLinks || {}).length + ' linked Discord account' + (Object.keys(UI.teamLinks || {}).length === 1 ? '' : 's') + '</div>';
+  let html = renderListPageHeading('Teams', teams.length + ' teams · ' + Object.keys(UI.teamLinks || {}).length + ' linked Discord account' + (Object.keys(UI.teamLinks || {}).length === 1 ? '' : 's'));
+  html += '<div class="rb-card" style="padding:18px 20px;margin-bottom:14px;">';
   html += '<input class="rb-input" id="rb-team-search" placeholder="Search teams or linked Discord accounts" value="' + escapeHtml(UI.teamSearch || '') + '" />';
   html += '<div class="rb-filter-row rb-team-filter-row"><label class="rb-toggle"><span>Coached teams only</span><input type="checkbox" id="rb-team-filter-coached" ' + (UI.teamFilterCoached ? 'checked' : '') + ' /><span class="rb-switch-track"><span class="rb-switch-thumb"></span></span></label></div>';
   if (pendingCount) html += '<div class="rb-mono" style="font-size:12px;color:var(--gold);margin-top:8px;">' + pendingCount + ' unsaved team change' + (pendingCount === 1 ? '' : 's') + '</div>';
@@ -5422,7 +5423,7 @@ function bindEvents(){
       const total = document.getElementById('rb-board-result-count');
       if (total) total.textContent = visibleCount + (visibleCount === 1 ? ' player' : ' players');
     }
-    if (kind === 'board' && recruitingStage() !== 'hs') {
+    if (kind === 'offers' || kind === 'teamoffers' || kind === 'commits' || (kind === 'board' && recruitingStage() !== 'hs')) {
       document.querySelectorAll('[data-position-filter]').forEach(function(chip){
         if (!activeKeys[chip.getAttribute('data-position-filter')]) return;
         const count = chip.querySelector('span');
