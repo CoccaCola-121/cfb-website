@@ -37,6 +37,14 @@
 @media(max-width:760px) { .rb-cpr-board-heading { grid-template-columns:minmax(0,1fr) auto; align-items:center; } .rb-cpr-submit-wrap { grid-column:1 / -1; grid-row:2; justify-self:center; } .rb-cpr-board-heading > .rb-toggle { grid-column:2; grid-row:1; } }
 @media(max-width:480px) { .rb-cpr-board-heading { grid-template-columns:minmax(0,1fr); } .rb-cpr-board-heading > .rb-toggle { grid-column:1; grid-row:2; justify-self:start; } .rb-cpr-submit-wrap { grid-column:1; grid-row:3; } }
 </style>
+<style>
+.rb-watchlist-flag { display:inline-flex; vertical-align:middle; align-items:center; justify-content:center; width:27px; height:29px; padding:3px; margin-right:7px; background:none; border:0; border-radius:5px; color:#85888b; cursor:pointer; flex:none; }
+.rb-watchlist-flag svg { display:block; width:17px; height:19px; fill:currentColor; }
+.rb-watchlist-flag[aria-pressed="true"] { color:#d73542; }
+.rb-watchlist-flag:hover { background:rgba(160,164,168,.13); }
+.rb-watchlist-flag:focus-visible { outline:2px solid var(--gold); outline-offset:2px; }
+.rb-watchlist-flag:disabled { cursor:wait; opacity:.5; }
+</style>
 </head>
 <body>
 
@@ -96,7 +104,7 @@ let UI = { view: 'feed', threadId: null, showSubmitModal: false, submitting: fal
            backupStatus: null, backupError: null, backingUp: false,
            teamAdminModal: null, brandingFileName: '', adminActionStatus: null, adminActionError: null,
            commitOverrideRank: '', commitOverrideTeam: '', commitOverrideStatus: null, commitOverrideError: null,
-           pendingCommitOverride: null, pendingClearCommit: null, positionFilters: {}, boardSearch: '', threadSearches: {}, hideMyOffers: false };
+           pendingCommitOverride: null, pendingClearCommit: null, positionFilters: {}, boardSearch: '', threadSearches: {}, hideMyOffers: false, watchlistIds: [], watchlistLoaded: false, watchlistError: '', watchlistTeam: '', watchlistStage: '', watchlistPending: {} };
 let dbReady = false, sessionReady = false;
 let summaryTimer = null;
 let leagueSyncTimer = null;
@@ -164,6 +172,8 @@ function shouldResetBoardFilters(nextView, nextThreadId){
   const nextBoardThread = nextView === 'thread' ? (nextThreadId || UI.threadId) : null;
   if (UI.view === 'thread' && nextView === 'prospect') return false;
   if (UI.view === 'prospect' && nextView === 'thread' && currentBoardThread && nextBoardThread === currentBoardThread) return false;
+  if (UI.view === 'watchlist' && nextView === 'prospect') return false;
+  if (UI.view === 'prospect' && nextView === 'watchlist' && UI.prospectReturnView === 'watchlist') return false;
   if (UI.view === 'thread' && nextView === 'thread') return nextBoardThread !== UI.threadId;
   if (UI.view === 'thread') return true;
   if (UI.view === 'prospect' && currentBoardThread && nextView !== 'thread') return true;
@@ -173,6 +183,7 @@ function shouldResetBoardFilters(nextView, nextThreadId){
 
 const VIEW_ROUTES = {
   feed: '/prospectboard',
+  watchlist: '/mywatchlist',
   myoffers: '/myoffers',
   mycommits: '/mycommits',
   teams: '/teams',
@@ -231,6 +242,7 @@ function routeFromPath(pathname){
   let path = String(pathname || '/').replace(/\/+$/, '');
   if (!path || path === '/index.html') path = '/';
   if (path === '/' || path === '/prospectboard' || path === '/board') return { view: 'feed' };
+  if (path === '/mywatchlist') return { view: 'watchlist' };
   if (path === '/myoffers') return { view: 'myoffers' };
   if (path === '/mycommits') return { view: 'mycommits' };
   if (path === '/teams') return { view: 'teams' };
@@ -296,6 +308,7 @@ function navigateTo(view, options){
   syncBrowserRoute(!!options.replaceRoute);
   render();
   if (UI.view === 'teams') loadTeamAvailability().then(render);
+  if (UI.view === 'watchlist') loadWatchlist();
   if (UI.view === 'setup') loadBackupStatus(true);
 }
 
@@ -748,6 +761,7 @@ async function loadServerAuth(){
         UI.loginStep = 'team';
       }
       await loadTeamAvailability();
+      if (SESSION) await loadWatchlist();
     }
   } catch (e) { /* local preview or functions not configured */ }
 }
@@ -2029,6 +2043,7 @@ async function linkLoginTeam(team){
     UI.teamLinkQuery = '';
     UI.view = 'feed';
     await loadTeamAvailability();
+    await loadWatchlist();
     render();
   } catch (e) {
     UI.loginError = e.message || 'Could not link that team.';
@@ -2049,6 +2064,7 @@ async function logout(){
     try { await fetch('/api/auth/logout', { method: 'POST', credentials: 'include' }); } catch (e) {}
   }
   SESSION = null;
+  UI.watchlistIds = []; UI.watchlistLoaded = false; UI.watchlistTeam = ''; UI.watchlistStage = ''; UI.watchlistError = ''; UI.watchlistPending = {};
   UI.pendingDiscordUser = null;
   UI.loginStep = 'account';
   UI.teamLinkQuery = '';
@@ -3136,6 +3152,7 @@ function render(){
   else if (UI.view === 'setup') html += canViewSettings() ? renderClassSetup() : renderAccessDenied();
   else if (UI.view === 'thread') html += renderThread();
   else if (UI.view === 'prospect') html += renderProspectDetail();
+  else if (UI.view === 'watchlist') html += renderWatchlist();
   else if (UI.view === 'myoffers') html += renderMyOffers();
   else if (UI.view === 'mycommits') html += renderMyCommits();
   else if (UI.view === 'teams') html += renderTeamsPage();
@@ -3250,14 +3267,14 @@ function renderNav(){
   if (activeView === 'prospect') activeView = UI.prospectReturnView || 'feed';
   if (activeView === 'thread') activeView = 'feed';
   if (activeView === 'teamcommits' || activeView === 'teamoffers') activeView = 'teams';
-  const items = [['feed', 'Prospect Board'], ['myoffers', 'My Offers'], ['mycommits', 'My Commits'], ['teams', 'Teams']];
+  const items = [['feed', 'Prospect Board'], ['watchlist', 'My Watchlist'], ['myoffers', 'My Offers'], ['mycommits', 'My Commits'], ['teams', 'Teams']];
   if (canViewSettings()) items.push(['setup', 'Settings']);
   let html = '<header class="rb-nav-shell"><div class="rb-nav-top">' +
     '<button type="button" class="rb-nav-brand" data-nav="feed" aria-label="RecruitHQ prospect board">' + renderBrand() + '</button>' +
     '<div class="rb-nav-session">' + renderTeamCoachBadge(SESSION.team) + '<span class="rb-session-divider" aria-hidden="true"></span><a href="#" id="rb-logout">Log out</a></div>' +
     '</div><nav id="rb-main-nav" class="rb-nav-actions" aria-label="Main navigation">';
   items.forEach(function(item){
-    html += '<button type="button" class="rb-nav-link" data-nav="' + item[0] + '"' + (activeView === item[0] ? ' aria-current="page"' : '') + '>' + (item[0] === 'myoffers' || item[0] === 'mycommits' ? '<span class="rb-desktop-only">' + item[1] + '</span><span class="rb-mobile-only">' + item[1].replace('My ', '') + '</span>' : item[1]) + '</button>';
+    html += '<button type="button" class="rb-nav-link" data-nav="' + item[0] + '"' + (activeView === item[0] ? ' aria-current="page"' : '') + '>' + (item[0] === 'watchlist' || item[0] === 'myoffers' || item[0] === 'mycommits' ? '<span class="rb-desktop-only">' + item[1] + '</span><span class="rb-mobile-only">' + item[1].replace('My ', '') + '</span>' : item[1]) + '</button>';
   });
   return html + '</nav></header>';
 }
@@ -3891,6 +3908,7 @@ function renderTeamOffers(){
   html += '<div class="rb-h" style="font-size:18px;margin-bottom:6px;">' + escapeHtml(team) + ' Offers</div>';
   html += '<div style="font-size:13px;color:var(--slate);margin-bottom:12px;">' + rows.length + ' offer' + (rows.length === 1 ? '' : 's') + ' from ' + escapeHtml(team) + '.</div>';
   html += renderPositionCounts(rows, function(row){ return row.prospect && row.prospect.position; }, filterKey);
+  html += renderOwnTypeFilter('teamoffers');
   html += '<input class="rb-input" id="rb-my-offer-search" placeholder="' + (recruitingStage() === 'transfer' ? 'Search offers by player name' : 'Search offers by recruit name, rank, or hometown') + '" />';
   html += '</div>';
   if (!rows.length) return html + '<div class="rb-card" style="padding:28px;text-align:center;color:var(--slate);">No offers yet.</div>';
@@ -3900,7 +3918,7 @@ function renderTeamOffers(){
     const o = row.offer;
     const bucket = positionBucket(p.position);
     const searchText = [p.rank, '#' + p.rank, p.name, p.hometown, p.storyline].join(' ').toLowerCase();
-    html += '<div class="rb-card" data-my-offer-card="1" data-position-bucket="' + escapeHtml(bucket) + '" data-search="' + escapeHtml(searchText) + '" style="padding:12px 16px;">';
+    html += '<div class="rb-card" data-my-offer-card="1" data-own-offer-type="' + NZCFLAutoCommits.offerKind(DB,p,o) + '" data-position-bucket="' + escapeHtml(bucket) + '" data-search="' + escapeHtml(searchText) + '" style="padding:12px 16px;">';
     html += '<details>';
     html += '<summary class="rb-offer-summary rb-team-offer-summary" style="list-style:none;cursor:pointer;display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:14px;">';
     html += '<span style="min-width:0;display:flex;align-items:baseline;gap:10px;white-space:nowrap;overflow:hidden;">' +
@@ -4081,6 +4099,53 @@ function createCprPlayer(input){
   DB.threads.push(makeThread(row.name,[id],null));
   return id;
 }
+async function loadWatchlist(){
+  if (!SESSION?.team || !apiAvailable()) return;
+  const team = teamKey(SESSION.team), stage = recruitingStage();
+  if (UI.watchlistTeam !== team || UI.watchlistStage !== stage) {
+    UI.watchlistIds = []; UI.watchlistLoaded = false; UI.watchlistPending = {};
+  }
+  UI.watchlistTeam = team; UI.watchlistStage = stage; UI.watchlistError = '';
+  try {
+    const response = await fetch('/api/watchlist',{credentials:'include',cache:'no-store'});
+    const type = response.headers.get('content-type') || '';
+    if (!type.includes('application/json')) throw Error('Watchlist API is not deployed yet. Upload functions/api/watchlist.js.');
+    const data = await response.json();
+    if (!response.ok || !data.ok) throw Error(data.error || 'Watchlist could not be loaded.');
+    if (!SESSION || teamKey(SESSION.team) !== team || recruitingStage() !== stage) return;
+    UI.watchlistIds = Array.isArray(data.ids) ? data.ids : [];
+    UI.watchlistLoaded = true;
+  } catch(error) { if (SESSION && teamKey(SESSION.team) === team) { UI.watchlistLoaded = false; UI.watchlistError = error.message || 'Watchlist unavailable.'; } }
+  render();
+}
+function renderWatchlistFlag(pid){
+  const active = UI.watchlistIds.includes(pid);
+  const disabled = !UI.watchlistLoaded || !!UI.watchlistPending[pid];
+  return '<button type="button" class="rb-watchlist-flag" data-watchlist-flag="' + escapeHtml(pid) + '" aria-pressed="' + active + '" aria-label="' + (active ? 'Remove from My Watchlist' : 'Add to My Watchlist') + '" title="' + (active ? 'Remove from My Watchlist' : 'Add to My Watchlist') + '"' + (disabled ? ' disabled' : '') + '><svg viewBox="0 0 20 24" aria-hidden="true"><path d="M3 1.5v21h2V14c4-2.4 6 2.5 12-1.4V2.9C11 6.8 9 .2 5 2.3v-.8H3z"/></svg></button>';
+}
+async function toggleWatchlist(pid){
+  if (!SESSION || !UI.watchlistLoaded || UI.watchlistPending[pid] || !DB.prospects[pid]) return;
+  const team=teamKey(SESSION.team), stage=recruitingStage();
+  UI.watchlistPending[pid]=true;
+  document.querySelectorAll('[data-watchlist-flag="' + cssEscape(pid) + '"]').forEach(btn=>{btn.disabled=true;});
+  try {
+    const response=await fetch('/api/watchlist',{method:'POST',credentials:'include',headers:{'content-type':'application/json'},body:JSON.stringify({prospectId:pid,flagged:!UI.watchlistIds.includes(pid)})});
+    const type=response.headers.get('content-type') || '';
+    if (!type.includes('application/json')) throw Error('Watchlist API returned a webpage instead of saving.');
+    const data=await response.json();
+    if (!response.ok || !data.ok) throw Error(data.error || 'Watchlist change was not saved.');
+    if (!SESSION || teamKey(SESSION.team)!==team || recruitingStage()!==stage) return;
+    UI.watchlistIds=Array.isArray(data.ids)?data.ids:[];
+  } catch(error) {
+    UI.lastSummary={errorText:error.message || 'Could not save watchlist change.'};
+  } finally { delete UI.watchlistPending[pid]; render(); }
+}
+function renderWatchlist(){
+  if (!UI.watchlistLoaded) return '<div class="rb-card" style="padding:24px;"><div class="rb-h" style="font-size:20px;margin-bottom:12px;">My Watchlist</div><p role="status">' + escapeHtml(UI.watchlistError || 'Loading your team watchlist…') + '</p><button class="rb-btn" id="rb-retry-watchlist">Retry</button></div>';
+  const ids = UI.watchlistIds.filter(pid=>!!DB.prospects[pid]);
+  return renderThreadProspectList({id:'watchlist',title:'My Watchlist',prospectIds:ids,stars:null}, {watchlist:true});
+}
+
 function renderFeed(){
   if (recruitingStage() === 'cpr' && DB.wave1Released) return renderThreadProspectList({id:'cpr-board',title:'CPR Board',prospectIds:Object.keys(DB.prospects),stars:null});
   if (recruitingStage() === 'transfer' && DB.threads.length) return renderThreadProspectList({ id: DB.threads[0].id, title: 'Transfer Board', prospectIds: Array.from(new Set(DB.threads.flatMap(function(t){ return t.prospectIds; }))), stars: null });
@@ -4160,14 +4225,15 @@ function renderTransferFilters(){
   return '<div class="rb-transfer-filters"><div class="rb-transfer-filter-heading"><div class="rb-segmented" aria-label="Filter by">' + [['years','Years left'],['grade','Grade']].map(function(item){ return '<button type="button" data-transfer-filter-mode="' + item[0] + '" aria-pressed="' + ((gradeMode ? 'grade' : 'years') === item[0]) + '">' + item[1] + '</button>'; }).join('') + '</div><button type="button" class="rb-transfer-filter-reset" id="rb-transfer-filter-reset">Show all</button></div><div class="rb-transfer-slider-heading"><label for="rb-transfer-slider">' + (gradeMode ? 'Grade' : 'Years left') + '</label><output id="rb-transfer-slider-value" for="rb-transfer-slider">' + transferFilterLabel() + '</output></div><input id="rb-transfer-slider" class="rb-transfer-slider" type="range" min="' + (gradeMode ? 0 : 1) + '" max="' + (gradeMode ? TRANSFER_GRADES.length - 1 : 4) + '" step="1" value="' + value + '" aria-valuetext="' + transferFilterLabel() + '" /><div class="rb-transfer-slider-ticks" style="--tick-count:' + ticks.length + '">' + ticks.map(function(tick,i){ return '<span data-transfer-slider-tick="' + (gradeMode ? i : i+1) + '" class="' + (selected && value === (gradeMode ? i : i+1) ? 'rb-transfer-tick-active' : '') + '">' + tick + '</span>'; }).join('') + '</div></div>';
 }
 
-function renderThreadProspectList(t){
+function renderThreadProspectList(t, options){
+  const isWatchlist = !!(options && options.watchlist);
   if (!t) return '<div style="color:var(--slate);">Thread not found.</div>';
   const filterKey = positionFilterKey('board', t.id);
   const ended = recruitingEndedForCurrentStage();
   const cardContext = { ended: ended, thread: UI.view === 'thread' ? t : null };
-  let html = '<div' + (recruitingStage() === 'cpr' ? ' class="rb-cpr-board-heading"' : '') + '><div><div class="rb-h" style="font-size:20px;margin-bottom:4px;">' + escapeHtml(t.title) + '</div>';
-  html += '<div class="rb-cpr-board-description" style="font-size:13px;color:var(--slate);' + (recruitingStage() === 'cpr' ? '' : 'margin-bottom:18px;') + '">' + (recruitingStage() === 'transfer' ? 'Transfers in class-sheet order. 800-word pitches; offer headers excluded.' : (recruitingStage() === 'cpr' ? 'Free agents meeting position minimums, plus coach-created threads.' : rankRangeForThread(t) + ' on the board. Offers from every team stay visible here.')) + '</div></div>';
-  if (recruitingStage() === 'cpr') html += renderCprCreate() + '<label class="rb-toggle"><span>Hide my offers</span><input type="checkbox" id="rb-hide-my-offers" ' + (UI.hideMyOffers ? 'checked' : '') + ' /><span class="rb-switch-track"><span class="rb-switch-thumb"></span></span></label>';
+  let html = '<div' + (recruitingStage() === 'cpr' && !isWatchlist ? ' class="rb-cpr-board-heading"' : '') + '><div><div class="rb-h" style="font-size:20px;margin-bottom:4px;">' + escapeHtml(t.title) + '</div>';
+  html += '<div class="rb-cpr-board-description" style="font-size:13px;color:var(--slate);' + (recruitingStage() === 'cpr' && !isWatchlist ? '' : 'margin-bottom:18px;') + '">' + (isWatchlist ? 'Flagged players for your team.' : (recruitingStage() === 'transfer' ? 'Transfers in class-sheet order. 800-word pitches; offer headers excluded.' : (recruitingStage() === 'cpr' ? 'Free agents meeting position minimums, plus coach-created threads.' : rankRangeForThread(t) + ' on the board. Offers from every team stay visible here.'))) + '</div></div>';
+  if (recruitingStage() === 'cpr' && !isWatchlist) html += renderCprCreate() + '<label class="rb-toggle"><span>Hide my offers</span><input type="checkbox" id="rb-hide-my-offers" ' + (UI.hideMyOffers ? 'checked' : '') + ' /><span class="rb-switch-track"><span class="rb-switch-thumb"></span></span></label>';
   html += '</div>';
   html += '<div class="rb-card" style="padding:14px 16px;margin-bottom:14px;">';
   const visibleIds = visibleBoardProspectIds(t);
@@ -4196,7 +4262,7 @@ function renderThreadProspectList(t){
     const searchText = [recruitingStage() !== 'hs' ? '' : p.rank + ' #' + p.rank, p.name, p.homestate, p.hometown, p.transferFrom, cprPreviousSchool(p)].join(' ').toLowerCase();
     html += renderProspectBoardCard(pid, searchText, cardContext);
   });
-  if (!visibleIds.length) html += '<div class="rb-card" style="padding:28px;text-align:center;color:var(--slate);">No players match these filters.</div>';
+  if (!visibleIds.length) html += '<div class="rb-card" style="padding:28px;text-align:center;color:var(--slate);">' + (isWatchlist && !t.prospectIds.length ? 'Flag a player on the Prospect Board to add them here.' : 'No players match these filters.') + '</div>';
   html += '</div>';
   return html;
 }
@@ -4213,7 +4279,7 @@ function renderProspectBoardCard(pid, searchAttr, context){
   let html = '<div class="rb-card rb-mobile-tight" data-prospect-card="1" data-position-bucket="' + escapeHtml(bucket) + '" data-search="' + escapeHtml(searchText) + '" data-open-prospect="' + pid + '" style="padding:14px 18px;cursor:pointer;' + (p.transferFrom ? transferCardStyle(p) : (p.commitTeam ? committedCardStyle(p.commitTeam) : '')) + (p.commitTeam ? 'background:linear-gradient(' + teamBorderColor(getTeamBranding(p.commitTeam)) + '18,' + teamBorderColor(getTeamBranding(p.commitTeam)) + '18),var(--panel);' : '') + '">';
   html += '<div style="display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:10px;">';
   html += '<div class="rb-list-identity" style="min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' +
-    '<span class="rb-mono" style="color:var(--slate);">' + recruitNumber(p) + '</span> ' +
+    renderWatchlistFlag(pid) + '<span class="rb-mono" style="color:var(--slate);">' + recruitNumber(p) + '</span> ' +
     '<span title="' + escapeHtml(p.name) + '" style="font-weight:600;color:var(--chalk);">' + renderRecruitName(p.name, 24) + '</span> ' +
     '<span class="rb-mono" style="color:var(--slate);font-size:13px;">' + escapeHtml(p.position) + (p.rating ? '<span class="rb-recruit-rating"> &middot; ' + escapeHtml(p.rating) + '</span>' : '') + '</span>' +
     (p.hometown && recruitingStage() !== 'cpr' ? '<span class="rb-desktop-only" style="color:var(--slate);font-size:13px;"> &middot; <span title="' + escapeHtml(p.hometown) + '">' + escapeHtml(shortText(p.hometown, 28)) + '</span></span>' : '') +
@@ -4524,7 +4590,7 @@ function renderProspectDetail(){
   const offers = DB.offersByProspect[p.id] || [];
   const sessionOffer = SESSION ? findAnyOfferForTeam(p.id, SESSION.team) : null;
   const returnView = UI.prospectReturnView || 'feed';
-  const returnLabel = returnView === 'myoffers' ? 'Back to My Offers' : (returnView === 'mycommits' ? 'Back to My Commits' : (returnView === 'teamcommits' ? 'Back to Team Commits' : (returnView === 'teamoffers' ? 'Back to Team Offers' : 'Back to board')));
+  const returnLabel = returnView === 'watchlist' ? 'Back to My Watchlist' : (returnView === 'myoffers' ? 'Back to My Offers' : (returnView === 'mycommits' ? 'Back to My Commits' : (returnView === 'teamcommits' ? 'Back to Team Commits' : (returnView === 'teamoffers' ? 'Back to Team Offers' : 'Back to board'))));
   let html = '<div style="margin-bottom:16px;"><button class="rb-btn" data-nav="' + escapeHtml(returnView) + '">&larr; ' + escapeHtml(returnLabel) + '</button></div>';
   html += '<div class="rb-card" style="padding:18px 20px;margin-bottom:14px;' + (p.transferFrom ? transferCardStyle(p) : (p.commitTeam ? committedCardStyle(p.commitTeam) : '')) + '">';
   html += '<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;">';
@@ -5131,13 +5197,15 @@ function bindEvents(){
       scrollPageTop();
     };
   });
+  document.querySelectorAll('[data-watchlist-flag]').forEach(function(el){ el.onclick=function(e){ e.preventDefault(); e.stopPropagation(); toggleWatchlist(el.getAttribute('data-watchlist-flag')); }; });
+  const retryWatchlist=document.getElementById('rb-retry-watchlist'); if(retryWatchlist) retryWatchlist.onclick=loadWatchlist;
   document.querySelectorAll('[data-open-prospect]').forEach(function(el){
     el.onclick = function(e){
       e.preventDefault();
       e.stopPropagation();
       // Interacting with an offer (including selecting or dragging its text) must not open the player page.
-      if (e.target && e.target.closest && e.target.closest('.rb-branded-offer')) return;
-      UI.prospectReturnView = UI.view === 'myoffers' || UI.view === 'mycommits' || UI.view === 'teamcommits' || UI.view === 'teamoffers' || UI.view === 'thread' ? UI.view : 'feed';
+      if (e.target && e.target.closest && e.target.closest('.rb-branded-offer, [data-watchlist-flag]')) return;
+      UI.prospectReturnView = UI.view === 'watchlist' || UI.view === 'myoffers' || UI.view === 'mycommits' || UI.view === 'teamcommits' || UI.view === 'teamoffers' || UI.view === 'thread' ? UI.view : 'feed';
       navigateTo('prospect', { prospectId: el.getAttribute('data-open-prospect') });
       scrollPageTop();
     };
@@ -5328,7 +5396,7 @@ function bindEvents(){
     document.querySelectorAll('[data-position-filter]').forEach(function(el){
       const key = el.getAttribute('data-position-filter') || '';
       if (filterKey && key !== filterKey) return;
-      if (key.indexOf(kind + ':') === 0) activeKeys[key] = true;
+      if (key.indexOf((kind === 'teamoffers' ? 'offers' : kind) + ':') === 0) activeKeys[key] = true;
     });
     const filteredCounts = {};
     let visibleCount = 0;
@@ -5373,7 +5441,7 @@ function bindEvents(){
       UI.positionFilters[key][bucket] = !UI.positionFilters[key][bucket];
       el.classList.toggle('rb-position-count-muted', !!UI.positionFilters[key][bucket]);
       el.setAttribute('aria-pressed', UI.positionFilters[key][bucket] ? 'true' : 'false');
-      applyPositionListFilters(key.split(':')[0] || 'offers', key);
+      applyPositionListFilters(UI.view === 'teamoffers' && key.indexOf('offers:') === 0 ? 'teamoffers' : (key.split(':')[0] || 'offers'), key);
     };
   });
 
@@ -5396,7 +5464,7 @@ function bindEvents(){
         chip.classList.toggle('rb-position-count-muted', muted);
         chip.setAttribute('aria-pressed', muted ? 'true' : 'false');
       });
-      applyPositionListFilters(key.split(':')[0] || 'offers', key);
+      applyPositionListFilters(UI.view === 'teamoffers' && key.indexOf('offers:') === 0 ? 'teamoffers' : (key.split(':')[0] || 'offers'), key);
     };
   });
 
@@ -5437,7 +5505,7 @@ function bindEvents(){
   });
   const myOfferSearch = document.getElementById('rb-my-offer-search');
   if (myOfferSearch) myOfferSearch.oninput = function(){
-    applyPositionListFilters('offers');
+    applyPositionListFilters(UI.view === 'teamoffers' ? 'teamoffers' : 'offers');
   };
 
   const myCommitSearch = document.getElementById('rb-my-commit-search');
@@ -5445,6 +5513,7 @@ function bindEvents(){
     applyPositionListFilters('commits');
   };
   applyPositionListFilters('offers');
+  applyPositionListFilters('teamoffers');
   applyPositionListFilters('commits');
   applyPositionListFilters('board');
 
