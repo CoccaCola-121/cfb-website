@@ -24,6 +24,8 @@
 <link rel="stylesheet" href="/fonts/fonts.css">
 <link rel="stylesheet" href="/styles.css" onerror="this.onerror=null;this.href='styles.css'">
 <style>
+/* Match quick scholarship and walk-on button typography exactly. */
+.rb-quick-offer-btn { font-family:Inter,sans-serif; font-size:14px; font-weight:600; line-height:normal; }
 /* Keep the CPR-specific toggle outside the player-filter card. */
 .rb-cpr-board-heading { display:grid; grid-template-columns:minmax(0,1fr) auto minmax(0,1fr); align-items:center; gap:12px 24px; margin-bottom:18px; }
 .rb-cpr-board-heading > .rb-toggle { justify-self:end; }
@@ -2872,8 +2874,8 @@ function canQuickOfferScholarship(p){
     !findAnyOfferForTeam(p.id, SESSION.team));
 }
 function renderQuickWalkon(p){
-  if (canQuickOfferWalkon(p)) return '<button type="button" class="rb-btn" data-quick-walkon="' + escapeHtml(p.id) + '"' + (offersLocked() || UI.submitting ? ' disabled' : '') + '>Offer walk-on</button>';
-  if (canQuickOfferScholarship(p)) return '<button type="button" class="rb-btn" data-quick-scholarship="' + escapeHtml(p.id) + '"' + (offersLocked() || UI.submitting ? ' disabled' : '') + '>Offer scholarship</button>';
+  if (canQuickOfferWalkon(p)) return '<button type="button" class="rb-btn rb-quick-offer-btn" data-quick-walkon="' + escapeHtml(p.id) + '"' + (offersLocked() || UI.submitting ? ' disabled' : '') + '>Offer walk-on</button>';
+  if (canQuickOfferScholarship(p)) return '<button type="button" class="rb-btn rb-quick-offer-btn" data-quick-scholarship="' + escapeHtml(p.id) + '"' + (offersLocked() || UI.submitting ? ' disabled' : '') + '>Offer scholarship</button>';
   return '';
 }
 function requestQuickScholarship(pid){
