@@ -1,3 +1,4 @@
+import {readTransactionalState,initializeTransactionalState,writeTransactionalState} from './transactional-state.js';
 import '../../cpr-rules.js';
 import '../../walkon-limit.js';
 import '../../transfer-rules.js';
@@ -44,13 +45,21 @@ export function sanitizeState(input) {
 }
 
 export async function readLeagueState(env) {
-  const state = (await env.AUTH_KV.get(STATE_KEY, 'json')) || null;
+  let state;
+  if(env.LEAGUE_DB){
+    state=await readTransactionalState(env.LEAGUE_DB);
+    if(!state){
+      const legacy=await env.AUTH_KV.get(STATE_KEY,'json');
+      if(legacy)state=await initializeTransactionalState(env.LEAGUE_DB,legacy);
+    }
+  } else state=(await env.AUTH_KV.get(STATE_KEY,'json')) || null;
   return state ? globalThis.NZCFLTransferRules.cleanCommitOverrides(state) : null;
 }
 
-export async function writeLeagueState(env, state) {
+export async function writeLeagueState(env, state, previous = state) {
   globalThis.NZCFLWalkonLimit.apply(state);
   const clean = sanitizeState(globalThis.NZCFLTransferRules.cleanCommitOverrides(state || {}));
+  if(env.LEAGUE_DB)return writeTransactionalState(env.LEAGUE_DB,clean,previous);
   await env.AUTH_KV.put(STATE_KEY, JSON.stringify(clean));
   return clean;
 }
@@ -76,6 +85,6 @@ export async function purgeOffersForTeam(env, teamName) {
     ...state,
     offersByProspect: nextOffers,
     teamOfferPurgedAt: Date.now(),
-  });
+  },state);
   return { state: clean, purgedOffers };
 }

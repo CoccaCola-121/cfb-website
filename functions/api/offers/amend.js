@@ -25,5 +25,5 @@ export async function onRequestPost({request,env,waitUntil}){
   const saved=await writeLeagueState(env,state);
   queueLeagueBackup(env,saved,waitUntil,{source:'offer-amendment'});
   return json({ok:true,state:saved});
- }catch(error){return json({ok:false,error:error.message || 'Could not update the offer.'},{status:400});}
+ }catch(error){return json({ok:false,error:error.message || 'Could not update the offer.'},{status:error.status || 400});}
 }

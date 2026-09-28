@@ -921,6 +921,7 @@ function mergeLeagueState(state){
   ['scholarshipCapacity','bucksRemaining','scholarshipHistory','scholarshipSource','fullRoster','recruitingStage','released','wave1Released','wave2Released','prospects','threads','offersByProspect','unmatched','teams','teamBranding','commitSheetUrl','commitUpdatedAt','discordCommitUpdatedAt','discordCommitChannelId','commitSeasonEnded','defaultClassLoaded','offersLocked','offerSchedule','dangerApprovals','conditionalRescinds','manualCommitOverrides'].forEach(function(field){
     if (Object.prototype.hasOwnProperty.call(state, field)) DB[field] = state[field];
   });
+  DB.updatedAt=state.updatedAt;
   applyManualCommitOverrides();
   const after = JSON.stringify({
     offersByProspect: DB.offersByProspect,
@@ -940,9 +941,11 @@ async function syncLeagueState(renderAfter, options){
   options = options || {};
   if (!options.force && Date.now() - lastLocalChangeAt < 2500) return false;
   try {
-    const res = await fetch('/api/league/state', { credentials: 'include' });
+    const res = await fetch('/api/league/state', { credentials: 'include', headers:UI.strongStorage && DB.updatedAt ? {'if-none-match':'"'+DB.updatedAt+'"'} : {} });
+    if(res.status===304)return false;
     if (!res.ok) return false;
     const data = await res.json();
+    UI.strongStorage=data.storage==='d1';
     const changed = mergeLeagueState(data.state);
     if (changed && renderAfter && !UI.showSubmitModal && !UI.editOfferTarget) render();
     return changed;
@@ -969,13 +972,16 @@ async function saveDBRemote(){
   const localStamp = Date.now();
   lastRemoteSaveAt = localStamp;
   try {
-    await fetch('/api/league/state', {
+    const response=await fetch('/api/league/state', {
       method: 'PUT',
       credentials: 'include',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ state: payload })
+      body: JSON.stringify({ state: payload, expectedUpdatedAt:DB.updatedAt || null })
     });
-  } catch (e) { /* next local save or poll can retry */ }
+    const saved=await response.json();
+    if(!response.ok || !saved.ok)throw Error(saved.error || 'Changes were not saved.');
+    DB.updatedAt=saved.state.updatedAt;
+  } catch (e) { UI.lastSummary={errorText:e.message || 'Changes were not saved. Please retry.'}; render(); }
 }
 
 async function saveDBNow(){
@@ -2838,8 +2844,34 @@ async function quickOfferWalkon(pid){
 }
 
 let lastOfferWriteAt = 0;
+async function submitCompactCpr(rawText,quickId){
+  const key=offerDraftKey();if(!quickId)captureOfferDraft();
+  const name=document.getElementById('rb-cpr-offer-name'),position=document.getElementById('rb-cpr-offer-position');
+  const body={requestId:crypto.randomUUID(),prospectId:quickId || UI.submitTargetId,text:rawText,quick:!!quickId,name:name?.value || '',position:position?.value || '',promises:extractPromises(rawText)};
+  UI.submitting=true;
+  try{
+    let data;
+    for(let attempt=0;attempt<3;attempt++){
+      try{
+        const response=await fetch('/api/offers/submit',{method:'POST',credentials:'include',headers:{'content-type':'application/json'},body:JSON.stringify(body)});
+        data=await response.json();
+        if(!response.ok || !data.ok){const error=Error(data.error || 'Could not save offer.');error.retryable=response.status>=500 || response.status===429;throw error;}
+        break;
+      }catch(error){if(error.retryable===false || error.retryable==null && error.message && !/fetch|network|json|token/i.test(error.message) || attempt===2)throw error;await new Promise(resolve=>setTimeout(resolve,500*(attempt+1)));}
+    }
+    const p=data.prospect;DB.prospects[p.id]=p;
+    const offers=DB.offersByProspect[p.id] || [];DB.offersByProspect[p.id]=[...offers.filter(o=>o.id!==data.offer.id),data.offer];
+    if(data.thread && !DB.threads.some(t=>t.id===data.thread.id))DB.threads.push(data.thread);
+    if(!quickId)clearOfferDraft(key);
+    UI.showSubmitModal=false;UI.submitTargetId=null;UI.lastSummary={matched:1,unmatched:0,total:1,dismissAt:Date.now()+6000};
+    UI.submitting=false;render();
+  }catch(error){if(quickId)UI.lastSummary={errorText:error.message};else {const node=document.getElementById('rb-submit-error');if(node)node.textContent=error.message;}}
+  finally{UI.submitting=false;if(quickId)render();}
+}
+
 async function submitCprOffer(rawText, quickId){
   if (!SESSION || UI.submitting || !rawText.trim()) return;
+  if(apiAvailable() && UI.strongStorage)return submitCompactCpr(rawText,quickId);
   const draftKey=offerDraftKey();
   if (!quickId) captureOfferDraft();
   const nameInput=document.getElementById('rb-cpr-offer-name');
@@ -3689,6 +3721,15 @@ function visitLineForOffer(row){
   '</div>';
 }
 
+function renderOwnTypeFilter(kind){
+  const value=(UI.ownTypeFilters || {})[kind] || '';
+  return '<div class="rb-segmented rb-own-type-filter" aria-label="Offer type">'+[['','All'],['walkon','Walk-On'],['scholarship','Scholarship']].map(([type,label])=>'<button type="button" data-own-type-kind="'+kind+'" data-own-type="'+type+'" aria-pressed="'+(value===type)+'">'+label+'</button>').join('')+'</div>';
+}
+function ownOfferTypeBadge(o,p){
+  const type=NZCFLAutoCommits.offerKind(DB,p,o);
+  return '<span class="rb-tag rb-own-offer-type">'+(type==='walkon'?'Walk-On':'Scholarship')+'</span>'+ (type==='walkon' && SESSION && teamKey(o.team)===teamKey(SESSION.team) && !o.rescinded && !p.commitTeam && !offersLocked() ? '<button class="rb-btn rb-upgrade-small" data-amend-action="upgrade" data-amend-prospect="'+escapeHtml(p.id)+'" data-amend-offer="'+escapeHtml(o.id)+'">Upgrade</button>' : '');
+}
+
 function renderMyOffers(){
   if (!SESSION){
     return '<div class="rb-card" style="padding:32px;text-align:center;color:var(--slate);">Log in to view your offers.</div>';
@@ -3702,6 +3743,7 @@ function renderMyOffers(){
   html += renderPositionCounts(rows, function(row){ return row.prospect && row.prospect.position; }, filterKey);
   html += '<div style="margin-bottom:12px;"><button class="rb-btn rb-btn-gold" id="rb-open-submit" ' + (offersLocked() ? 'disabled title="Offers are locked"' : '') + '>' + (offersLocked() ? 'Offers locked' : 'Submit offer') + '</button></div>';
   if (recruitingStage() === 'cpr') html += '<p class="rb-transfer-limit">Your offer goes to the matching player thread, or creates one from the free-agent list.</p>';
+  html += renderOwnTypeFilter('offers');
   html += '<input class="rb-input" id="rb-my-offer-search" placeholder="' + (recruitingStage() === 'transfer' ? 'Search offers by player name' : 'Search your offers by recruit name, rank, or hometown') + '" />';
   if (UI.rescindError) html += '<div style="font-size:12px;color:var(--alert);margin-top:8px;">' + escapeHtml(UI.rescindError) + '</div>';
   html += '</div>';
@@ -3715,7 +3757,7 @@ function renderMyOffers(){
       const o = row.offer;
       const bucket = positionBucket(p.position);
       const searchText = [p.rank, '#' + p.rank, p.name, p.hometown, p.storyline].join(' ').toLowerCase();
-      html += '<div class="rb-card rb-mobile-tight" data-my-offer-card="1" data-position-bucket="' + escapeHtml(bucket) + '" data-search="' + escapeHtml(searchText) + '" style="padding:14px 18px;">';
+      html += '<div class="rb-card rb-mobile-tight" data-my-offer-card="1" data-own-offer-type="' + NZCFLAutoCommits.offerKind(DB,p,o) + '" data-position-bucket="' + escapeHtml(bucket) + '" data-search="' + escapeHtml(searchText) + '" style="padding:14px 18px;">';
       html += '<details>';
       html += '<summary class="rb-offer-summary rb-my-offer-summary-grid" style="list-style:none;cursor:pointer;">';
       html += '<span style="min-width:0;display:flex;flex-direction:column;gap:10px;">';
@@ -3725,12 +3767,13 @@ function renderMyOffers(){
         '<span class="rb-mono" style="color:var(--slate);font-size:13px;flex:0 0 auto;">' + escapeHtml(p.position || '') + (p.rating ? '<span class="rb-recruit-rating"> &middot; ' + escapeHtml(p.rating) + '</span>' : '') + '</span>' +
         (p.hometown ? '<span class="rb-mono rb-desktop-only" style="color:var(--slate);font-size:13px;flex:0 0 auto;">&middot;</span><span class="rb-mono rb-desktop-only" title="' + escapeHtml(p.hometown) + '" style="color:var(--slate);font-size:13px;overflow:hidden;text-overflow:ellipsis;">' + escapeHtml(shortText(p.hometown, 24)) + '</span>' : '') +
       '</span>';
+      html += '<span class="rb-own-offer-type-row">' + ownOfferTypeBadge(o,p) + '</span>';
       html += '<span class="rb-my-offer-visits" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">' + visitBadges(o.visits, true) + '</span>';
       html += '</span>';
       html += '<span class="rb-my-offer-actions" style="display:flex;align-items:center;justify-content:flex-end;gap:8px;white-space:nowrap;">' + (o.rescinded ? '<span class="rb-mono" style="color:var(--alert);font-size:12px;">rescinded</span>' : (p.commitTeam ? '<span class="rb-mono" style="color:var(--slate);font-size:12px;">committed</span>' : (recruitingStage() === 'hs' ? '<button class="rb-btn" data-edit-offer="' + escapeHtml(row.prospectId) + ':' + escapeHtml(o.id) + '">Edit</button>' : '') + '<button class="rb-btn" data-rescind-offer="' + escapeHtml(row.prospectId) + ':' + escapeHtml(o.id) + '">Rescind</button>')) + '</span>';
       html += '<span class="rb-mobile-only rb-offer-expand" aria-hidden="true">' + renderArrow() + '</span>';
       html += '</summary>';
-      html += '<div style="margin-top:10px;">' + renderOfferBlock(o, { prospect: p, expanded: true, fullText: true, hideHeader: true }) + '</div>';
+      html += '<div style="margin-top:10px;">' + renderOfferBlock(o, { prospect: p, expanded: true, fullText: true, hideHeader: true, hideUpgrade: true }) + '</div>';
       html += '</details>';
       html += '</div>';
     });
@@ -3766,6 +3809,7 @@ function renderCommitsForTeam(team, title){
   html += '<div class="rb-h" style="font-size:18px;margin-bottom:6px;">' + escapeHtml(title) + '</div>';
   html += '<div style="font-size:13px;color:var(--slate);margin-bottom:12px;">' + commits.length + ' commit' + (commits.length === 1 ? '' : 's') + ' for ' + escapeHtml(team) + '.</div>';
   html += renderPositionCounts(commits, function(p){ return p && p.position; }, filterKey);
+  html += renderOwnTypeFilter('commits');
   html += '<input class="rb-input" id="rb-my-commit-search" placeholder="' + (recruitingStage() === 'transfer' ? 'Search commits by player name or promise' : 'Search commits by recruit name, rank, hometown, or promise') + '" />';
   html += '</div>';
   if (!commits.length){
@@ -3778,7 +3822,7 @@ function renderCommitsForTeam(team, title){
     const promiseSearch = offers.map(function(o){ return (o.promises || []).map(function(pr){ return pr.text || ''; }).join(' '); }).join(' ');
     const bucket = positionBucket(p.position);
     const searchText = [p.rank, '#' + p.rank, p.name, p.hometown, promiseSearch].join(' ').toLowerCase();
-    html += '<div class="rb-card rb-mobile-tight" data-my-commit-card="1" data-position-bucket="' + escapeHtml(bucket) + '" data-search="' + escapeHtml(searchText) + '" style="padding:14px 18px;">';
+    html += '<div class="rb-card rb-mobile-tight" data-my-commit-card="1" data-own-offer-type="' + NZCFLAutoCommits.commitKind(DB,p.id,p) + '" data-position-bucket="' + escapeHtml(bucket) + '" data-search="' + escapeHtml(searchText) + '" style="padding:14px 18px;">';
     html += '<details>';
     html += '<summary class="rb-offer-summary" style="list-style:none;cursor:pointer;">';
     html += '<div class="rb-commit-summary-layout">';
@@ -4493,13 +4537,13 @@ function renderProspectDetail(){
   return html;
 }
 
-function renderOfferAmendments(o,p){
+function renderOfferAmendments(o,p,hideUpgrade){
   if (!p || !SESSION || teamKey(o.team)!==teamKey(SESSION.team) || o.rescinded || p.commitTeam || offersLocked()) return '';
   const h=NZCFLOfferAmendments.header(o.text);
   const attrs=' data-amend-prospect="'+escapeHtml(p.id)+'" data-amend-offer="'+escapeHtml(o.id)+'"';
   let buttons='';
   if(h.offerLine<0 || h.typeLine<0)buttons+='<button class="rb-btn" data-amend-action="header"'+attrs+'>Add offer header</button>';
-  if(h.type==='walkon')buttons+='<button class="rb-btn" data-amend-action="upgrade"'+attrs+'>Upgrade to scholarship</button>';
+  if(h.type==='walkon' && !hideUpgrade)buttons+='<button class="rb-btn" data-amend-action="upgrade"'+attrs+'>Upgrade to scholarship</button>';
   return buttons ? '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px;">'+buttons+'</div>' : '';
 }
 async function amendOwnOffer(pid,oid,action){
@@ -4545,7 +4589,7 @@ function renderOfferBlock(o, opts){
   if (o.rescinded && o.rescindReason) html += '<div class="rb-mono" style="font-size:11px;color:var(--slate);margin-top:6px;">' + escapeHtml(o.rescindReason) + '</div>';
   const scrollStyle = opts.fullText ? '' : 'max-height:140px;overflow:auto;';
   html += '<div style="font-size:13px;color:var(--chalk);margin-top:6px;white-space:pre-wrap;' + scrollStyle + '" class="rb-scrollbar rb-offer-body">' + formatOfferText(o.text, cleanDisplayPromises(o)) + '</div>';
-  html += renderOfferAmendments(o,opts.prospect);
+  html += renderOfferAmendments(o,opts.prospect,opts.hideUpgrade);
   const displayPromises = !o.rescinded ? cleanDisplayPromises(o) : [];
   if (displayPromises.length){
     html += '<div style="margin-top:8px;">';
@@ -5180,6 +5224,12 @@ function bindEvents(){
     };
   });
 
+  document.querySelectorAll('[data-own-type-kind]').forEach(function(button){button.onclick=function(){
+    const kind=button.getAttribute('data-own-type-kind');
+    UI.ownTypeFilters=UI.ownTypeFilters || {};UI.ownTypeFilters[kind]=button.getAttribute('data-own-type');
+    document.querySelectorAll('[data-own-type-kind]').forEach(function(item){if(item.getAttribute('data-own-type-kind')===kind)item.setAttribute('aria-pressed',String(item===button));});
+    applyPositionListFilters(kind);
+  };});
   function applyPositionListFilters(kind, filterKey){
     const search = kind === 'commits' ? document.getElementById('rb-my-commit-search') : (kind === 'board' ? document.querySelector('[data-thread-search]') : document.getElementById('rb-my-offer-search'));
     const q = search ? search.value.toLowerCase().trim() : '';
@@ -5204,7 +5254,8 @@ function bindEvents(){
       const eligible = !p || ((!UI.transferGrade || (p.grade || 'Not listed') === UI.transferGrade) && (!UI.transferYears || String(p.yearsLeft) === String(UI.transferYears)));
       const recruitType = p && (isPitchRecruit(p) ? 'pitch' : (NZCFLCprRules.scholarshipRecruit(p, DB.offersByProspect[p.id] || []) ? 'scholarship' : 'walkon'));
       const matchesType = recruitingStage() !== 'cpr' || !p || !UI.cprTypeFilter || recruitType === UI.cprTypeFilter;
-      const matches = (!q || haystack.indexOf(q) !== -1) && eligible && matchesType;
+      const ownType=(UI.ownTypeFilters || {})[kind];
+      const matches = (!q || haystack.indexOf(q) !== -1) && eligible && matchesType && (!ownType || card.getAttribute('data-own-offer-type')===ownType);
       if (matches) filteredCounts[bucket] = (filteredCounts[bucket] || 0) + 1;
       card.style.display = matches && !hiddenByPosition ? '' : 'none';
       if (matches && !hiddenByPosition) visibleCount++;

@@ -8,8 +8,16 @@ import { json } from '../../_lib/auth.js';
 import { queueLeagueBackup } from '../../_lib/backup.js';
 import { readLeagueState, writeLeagueState } from '../../_lib/league-state.js';
 
-export async function onRequestGet({ env }) {
-  try { const state = await readLeagueState(env); return json({ ok: true, state: state || null }); }
+export async function onRequestGet({ env, request }) {
+  try {
+    if(env.LEAGUE_DB && request?.headers.get('if-none-match')){
+      const head=await env.LEAGUE_DB.prepare('SELECT version FROM league_head WHERE id=1').all();
+      const version=head.results?.[0]?.version;
+      if(version && request.headers.get('if-none-match')==='"'+version+'"')return new Response(null,{status:304,headers:{etag:'"'+version+'"','cache-control':'private, no-cache'}});
+    }
+    const state=await readLeagueState(env);
+    return json({ok:true,state:state || null,storage:env.LEAGUE_DB?'d1':'kv'},{headers:{etag:'"'+(state?.updatedAt || 0)+'"','cache-control':'private, no-cache'}});
+  }
   catch { return json({ok:false,error:'The board is temporarily busy. Please retry shortly.'},{status:503}); }
 }
 
@@ -18,6 +26,7 @@ export async function onRequestPut({ request, env, waitUntil }) {
   const body = await request.json().catch(() => ({}));
   const incoming = body.state || body;
   const previous = await readLeagueState(env);
+  if(env.LEAGUE_DB && !Object.prototype.hasOwnProperty.call(body,'expectedUpdatedAt'))return json({ok:false,error:'Refresh the page before saving; this tab uses an older version.'},{status:409});
   if (Object.prototype.hasOwnProperty.call(body,'expectedUpdatedAt') && (previous && previous.updatedAt || null) !== body.expectedUpdatedAt) return json({ok:false,error:'The league changed before saving. Your draft is intact; try Save again.'},{status:409});
   // Preserve new settings when an older open browser tab submits its existing payload.
   for (const field of ['scholarshipCapacity','bucksRemaining']) {
@@ -64,8 +73,8 @@ export async function onRequestPut({ request, env, waitUntil }) {
     const error = globalThis.NZCFLTransferRules.pitchLimitError(item.offerText, null, incoming.recruitingStage);
     if (error) return json({ ok: false, error }, { status: 400 });
   }
-  const state = await writeLeagueState(env, incoming);
+  const state = await writeLeagueState(env, incoming, previous);
   queueLeagueBackup(env, state, waitUntil, { source: 'league-state-save' });
   return json({ ok: true, state });
- }catch(error){ return json({ok:false,error:'The board could not save yet. Your draft is preserved; please retry shortly.'},{status:503}); }
+ }catch(error){ return json({ok:false,error:error.status===409?error.message:'The board could not save yet. Your draft is preserved; please retry shortly.'},{status:error.status || 503}); }
 }

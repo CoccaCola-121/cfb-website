@@ -240,7 +240,7 @@ button, a, input, select, textarea, summary { -webkit-tap-highlight-color: trans
 .rb-team-card-actions .rb-input { height: 36px; }
 .rb-team-unlinked { color: var(--slate); font-size: 12px; }
 .rb-coach-pill {
-  display: inline-flex;
+  display: inline-block;
   align-items: center;
   justify-content: center;
   min-height: 30px;
@@ -251,7 +251,9 @@ button, a, input, select, textarea, summary { -webkit-tap-highlight-color: trans
   font-size: 13px;
   font-weight: 700;
   color: var(--chalk);
-  white-space: nowrap;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  text-align: center;
   overflow: hidden;
   text-overflow: ellipsis;
 }
@@ -870,3 +872,8 @@ html { scrollbar-gutter: stable; }
 .rb-floating-submit > .rb-card { pointer-events:auto; box-shadow:0 4px 20px rgba(0,0,0,.3); }
 
 [data-prospect-card] [data-quick-walkon] { font-size:12px; padding:8px 12px; }
+
+.rb-own-type-filter { margin-bottom:12px; width:max-content; max-width:100%; }
+.rb-own-offer-type-row { display:flex; gap:6px; align-items:center; flex-wrap:wrap; }
+.rb-own-offer-type { margin:0; }
+.rb-upgrade-small { font-size:11px; padding:5px 8px; }
