@@ -44,6 +44,14 @@
 .rb-watchlist-flag:hover { background:rgba(160,164,168,.13); }
 .rb-watchlist-flag:focus-visible { outline:2px solid var(--gold); outline-offset:2px; }
 .rb-watchlist-flag:disabled { cursor:wait; opacity:.5; }
+.rb-watchlist-bulk-row { display:flex; justify-content:flex-start; margin:0 0 14px; }
+.rb-watchlist-bulk-button { display:inline-flex; align-items:center; gap:8px; padding:8px 13px; border:1px solid var(--hairline); border-radius:8px; background:var(--panel-alt); color:var(--chalk); font:600 12px Inter, sans-serif; cursor:pointer; }
+.rb-watchlist-bulk-button:hover:not(:disabled) { border-color:var(--slate); }
+.rb-watchlist-bulk-button:disabled { opacity:.55; cursor:not-allowed; }
+.rb-watchlist-bulk-button svg { width:15px; height:18px; fill:currentColor; color:var(--slate); }
+.rb-watchlist-bulk-dialog { padding:24px; width:440px; max-width:90vw; }
+.rb-watchlist-bulk-dialog p { margin:12px 0 22px; color:var(--slate); line-height:1.5; }
+.rb-watchlist-bulk-dialog-actions { display:flex; justify-content:flex-end; gap:9px; flex-wrap:wrap; }
 </style>
 </head>
 <body>
@@ -104,7 +112,7 @@ let UI = { view: 'feed', threadId: null, showSubmitModal: false, submitting: fal
            backupStatus: null, backupError: null, backingUp: false,
            teamAdminModal: null, brandingFileName: '', adminActionStatus: null, adminActionError: null,
            commitOverrideRank: '', commitOverrideTeam: '', commitOverrideStatus: null, commitOverrideError: null,
-           pendingCommitOverride: null, pendingClearCommit: null, positionFilters: {}, boardSearch: '', threadSearches: {}, hideMyOffers: false, watchlistIds: [], watchlistLoaded: false, watchlistError: '', watchlistTeam: '', watchlistStage: '', watchlistPending: {} };
+           pendingCommitOverride: null, pendingClearCommit: null, positionFilters: {}, boardSearch: '', threadSearches: {}, hideMyOffers: false, watchlistIds: [], watchlistLoaded: false, watchlistError: '', watchlistTeam: '', watchlistStage: '', watchlistPending: {}, pendingWatchlistBulk: null, watchlistBulkSaving: false };
 let dbReady = false, sessionReady = false;
 let summaryTimer = null;
 let leagueSyncTimer = null;
@@ -2064,7 +2072,7 @@ async function logout(){
     try { await fetch('/api/auth/logout', { method: 'POST', credentials: 'include' }); } catch (e) {}
   }
   SESSION = null;
-  UI.watchlistIds = []; UI.watchlistLoaded = false; UI.watchlistTeam = ''; UI.watchlistStage = ''; UI.watchlistError = ''; UI.watchlistPending = {};
+  UI.watchlistIds = []; UI.watchlistLoaded = false; UI.watchlistTeam = ''; UI.watchlistStage = ''; UI.watchlistError = ''; UI.watchlistPending = {}; UI.pendingWatchlistBulk = null;
   UI.pendingDiscordUser = null;
   UI.loginStep = 'account';
   UI.teamLinkQuery = '';
@@ -3167,6 +3175,7 @@ function render(){
   if (UI.pendingMassRescind) html += renderMassRescindModal();
   if (UI.pendingMassRescindFinal) html += renderMassRescindFinalModal();
   if (UI.pendingQuickWalkon) html += renderQuickWalkonConfirm();
+  if (UI.pendingWatchlistBulk) html += renderWatchlistBulkConfirm();
   if (UI.pendingSingleRescind) html += renderSingleRescindConfirmModal();
   if (UI.pendingUpgrade) html += renderUpgradeConfirmModal();
   if (UI.headerEdit) html += renderHeaderEditModal();
@@ -4124,8 +4133,52 @@ function renderWatchlistFlag(pid){
   const disabled = !UI.watchlistLoaded || !!UI.watchlistPending[pid];
   return '<button type="button" class="rb-watchlist-flag" data-watchlist-flag="' + escapeHtml(pid) + '" aria-pressed="' + active + '" aria-label="' + (active ? 'Remove from My Watchlist' : 'Add to My Watchlist') + '" title="' + (active ? 'Remove from My Watchlist' : 'Add to My Watchlist') + '"' + (disabled ? ' disabled' : '') + '><svg viewBox="0 0 20 24" aria-hidden="true"><path d="M3 1.5v21h2V14c4-2.4 6 2.5 12-1.4V2.9C11 6.8 9 .2 5 2.3v-.8H3z"/></svg></button>';
 }
+function visibleUnflaggedBoardIds(){
+  return [...new Set(Array.from(document.querySelectorAll('[data-prospect-card][data-open-prospect]'))
+    .filter(card => card.style.display !== 'none')
+    .map(card => card.getAttribute('data-open-prospect')))]
+    .filter(pid => !!DB.prospects[pid] && !UI.watchlistIds.includes(pid));
+}
+function requestWatchlistBulk(action){
+  if (!SESSION || !UI.watchlistLoaded || UI.watchlistBulkSaving) return;
+  if (action === 'clear') {
+    if (UI.view !== 'watchlist' || !UI.watchlistIds.length) return;
+    UI.pendingWatchlistBulk = { action:'clear', count:UI.watchlistIds.length };
+  } else {
+    if (UI.view !== 'feed' && UI.view !== 'thread') return;
+    const ids = visibleUnflaggedBoardIds();
+    if (!ids.length) return;
+    UI.pendingWatchlistBulk = { action:'add-many', ids:ids, count:ids.length };
+  }
+  render();
+}
+function renderWatchlistBulkConfirm(){
+  const pending=UI.pendingWatchlistBulk;
+  if (!pending) return '';
+  const adding=pending.action==='add-many';
+  return '<div style="position:fixed;inset:0;background:rgba(0,0,0,.72);display:flex;align-items:center;justify-content:center;z-index:75;" role="presentation"><div class="rb-card rb-watchlist-bulk-dialog" role="dialog" aria-modal="true" aria-labelledby="rb-watchlist-bulk-title">' +
+    '<div class="rb-h" id="rb-watchlist-bulk-title" style="font-size:20px;">' + (adding?'Add all to watchlist?':'Clear watchlist?') + '</div>' +
+    '<p>' + (adding ? 'This will add ' + pending.count + ' ' + (pending.count===1?'player':'players') + ' to your watchlist.' : 'This will remove all ' + pending.count + ' ' + (pending.count===1?'player':'players') + ' from your watchlist, including any hidden by filters.') + '</p>' +
+    '<div class="rb-watchlist-bulk-dialog-actions"><button type="button" class="rb-btn" id="rb-cancel-watchlist-bulk">Cancel</button><button type="button" class="rb-btn rb-btn-gold" id="rb-confirm-watchlist-bulk">' + (adding?'Add players':'Clear watchlist') + '</button></div></div></div>';
+}
+async function confirmWatchlistBulk(){
+  const pending=UI.pendingWatchlistBulk;
+  if (!pending || UI.watchlistBulkSaving || !SESSION || !UI.watchlistLoaded) return;
+  const team=teamKey(SESSION.team), stage=recruitingStage();
+  UI.watchlistBulkSaving=true;
+  UI.pendingWatchlistBulk=null;
+  render();
+  try {
+    const response=await fetch('/api/watchlist',{method:'POST',credentials:'include',headers:{'content-type':'application/json'},body:JSON.stringify(pending.action==='clear'?{action:'clear'}:{action:'add-many',ids:pending.ids})});
+    if (!(response.headers.get('content-type') || '').includes('application/json')) throw Error('Watchlist API is outdated. Deploy the updated functions/api/watchlist.js first.');
+    const data=await response.json();
+    if (!response.ok || !data.ok) throw Error(data.error || 'Could not update watchlist.');
+    if (SESSION && teamKey(SESSION.team)===team && recruitingStage()===stage) UI.watchlistIds=Array.isArray(data.ids)?data.ids:[];
+  } catch(error) { UI.lastSummary={errorText:error.message || 'Could not update watchlist.'}; }
+  finally { UI.watchlistBulkSaving=false; render(); }
+}
 async function toggleWatchlist(pid){
-  if (!SESSION || !UI.watchlistLoaded || UI.watchlistPending[pid] || !DB.prospects[pid]) return;
+  if (!SESSION || !UI.watchlistLoaded || UI.watchlistBulkSaving || UI.watchlistPending[pid] || !DB.prospects[pid]) return;
   const team=teamKey(SESSION.team), stage=recruitingStage();
   UI.watchlistPending[pid]=true;
   document.querySelectorAll('[data-watchlist-flag="' + cssEscape(pid) + '"]').forEach(btn=>{btn.disabled=true;});
@@ -4255,6 +4308,10 @@ function renderThreadProspectList(t, options){
   html += '</div>';
   if (recruitingStage() !== 'hs') html += '</div>';
   html += '</div>';
+  if (isWatchlist || UI.view === 'feed' || UI.view === 'thread') {
+    const clear=isWatchlist;
+    html += '<div class="rb-watchlist-bulk-row"><button type="button" class="rb-watchlist-bulk-button" id="rb-watchlist-bulk-action" data-watchlist-bulk="' + (clear?'clear':'add-many') + '"' + (!UI.watchlistLoaded || UI.watchlistBulkSaving || (clear && !UI.watchlistIds.length) ? ' disabled' : '') + '><svg viewBox="0 0 20 24" aria-hidden="true"><path d="M3 1.5v21h2V14c4-2.4 6 2.5 12-1.4V2.9C11 6.8 9 .2 5 2.3v-.8H3z"/></svg>' + (clear?'Clear watchlist':'Add all to watchlist') + '</button></div>';
+  }
 
   html += '<div class="' + (recruitingStage() !== 'hs' ? 'rb-transfer-results' : '') + '" style="display:flex;flex-direction:column;gap:10px;">';
   visibleIds.forEach(function(pid){
@@ -5200,6 +5257,12 @@ function bindEvents(){
   });
   document.querySelectorAll('[data-watchlist-flag]').forEach(function(el){ el.onclick=function(e){ e.preventDefault(); e.stopPropagation(); toggleWatchlist(el.getAttribute('data-watchlist-flag')); }; });
   const retryWatchlist=document.getElementById('rb-retry-watchlist'); if(retryWatchlist) retryWatchlist.onclick=loadWatchlist;
+  const bulkWatchlist=document.getElementById('rb-watchlist-bulk-action');
+  if (bulkWatchlist) bulkWatchlist.onclick=function(){requestWatchlistBulk(bulkWatchlist.getAttribute('data-watchlist-bulk'));};
+  const cancelBulkWatchlist=document.getElementById('rb-cancel-watchlist-bulk');
+  if (cancelBulkWatchlist) cancelBulkWatchlist.onclick=function(){UI.pendingWatchlistBulk=null;render();};
+  const confirmBulkWatchlist=document.getElementById('rb-confirm-watchlist-bulk');
+  if (confirmBulkWatchlist) confirmBulkWatchlist.onclick=confirmWatchlistBulk;
   document.querySelectorAll('[data-open-prospect]').forEach(function(el){
     el.onclick = function(e){
       e.preventDefault();
