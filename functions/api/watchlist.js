@@ -38,6 +38,18 @@ export async function onRequestPost({request,env}) {
     const ctx = await context(request,env);
     if (ctx.error) return ctx.error;
     const body = await request.json().catch(()=>({}));
+    if (body.action === 'clear') {
+      await env.AUTH_KV.put(ctx.key,JSON.stringify([]));
+      return json({ok:true,ids:[]},{headers:cacheHeaders});
+    }
+    if (body.action === 'add-many') {
+      if (!Array.isArray(body.ids) || body.ids.length > 5000 || body.ids.some(id => typeof id !== 'string' || !Object.prototype.hasOwnProperty.call(ctx.state.prospects || {},id)))
+        return json({ok:false,error:'Select valid players from the current board.'},{status:400,headers:cacheHeaders});
+      const existing = present(await env.AUTH_KV.get(ctx.key,'json'),ctx.state);
+      const next = [...new Set([...existing,...body.ids])];
+      await env.AUTH_KV.put(ctx.key,JSON.stringify(next));
+      return json({ok:true,ids:next},{headers:cacheHeaders});
+    }
     if(typeof body.prospectId !== 'string' || !Object.prototype.hasOwnProperty.call(ctx.state.prospects || {},body.prospectId) || typeof body.flagged !== 'boolean')
       return json({ok:false,error:'Select a valid player and flag state.'},{status:400,headers:cacheHeaders});
     const ids = present(await env.AUTH_KV.get(ctx.key,'json'),ctx.state);
