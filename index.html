@@ -82,7 +82,7 @@ let UI = { view: 'feed', threadId: null, showSubmitModal: false, submitting: fal
            backupStatus: null, backupError: null, backingUp: false,
            teamAdminModal: null, brandingFileName: '', adminActionStatus: null, adminActionError: null,
            commitOverrideRank: '', commitOverrideTeam: '', commitOverrideStatus: null, commitOverrideError: null,
-           pendingCommitOverride: null, pendingClearCommit: null, positionFilters: {}, boardSearch: '', threadSearches: {} };
+           pendingCommitOverride: null, pendingClearCommit: null, positionFilters: {}, boardSearch: '', threadSearches: {}, hideMyOffers: false };
 let dbReady = false, sessionReady = false;
 let summaryTimer = null;
 let leagueSyncTimer = null;
@@ -141,6 +141,7 @@ function resetBoardFilters(){
   }
   UI.boardCommitFilter = 'all';
   UI.boardOfferFilter = 'all';
+  UI.hideMyOffers = false;
   UI.hideCommittedBoards = false;
 }
 
@@ -642,6 +643,7 @@ function visibleBoardProspectIds(t){
     const offered = (DB.offersByProspect[pid] || []).some(function(o){ return !o.rescinded; });
     if (UI.boardOfferFilter === 'offered' && !offered) return false;
     if (UI.boardOfferFilter === 'unoffered' && offered) return false;
+    if (UI.hideMyOffers && SESSION && (DB.offersByProspect[pid] || []).some(function(o){ return o && !o.rescinded && teamKey(o.team) === teamKey(SESSION.team); })) return false;
     if (filter === 'committed') return !!p.commitTeam;
     if (filter === 'uncommitted') return !p.commitTeam;
     return true;
@@ -3729,7 +3731,7 @@ function renderOwnTypeFilter(kind){
 }
 function ownOfferTypeBadge(o,p){
   const type=NZCFLAutoCommits.offerKind(DB,p,o);
-  return '<span class="rb-tag rb-own-offer-type" style="display:inline-flex;align-items:center;background:rgba(140,146,158,.09);border:1px solid var(--hairline);border-radius:20px;color:var(--slate);font-size:11px;font-weight:600;letter-spacing:.04em;padding:5px 10px;cursor:default;user-select:none;">'+(type==='walkon'?'Walk-On':'Scholarship')+'</span>'+ (type==='walkon' && SESSION && teamKey(o.team)===teamKey(SESSION.team) && !o.rescinded && !p.commitTeam && !offersLocked() ? '<button class="rb-btn rb-btn-gold rb-upgrade-small" data-amend-action="upgrade" data-amend-prospect="'+escapeHtml(p.id)+'" data-amend-offer="'+escapeHtml(o.id)+'">Upgrade</button>' : '');
+  return '<span class="rb-tag rb-own-offer-type rb-own-offer-status" aria-label="Offer status" style="display:inline-flex;align-items:center;background:rgba(140,146,158,.09);border:1px solid var(--hairline);border-radius:20px;color:var(--slate);font-size:11px;font-weight:600;letter-spacing:.04em;padding:5px 10px;cursor:default;user-select:none;">'+(type==='walkon'?'Walk-On':'Scholarship')+'</span>'+ (type==='walkon' && SESSION && teamKey(o.team)===teamKey(SESSION.team) && !o.rescinded && !p.commitTeam && !offersLocked() ? '<button class="rb-btn rb-btn-gold rb-upgrade-small" data-amend-action="upgrade" data-amend-prospect="'+escapeHtml(p.id)+'" data-amend-offer="'+escapeHtml(o.id)+'">Upgrade</button>' : '');
 }
 
 function renderMyOffers(){
@@ -4163,6 +4165,7 @@ function renderThreadProspectList(t){
   });
   html += '</div></div>';
   html += '<div class="rb-filter-row"><div class="rb-segmented" aria-label="Offer status">' + [['offered','Offered'],['all','All'],['unoffered','Unoffered']].map(function(option){ return '<button type="button" data-board-offer-filter="' + option[0] + '" aria-pressed="' + ((UI.boardOfferFilter || 'all') === option[0]) + '">' + option[1] + '</button>'; }).join('') + '</div></div>';
+  html += '<div class="rb-filter-row" style="justify-content:flex-end;margin-top:12px;"><label class="rb-toggle"><span>Hide my offers</span><input type="checkbox" id="rb-hide-my-offers" ' + (UI.hideMyOffers ? 'checked' : '') + ' /><span class="rb-switch-track"><span class="rb-switch-thumb"></span></span></label></div>';
   html += '</div>';
   if (recruitingStage() !== 'hs') html += '</div>';
   html += '</div>';
@@ -4589,26 +4592,22 @@ function renderHeaderEditModal(){
   return '<div style="position:fixed;inset:0;background:rgba(0,0,0,.72);display:flex;align-items:center;justify-content:center;z-index:65;">' +
   '<div class="rb-card" style="padding:24px;width:560px;max-width:92vw;border-color:var(--gold);">' +
   '<div class="rb-h" style="font-size:20px;margin-bottom:8px;">Edit offer header</div>' +
-  '<p style="font-size:13px;color:var(--slate);line-height:1.5;">Only the opening offer line and offer-type line can be changed. The body of the offer is protected. Changes are timestamped in edit history.</p>' +
+  '<p style="font-size:13px;color:var(--slate);line-height:1.5;">Correct the opening offer line. The offer type and body stay unchanged. Changes are timestamped in edit history.</p>' +
   '<label style="display:block;font-size:12px;margin:12px 0 5px;" for="rb-header-line">Offer line</label>' +
   '<input id="rb-header-line" class="rb-input" maxlength="120" value="'+escapeHtml(edit.line || '')+'" placeholder="Michigan State offers K John Smith" />' +
-  '<label style="display:block;font-size:12px;margin:12px 0 5px;" for="rb-header-type">Offer type</label>' +
-  '<select id="rb-header-type" class="rb-input"><option value="scholarship"'+(edit.type==='scholarship'?' selected':'')+'>Scholarship</option><option value="walkon"'+(edit.type==='walkon'?' selected':'')+'>Walk-On</option></select>' +
-  '<p style="font-size:12px;color:var(--slate);">Changing walk-on versus scholarship status requires the separate Upgrade action; this editor can correct its wording only.</p>' +
   (edit.error?'<p role="alert" style="font-size:12px;color:var(--alert);">'+escapeHtml(edit.error)+'</p>':'') +
   '<div style="display:flex;justify-content:flex-end;gap:8px;margin-top:18px;"><button class="rb-btn" id="rb-cancel-header-edit">Cancel</button><button class="rb-btn rb-btn-gold" id="rb-save-header-edit"'+(UI.submitting?' disabled':'')+'>Save header</button></div></div></div>';
 }
 async function saveHeaderEdit(){
  const edit=UI.headerEdit;if(!edit || UI.submitting)return;
- const line=document.getElementById('rb-header-line').value.trim(),type=document.getElementById('rb-header-type').value;
+ const line=document.getElementById('rb-header-line').value.trim();
  edit.line=line;
  if(!/^.{1,120}\boffers?\s+\S.+$/i.test(line) || /[\r\n]/.test(line)){edit.error='Enter a single offer line such as Michigan State offers K John Smith.';render();return;}
- if(type!==edit.type){edit.error='Use the separate Upgrade action to change the offer type.';render();return;}
  const offer=findOfferById(edit.prospectId,edit.offerId);
  if(!offer || offer.text!==edit.expectedText){edit.error='This offer changed. Refresh and try again.';render();return;}
  UI.submitting=true;
  try{
-  const response=await fetch('/api/offers/amend',{method:'POST',credentials:'include',headers:{'content-type':'application/json'},body:JSON.stringify({prospectId:edit.prospectId,offerId:edit.offerId,action:'edit-header',expectedText:edit.expectedText,headerLine:line,headerType:type})});
+  const response=await fetch('/api/offers/amend',{method:'POST',credentials:'include',headers:{'content-type':'application/json'},body:JSON.stringify({prospectId:edit.prospectId,offerId:edit.offerId,action:'edit-header',expectedText:edit.expectedText,headerLine:line})});
   const data=await response.json();if(!response.ok || !data.ok)throw Error(data.error || 'Could not update the offer header.');
   mergeLeagueState(data.state);UI.headerEdit=null;UI.lastSummary={errorText:'Offer header updated. The body was not changed.',dismissAt:Date.now()+6000};
  }catch(error){edit.error=error.message || 'Could not save header.';}
@@ -4995,6 +4994,8 @@ function bindEvents(){
   const cprExport=document.getElementById('rb-cpr-export');
   if (cprExport) cprExport.onchange=function(){loadCprMetadata(cprExport.files[0]);};
   document.querySelectorAll('[data-board-offer-filter]').forEach(function(button){ button.onclick = function(){ UI.boardOfferFilter = button.getAttribute('data-board-offer-filter'); render(); }; });
+  const hideMyOffers = document.getElementById('rb-hide-my-offers');
+  if (hideMyOffers) hideMyOffers.onchange = function(){ UI.hideMyOffers = hideMyOffers.checked; render(); };
   const saveSettings = document.getElementById('rb-save-settings');
   if (saveSettings) saveSettings.onclick = saveSettingsChanges;
   const discardSettings = document.getElementById('rb-discard-settings');
