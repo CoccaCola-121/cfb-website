@@ -42,6 +42,7 @@
 <noscript><p style="padding:24px;color:#F2F2F0;font-family:sans-serif;">RecruitHQ needs JavaScript to load the league and sign you in. Enable JavaScript, then reload this page.</p></noscript>
 
 <script src="team-branding.js"></script>
+<script src="offer-amendments.js"></script>
 <script src="default-class-2062.js"></script>
 <script src="/cpr-rules.js" onerror="this.onerror=null;this.src='cpr-rules.js'"></script>
 <script src="/walkon-limit.js" onerror="this.onerror=null;this.src='walkon-limit.js'"></script>
@@ -907,7 +908,7 @@ function leagueStatePayload(){
 }
 
 function mergeLeagueState(state){
-  if (UI.submitting || (settingsDraft && !settingsSaving)) return false;
+  if (settingsDraft && !settingsSaving) return false;
   if (!state || typeof state !== 'object') return false;
   const before = JSON.stringify({
     offersByProspect: DB.offersByProspect,
@@ -934,7 +935,7 @@ function mergeLeagueState(state){
 }
 
 async function syncLeagueState(renderAfter, options){
-  if (settingsDraft && !settingsSaving) return false;
+  if (UI.submitting || (settingsDraft && !settingsSaving)) return false;
   if (!apiAvailable()) return false;
   options = options || {};
   if (!options.force && Date.now() - lastLocalChangeAt < 2500) return false;
@@ -2803,7 +2804,7 @@ async function readCprBoard(){
       return data;
     } catch(error){
       if (attempt===2) throw Error('The board is temporarily unavailable. Your offer text is safe here; please try again.');
-      await new Promise(resolve=>setTimeout(resolve,300*(attempt+1)));
+      await new Promise(resolve=>setTimeout(resolve,1000*(attempt+1)));
     }
   }
 }
@@ -2836,47 +2837,68 @@ async function quickOfferWalkon(pid){
   await submitCprOffer(SESSION.team + ' offers ' + p.position + ' ' + p.name + '\n\nWalk-On', pid);
 }
 
+let lastOfferWriteAt = 0;
 async function submitCprOffer(rawText, quickId){
+  if (!SESSION || UI.submitting || !rawText.trim()) return;
   const draftKey=offerDraftKey();
   if (!quickId) captureOfferDraft();
-  if (!SESSION || UI.submitting || !rawText.trim()) return;
-  const nameInput = document.getElementById('rb-cpr-offer-name');
-  const posInput = document.getElementById('rb-cpr-offer-position');
-  const input = {name:nameInput ? nameInput.value : '',position:posInput ? posInput.value : ''};
-  let snapshot;
-  UI.submitting = true;
+  const nameInput=document.getElementById('rb-cpr-offer-name');
+  const posInput=document.getElementById('rb-cpr-offer-position');
+  const input={name:nameInput ? nameInput.value : '',position:posInput ? posInput.value : ''};
+  const targetId=quickId || UI.submitTargetId;
+  const requestOfferId=uid('o');
+  UI.submitting=true;
   try {
-    let current;
-    if (apiAvailable()) {
-      current=(await readCprBoard()).state;
-      if (!current || current.recruitingStage !== 'cpr') throw Error('The CPR board is no longer active.');
-      mergeLeagueState(current);
+    for(let attempt=0;attempt<4;attempt++){
+      let snapshot;
+      try {
+        let current;
+        if(apiAvailable()){
+          const pause=Math.max(0,1300-(Date.now()-lastOfferWriteAt));
+          if(pause)await new Promise(resolve=>setTimeout(resolve,pause));
+          current=(await readCprBoard()).state;
+          if(current.recruitingStage!=='cpr')throw Error('The CPR board is no longer active.');
+          mergeLeagueState(current);
+        }
+        const row=targetId && DB.prospects[targetId] ? DB.prospects[targetId] : NZCFLCprRules.resolveOffer(DB.fullRoster,rawText,input);
+        const pid='r'+row.rank;
+        const posted=(DB.offersByProspect[pid] || []).find(o=>o.id===requestOfferId);
+        if(posted)break; // A prior response failed after this exact request was saved.
+        if(offersLocked())throw Error('Offers are locked.');
+        if(quickId && !canQuickOfferWalkon(DB.prospects[quickId]))throw Error('This player is no longer eligible for a quick walk-on offer.');
+        if(quickId)rawText=SESSION.team+' offers '+row.position+' '+row.name+'\n\nWalk-On';
+        const limitError=NZCFLTransferRules.pitchLimitError(rawText,row,'cpr');
+        if(limitError)throw Error(limitError);
+        snapshot=copySettings(DB);
+        createCprPlayer(row);
+        const result=addOfferDirect(pid,SESSION.team,((DB.teams[SESSION.team] || {}).coach || SESSION.username || ''),rawText,extractPromises(rawText),{});
+        if(!result.ok)throw Error(result.error);
+        DB.offersByProspect[pid][DB.offersByProspect[pid].length-1].id=requestOfferId;
+        if(apiAvailable()){
+          lastOfferWriteAt=Date.now();
+          let response,saved;
+          try {
+            response=await fetch('/api/league/state',{method:'PUT',credentials:'include',headers:{'content-type':'application/json'},body:JSON.stringify({state:leagueStatePayload(),expectedUpdatedAt:current.updatedAt || null})});
+            saved=await response.json();
+          }catch(e){const error=Error('The server could not confirm your offer. Your draft is saved; check My Offers before retrying.');error.retryable=true;throw error;}
+          if(!response.ok || !saved.ok){const error=Error(saved.error || 'Could not save your offer. Your draft is saved.');error.retryable=[409,429,500,502,503,504].includes(response.status);throw error;}
+          mergeLeagueState(saved.state);
+        }else await saveDBNow();
+        break;
+      }catch(error){
+        if(snapshot){Object.keys(DB).forEach(key=>delete DB[key]);Object.assign(DB,snapshot);}
+        if(!error.retryable || attempt===3)throw error;
+        await new Promise(resolve=>setTimeout(resolve,1300*(attempt+1)));
+      }
     }
-    if (offersLocked()) throw Error('Offers are locked.');
-    if (quickId && !canQuickOfferWalkon(DB.prospects[quickId])) throw Error('This player is no longer eligible for a quick walk-on offer.');
-    const row = quickId ? DB.prospects[quickId] : UI.submitTargetId && DB.prospects[UI.submitTargetId] ? DB.prospects[UI.submitTargetId] : NZCFLCprRules.resolveOffer(DB.fullRoster,rawText,input);
-    if (quickId) rawText=SESSION.team + ' offers ' + row.position + ' ' + row.name + '\n\nWalk-On';
-    const error=NZCFLTransferRules.pitchLimitError(rawText,row,'cpr');
-    if (error) throw Error(error);
-    snapshot=copySettings(DB);
-    const pid=createCprPlayer(row);
-    const result=addOfferDirect(pid,SESSION.team,((DB.teams[SESSION.team] || {}).coach || SESSION.username || ''),rawText,extractPromises(rawText),{});
-    if (!result.ok) throw Error(result.error);
-    if (apiAvailable()) {
-      const response=await fetch('/api/league/state',{method:'PUT',credentials:'include',headers:{'content-type':'application/json'},body:JSON.stringify({state:leagueStatePayload(),expectedUpdatedAt:current.updatedAt || null})});
-      const saved=await response.json().catch(function(){ throw Error('The server could not confirm your offer. Your text is still here. Check My Offers before trying again.'); });
-      if (!response.ok || !saved.ok) throw Error(saved.error || 'Could not save your offer. Try again.');
-      mergeLeagueState(saved.state);
-    } else await saveDBNow();
-    if (!quickId) clearOfferDraft(draftKey);
-    UI.submitting=false; UI.showSubmitModal=false; UI.submitTargetId=null;
+    if(!quickId)clearOfferDraft(draftKey);
+    UI.showSubmitModal=false;UI.submitTargetId=null;
     UI.lastSummary={matched:1,unmatched:0,total:1,dismissAt:Date.now()+6000};
-    render();
-  } catch(e) {
-    if (snapshot) { Object.keys(DB).forEach(key=>delete DB[key]); Object.assign(DB,snapshot); }
-    if (quickId) { UI.lastSummary={errorText:e.message}; render(); }
-    else { const error=document.getElementById('rb-submit-error'); if (error) error.textContent=e.message; }
-  } finally { UI.submitting=false; if (quickId) render(); }
+    UI.submitting=false;render();
+  }catch(e){
+    if(quickId){UI.lastSummary={errorText:e.message};}
+    else {const error=document.getElementById('rb-submit-error');if(error)error.textContent=e.message;}
+  }finally{UI.submitting=false;if(quickId)render();}
 }
 
 async function submitOfferSheet(rawText){
@@ -4363,7 +4385,30 @@ function renderClassSetup(){
 
   html += renderAutoCommitSettings();
 
-  // Backup settings are hidden until setup is requested.
+  const backup = UI.backupStatus || {};
+  const backupConfigured = !!(UI.backupStatus && backup.configured);
+  html += '<div class="rb-card" style="padding:20px 24px;max-width:640px;margin-top:14px;">';
+  html += '<div class="rb-h" style="font-size:16px;margin-bottom:8px;">Backup</div>';
+  html += '<div class="rb-mono" style="font-size:12px;color:var(--slate);margin-bottom:12px;">Overwrites one latest JSON snapshot and one latest offers CSV in GitHub.</div>';
+  if (!UI.backupStatus){
+    html += '<div class="rb-settings-status" style="margin-bottom:12px;">CHECKING</div>';
+  } else if (!backup.configured){
+    html += '<div class="rb-settings-status" style="margin-bottom:10px;">NOT CONFIGURED</div>';
+    html += '<div style="font-size:13px;color:var(--slate);line-height:1.4;margin-bottom:12px;">Manual backups are unavailable until GitHub backup settings are connected.</div>';
+  } else {
+    const statusText = backup.ok ? ('Last backup: ' + (backup.exportedAt ? new Date(backup.exportedAt).toLocaleString() : 'complete')) : (backup.error ? 'Last backup failed' : 'Configured');
+    html += '<div class="rb-settings-status ' + (backup.ok ? 'rb-settings-status-ready' : (backup.error ? 'rb-settings-status-error' : '')) + '" style="margin-bottom:8px;">' + escapeHtml(backup.ok ? 'READY' : (backup.error ? 'NEEDS ATTENTION' : 'CONFIGURED')) + '</div>';
+    html += '<div style="font-size:13px;color:' + (backup.ok ? 'var(--gold)' : 'var(--slate)') + ';margin-bottom:6px;">' + escapeHtml(statusText) + '</div>';
+    html += '<div class="rb-mono" style="font-size:11px;color:var(--slate);margin-bottom:12px;">' + escapeHtml((backup.repo || '') + (backup.csvPath ? ' / ' + backup.csvPath : '')) + '</div>';
+  }
+  html += '<div style="display:flex;gap:10px;flex-wrap:wrap;">';
+  html += '<button class="rb-btn ' + (backupConfigured ? 'rb-btn-gold' : '') + '" id="rb-run-backup" ' + (UI.backingUp || !backupConfigured ? 'disabled' : '') + '>' + (UI.backingUp ? 'Backing up...' : 'Run backup now') + '</button>';
+  html += '<button class="rb-btn" id="rb-refresh-backup">Refresh status</button>';
+  html += '</div>';
+  if (UI.backupError) html += '<div style="font-size:12px;color:var(--alert);margin-top:8px;">' + escapeHtml(UI.backupError) + '</div>';
+  if (backup.configured && backup.error && !UI.backupError) html += '<div style="font-size:12px;color:var(--alert);margin-top:8px;">' + escapeHtml(backup.error) + '</div>';
+  html += '</div>';
+
   html += '<div class="rb-card" style="padding:20px 24px;max-width:640px;margin-top:14px;">';
   html += '<div class="rb-h" style="font-size:16px;margin-bottom:12px;">Team Branding</div>';
   html += '<p style="font-size:12px;color:var(--slate);margin:0 0 12px;">Only update when logos change or teams move up from FCS.</p>';
@@ -4448,6 +4493,31 @@ function renderProspectDetail(){
   return html;
 }
 
+function renderOfferAmendments(o,p){
+  if (!p || !SESSION || teamKey(o.team)!==teamKey(SESSION.team) || o.rescinded || p.commitTeam || offersLocked()) return '';
+  const h=NZCFLOfferAmendments.header(o.text);
+  const attrs=' data-amend-prospect="'+escapeHtml(p.id)+'" data-amend-offer="'+escapeHtml(o.id)+'"';
+  let buttons='';
+  if(h.offerLine<0 || h.typeLine<0)buttons+='<button class="rb-btn" data-amend-action="header"'+attrs+'>Add offer header</button>';
+  if(h.type==='walkon')buttons+='<button class="rb-btn" data-amend-action="upgrade"'+attrs+'>Upgrade to scholarship</button>';
+  return buttons ? '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px;">'+buttons+'</div>' : '';
+}
+async function amendOwnOffer(pid,oid,action){
+  const p=DB.prospects[pid],o=findOfferById(pid,oid);
+  if (!p || !o || UI.submitting) return;
+  const message=action==='upgrade'?'Upgrade '+p.name+' to a scholarship? This cannot be downgraded.':'Add an offer header for '+p.name+'? The pitch will stay unchanged.';
+  if(!window.confirm(message))return;
+  UI.submitting=true;
+  try {
+    const response=await fetch('/api/offers/amend',{method:'POST',credentials:'include',headers:{'content-type':'application/json'},body:JSON.stringify({prospectId:pid,offerId:oid,action,expectedText:o.text})});
+    const data=await response.json();
+    if(!response.ok || !data.ok)throw Error(data.error || 'Could not update offer.');
+    mergeLeagueState(data.state);
+    UI.lastSummary={errorText:action==='upgrade'?'Offer upgraded to scholarship.':'Offer header added.',dismissAt:Date.now()+6000};
+  }catch(e){UI.lastSummary={errorText:e.message};}
+  finally{UI.submitting=false;render();}
+}
+
 function renderOfferBlock(o, opts){
   opts = opts || {};
   const brand = getTeamBranding(o.team);
@@ -4475,6 +4545,7 @@ function renderOfferBlock(o, opts){
   if (o.rescinded && o.rescindReason) html += '<div class="rb-mono" style="font-size:11px;color:var(--slate);margin-top:6px;">' + escapeHtml(o.rescindReason) + '</div>';
   const scrollStyle = opts.fullText ? '' : 'max-height:140px;overflow:auto;';
   html += '<div style="font-size:13px;color:var(--chalk);margin-top:6px;white-space:pre-wrap;' + scrollStyle + '" class="rb-scrollbar rb-offer-body">' + formatOfferText(o.text, cleanDisplayPromises(o)) + '</div>';
+  html += renderOfferAmendments(o,opts.prospect);
   const displayPromises = !o.rescinded ? cleanDisplayPromises(o) : [];
   if (displayPromises.length){
     html += '<div style="margin-top:8px;">';
@@ -4536,7 +4607,7 @@ function renderSubmitModal(){
       (target ? 'Paste one offer sheet as-is. This will post directly to ' + (recruitNumber(target) ? recruitNumber(target) + ' ' : '') + renderRecruitName(target.name) + ', detect visits, and file your team name automatically.' : 'Paste one offer sheet as-is. We\'ll match it to the right prospect, detect visits, and file your team name automatically.'));
   const placeholder = pitchOffer ? 'Write or paste your pitch here' : 'Paste your auto-offer sheet output here';
   return '<div style="position:fixed;inset:0;background:rgba(0,0,0,0.6);display:flex;align-items:center;justify-content:center;z-index:50;" data-close-modal="1">' +
-    '<div class="rb-card" style="padding:24px;width:520px;max-width:90vw;" onclick="event.stopPropagation()">' +
+    '<div class="rb-card" style="padding:24px;width:520px;max-width:90vw;max-height:calc(100dvh - 32px);overflow-y:auto;box-sizing:border-box;" onclick="event.stopPropagation()">' +
       '<div class="rb-h" style="font-size:16px;margin-bottom:4px;">Submit offer</div>' +
       '<div style="font-size:12px;color:var(--slate);margin-bottom:12px;">' +
         submitHelp +
@@ -4793,6 +4864,7 @@ function bindFloatingSubmit(){
 
 function bindEvents(){
   bindFloatingSubmit();
+  document.querySelectorAll('[data-amend-action]').forEach(function(button){button.onclick=function(e){e.preventDefault();e.stopPropagation();amendOwnOffer(button.getAttribute('data-amend-prospect'),button.getAttribute('data-amend-offer'),button.getAttribute('data-amend-action'));};});
   const conditionalOverall=document.getElementById('rb-cond-overall-mode');
   if(conditionalOverall) conditionalOverall.onchange=function(){
     const input=document.getElementById('rb-cond-overall-value');

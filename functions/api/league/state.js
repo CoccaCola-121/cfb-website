@@ -1,4 +1,5 @@
 import '../../../transfer-rules.js';
+import '../../../offer-amendments.js';
 import '../../../offer-window.js';
 import '../../../cpr-rules.js';
 import '../../../walkon-limit.js';
@@ -8,11 +9,12 @@ import { queueLeagueBackup } from '../../_lib/backup.js';
 import { readLeagueState, writeLeagueState } from '../../_lib/league-state.js';
 
 export async function onRequestGet({ env }) {
-  const state = await readLeagueState(env);
-  return json({ ok: true, state: state || null });
+  try { const state = await readLeagueState(env); return json({ ok: true, state: state || null }); }
+  catch { return json({ok:false,error:'The board is temporarily busy. Please retry shortly.'},{status:503}); }
 }
 
 export async function onRequestPut({ request, env, waitUntil }) {
+ try {
   const body = await request.json().catch(() => ({}));
   const incoming = body.state || body;
   const previous = await readLeagueState(env);
@@ -46,6 +48,10 @@ export async function onRequestPut({ request, env, waitUntil }) {
         const capError = globalThis.NZCFLWalkonLimit.error(incoming, prospect, offer);
         if (capError) return json({ok:false,error:capError},{status:400});
       }
+      if (old && incoming.recruitingStage !== 'hs') {
+        if (old.text !== offer.text && !globalThis.NZCFLOfferAmendments.allowed(old.text,offer.text,old.team,prospect)) return json({ok:false,error:'Only adding an offer header or upgrading a walk-on to scholarship is allowed. Pitch text cannot be edited.'},{status:400});
+        if (old.offerType === 'scholarship') offer.offerType='scholarship';
+      }
       if (old && old.text === offer.text) continue;
       const error = globalThis.NZCFLTransferRules.pitchLimitError(offer.text, prospect, incoming.recruitingStage);
       if (error) return json({ ok: false, error }, { status: 400 });
@@ -61,4 +67,5 @@ export async function onRequestPut({ request, env, waitUntil }) {
   const state = await writeLeagueState(env, incoming);
   queueLeagueBackup(env, state, waitUntil, { source: 'league-state-save' });
   return json({ ok: true, state });
+ }catch(error){ return json({ok:false,error:'The board could not save yet. Your draft is preserved; please retry shortly.'},{status:503}); }
 }

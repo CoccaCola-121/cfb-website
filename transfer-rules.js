@@ -5,9 +5,10 @@
     const escape = value => String(value || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     const name = escape(prospect && prospect.name);
     const rank = escape(prospect && prospect.rank);
+    const position = escape(prospect && prospect.position);
     const target = [name, rank ? '#' + rank : ''].filter(Boolean).join('|');
     // Only a complete, standalone offer heading is exempt. Prose on that line counts.
-    if (target && new RegExp('^(?:.{1,120}\\s+)?offers?\\s+(?:' + target + ')(?:\\s*\\((?:scholarship|walk[ -]?on)\\))?\\s*[:.!]?$', 'i').test(lines[0].trim())) {
+    if (target && new RegExp('^(?:.{1,120}\\s+)?offers?\\s+' + (position ? '(?:' + position + '\\s+)?' : '') + '(?:' + target + ')(?:\\s*\\((?:scholarship|walk[ -]?on)\\))?\\s*[:.!]?$', 'i').test(lines[0].trim())) {
       lines.shift();
       while (lines.length && !lines[0].trim()) lines.shift();
       if (/^\s*scholarship\s*$/i.test(lines[0] || '')) lines.shift();

@@ -10,7 +10,7 @@ const script = page.match(/<script>([\s\S]*?)<\/script>/)[1];
 const boot = script.lastIndexOf('\napplyRoute(routeFromPath(window.location.pathname));');
 assert(boot > 0, 'The app bootstrap must be identifiable without executing network requests.');
 const source = script.slice(0, boot) + `
-  globalThis.app = { DB, UI, captureOfferDraft, readOfferDraft, clearOfferDraft, offerDraftKey, applyConditionalRescinds, readRescindRuleForm, validateRescindRuleDraft, requestQuickWalkon, renderQuickWalkonConfirm, canQuickOfferWalkon, quickOfferWalkon, renderQuickWalkon, renderProspectBoardCard, scheduleSummaryCountdown, dismissSummaryBanner, bindFloatingSubmit, extractPromises, cleanDisplayPromises, readCprBoard, updateBucksEntries, renderBucksSettings, renderCprProfile, cprPreviousSchool, ensureCprScholarshipThreads, renderAutoCommitSettings, stageAutoCommits, readScholarshipCapacity, buildPromiseArchive, parseCsvRows, offerCountForProspect, refreshScholarshipHistory, submitCprOffer, renderSubmitModal, createCprPlayer, loadClassData, resetOfferWindow, setOffersLocked, offersLocked, pendingCommitChanges, restoreSettingsDraft, renderOfferBlock, renderRescindFilterFields, renderVisitLedger, visibleBoardProspectIds, setRecruitingStage, requestReset, approveDangerReset, beginSettingsDraft, hasSettingsChanges, canLeaveSettings, saveSettingsChanges, saveDBNow, leagueStatePayload, mergeSettingsValue, updateCommitsFromSheet, runBackupNow, setTransferFilter, renderTransferFilters, renderClassSetup, requestManualCommitOverride, applyManualCommitOverride, requestClearCommit, clearManualCommitOverride, applyManualCommitOverrides, clearRecruitingBoard, findProspectFromSheetRow, transferCardStyle, parseFullClass, prospectFromRosterRow, confirmTransferImport, releaseSingleStageBoard, addOfferDirect, render, renderNav, navigateTo, applyRoute, setReady(){ dbReady = true; sessionReady = true; }, renderFeed, renderBoardSearchResults, renderTeamsPage,
+  globalThis.app = { DB, UI, mergeLeagueState, renderOfferAmendments, captureOfferDraft, readOfferDraft, clearOfferDraft, offerDraftKey, applyConditionalRescinds, readRescindRuleForm, validateRescindRuleDraft, requestQuickWalkon, renderQuickWalkonConfirm, canQuickOfferWalkon, quickOfferWalkon, renderQuickWalkon, renderProspectBoardCard, scheduleSummaryCountdown, dismissSummaryBanner, bindFloatingSubmit, extractPromises, cleanDisplayPromises, readCprBoard, updateBucksEntries, renderBucksSettings, renderCprProfile, cprPreviousSchool, ensureCprScholarshipThreads, renderAutoCommitSettings, stageAutoCommits, readScholarshipCapacity, buildPromiseArchive, parseCsvRows, offerCountForProspect, refreshScholarshipHistory, submitCprOffer, renderSubmitModal, createCprPlayer, loadClassData, resetOfferWindow, setOffersLocked, offersLocked, pendingCommitChanges, restoreSettingsDraft, renderOfferBlock, renderRescindFilterFields, renderVisitLedger, visibleBoardProspectIds, setRecruitingStage, requestReset, approveDangerReset, beginSettingsDraft, hasSettingsChanges, canLeaveSettings, saveSettingsChanges, saveDBNow, leagueStatePayload, mergeSettingsValue, updateCommitsFromSheet, runBackupNow, setTransferFilter, renderTransferFilters, renderClassSetup, requestManualCommitOverride, applyManualCommitOverride, requestClearCommit, clearManualCommitOverride, applyManualCommitOverrides, clearRecruitingBoard, findProspectFromSheetRow, transferCardStyle, parseFullClass, prospectFromRosterRow, confirmTransferImport, releaseSingleStageBoard, addOfferDirect, render, renderNav, navigateTo, applyRoute, setReady(){ dbReady = true; sessionReady = true; }, renderFeed, renderBoardSearchResults, renderTeamsPage,
     renderThreadProspectList, renderProspectDetail, builtInTeamBranding, getTeamBranding, activeTeamBrands,
     mobileRecruitName, renderRecruitName, renderMyOffers, renderCommitsForTeam, renderTeamOffers, renderConditionalRescinds, renderRecruitValues, teamBorderColor, bindEvents, applyDefaultClassData, releaseWave1, releaseWave2,
     setSession(value){ SESSION = value; } };
@@ -60,6 +60,7 @@ function harness() {
     setTimeout(){ return 0; }, clearTimeout(){}, setInterval(){ return 0; }, clearInterval(){},
     fetch(){ throw new Error('Regression checks must not contact a live API.'); }
   });
+  vm.runInContext(fs.readFileSync(path.join(rootDir, 'offer-amendments.js'), 'utf8'), context);
   vm.runInContext(fs.readFileSync(path.join(rootDir, 'team-branding.js'), 'utf8'), context);
   vm.runInContext(fs.readFileSync(path.join(rootDir, 'cpr-rules.js'), 'utf8'), context);
   vm.runInContext(fs.readFileSync(path.join(rootDir, 'walkon-limit.js'), 'utf8'), context);
@@ -1184,4 +1185,65 @@ test('offer drafts survive redraws and refreshes, are isolated by player, and cl
  await app.submitCprOffer(elements['rb-sheet-text'].value);
  assert.equal(storage.has(app.offerDraftKey()),false);
  assert.equal(app.DB.offersByProspect.r2.length,1);
+});
+
+
+test('submitting applies fresh server state and retries version conflicts without losing other offers', async () => {
+ const {app,context,elements}=harness();
+ app.DB.recruitingStage='cpr';app.clearRecruitingBoard();
+ app.loadClassData('Name,Pos,Team,Ovr,Pot\nTop S,S,FA,40,60\nLow S,S,FA,29,45');
+ app.releaseSingleStageBoard();app.DB.offersLocked=false;
+ elements['rb-submit-error']=element();
+ context.window.location.protocol='https:';
+ context.setTimeout=fn=>{fn();return 1;};
+ let remote=JSON.parse(JSON.stringify(app.leagueStatePayload())); remote.updatedAt=1;
+ remote.offersByProspect.r1=[{id:'other',team:'Alabama',text:'Scholarship'}];
+ let writes=0;
+ context.fetch=async (url,opts)=>{
+  if(opts.method!=='PUT')return {ok:true,json:async()=>({state:structuredClone(remote)})};
+  const incoming=JSON.parse(opts.body);
+  writes++;
+  assert.equal(incoming.state.offersByProspect.r1[0].id,'other');
+  if(writes===1){remote.updatedAt=2;remote.offersByProspect.r1.push({id:'new',team:'LSU',text:'Scholarship'});return {ok:false,status:409,json:async()=>({ok:false,error:'Concurrent update'})};}
+  assert.equal(incoming.expectedUpdatedAt,2);
+  assert.equal(incoming.state.offersByProspect.r1.length,2);
+  remote=incoming.state;remote.updatedAt=3;
+  return {ok:true,json:async()=>({ok:true,state:remote})};
+ };
+ await app.submitCprOffer('Michigan State offers S Low S\n\nWalk-On');
+ assert.equal(writes,2);
+ assert.equal(app.DB.offersByProspect.r1.length,2);
+ assert.equal(app.DB.offersByProspect.r2.length,1);
+ assert.equal(elements['rb-submit-error'].textContent,undefined);
+});
+
+test('backup settings restored and offer form scrolls within the viewport',()=>{
+ const {app}=harness();
+ app.setSession({accessLevel:'moderator',team:'Michigan State'});
+ const settings=app.renderClassSetup();
+ assert.match(settings,/rb-run-backup/);assert.match(settings,/rb-refresh-backup/);
+ assert.match(app.renderSubmitModal(),/max-height:calc\(100dvh - 32px\);overflow-y:auto/);
+ const p={id:'r1',name:'One',position:'P'};
+ app.DB.offersLocked=false;
+ assert.match(app.renderOfferAmendments({id:'o',team:'Michigan State',text:'Walk-On'},p),/Upgrade to scholarship/);
+ assert.doesNotMatch(app.renderOfferAmendments({id:'o',team:'Alabama',text:'Walk-On'},p),/Upgrade/);
+});
+
+test('a lost save response is recovered using the same offer ID without posting twice', async () => {
+ const {app,context,elements}=harness();
+ app.DB.recruitingStage='cpr';app.clearRecruitingBoard();
+ app.loadClassData('Name,Pos,Team,Ovr,Pot\nTop S,S,FA,40,60\nLow S,S,FA,29,45');
+ app.releaseSingleStageBoard();app.DB.offersLocked=false;
+ elements['rb-submit-error']=element();context.window.location.protocol='https:';
+ context.setTimeout=fn=>{fn();return 1;};
+ let remote=JSON.parse(JSON.stringify(app.leagueStatePayload()));remote.updatedAt=1;
+ let writes=0;
+ context.fetch=async (url,opts)=>{
+  if(opts.method!=='PUT')return {ok:true,json:async()=>({state:structuredClone(remote)})};
+  writes++;remote=JSON.parse(opts.body).state;remote.updatedAt=2;
+  return {ok:true,json:async()=>{throw Error('Connection interrupted');}};
+ };
+ await app.submitCprOffer('Michigan State offers S Low S\n\nWalk-On');
+ assert.equal(writes,1);assert.equal(app.DB.offersByProspect.r2.length,1);
+ assert.equal(app.UI.lastSummary.matched,1);
 });
