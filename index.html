@@ -78,7 +78,7 @@ let UI = { view: 'feed', threadId: null, showSubmitModal: false, submitting: fal
            threadSlug: '', teamCommitsTeam: '', teamCommitsSlug: '', teamOffersTeam: '', teamOffersSlug: '', teamCommitsReturn: null,
            brandingStatus: null, brandingError: null, conditionalError: null, conditionalStatus: null,
            massRescindError: null, massRescindStatus: null, pendingMassRescind: null,
-           pendingMassRescindFinal: null, pendingSingleRescind: null,
+           pendingMassRescindFinal: null, pendingSingleRescind: null, pendingUpgrade: null, headerEdit: null,
            backupStatus: null, backupError: null, backingUp: false,
            teamAdminModal: null, brandingFileName: '', adminActionStatus: null, adminActionError: null,
            commitOverrideRank: '', commitOverrideTeam: '', commitOverrideStatus: null, commitOverrideError: null,
@@ -3131,6 +3131,8 @@ function render(){
   if (UI.pendingMassRescindFinal) html += renderMassRescindFinalModal();
   if (UI.pendingQuickWalkon) html += renderQuickWalkonConfirm();
   if (UI.pendingSingleRescind) html += renderSingleRescindConfirmModal();
+  if (UI.pendingUpgrade) html += renderUpgradeConfirmModal();
+  if (UI.headerEdit) html += renderHeaderEditModal();
   if (UI.teamAdminModal) html += renderTeamAdminModal();
   if (UI.confirmReset) html += renderResetConfirmModal();
   html += renderBackTopControl();
@@ -3727,7 +3729,7 @@ function renderOwnTypeFilter(kind){
 }
 function ownOfferTypeBadge(o,p){
   const type=NZCFLAutoCommits.offerKind(DB,p,o);
-  return '<span class="rb-tag rb-own-offer-type">'+(type==='walkon'?'Walk-On':'Scholarship')+'</span>'+ (type==='walkon' && SESSION && teamKey(o.team)===teamKey(SESSION.team) && !o.rescinded && !p.commitTeam && !offersLocked() ? '<button class="rb-btn rb-upgrade-small" data-amend-action="upgrade" data-amend-prospect="'+escapeHtml(p.id)+'" data-amend-offer="'+escapeHtml(o.id)+'">Upgrade</button>' : '');
+  return '<span class="rb-tag rb-own-offer-type" style="display:inline-flex;align-items:center;background:rgba(140,146,158,.09);border:1px solid var(--hairline);border-radius:20px;color:var(--slate);font-size:11px;font-weight:600;letter-spacing:.04em;padding:5px 10px;cursor:default;user-select:none;">'+(type==='walkon'?'Walk-On':'Scholarship')+'</span>'+ (type==='walkon' && SESSION && teamKey(o.team)===teamKey(SESSION.team) && !o.rescinded && !p.commitTeam && !offersLocked() ? '<button class="rb-btn rb-btn-gold rb-upgrade-small" data-amend-action="upgrade" data-amend-prospect="'+escapeHtml(p.id)+'" data-amend-offer="'+escapeHtml(o.id)+'">Upgrade</button>' : '');
 }
 
 function renderMyOffers(){
@@ -4543,14 +4545,17 @@ function renderOfferAmendments(o,p,hideUpgrade){
   const attrs=' data-amend-prospect="'+escapeHtml(p.id)+'" data-amend-offer="'+escapeHtml(o.id)+'"';
   let buttons='';
   if(h.offerLine<0 || h.typeLine<0)buttons+='<button class="rb-btn" data-amend-action="header"'+attrs+'>Add offer header</button>';
-  if(h.type==='walkon' && !hideUpgrade)buttons+='<button class="rb-btn" data-amend-action="upgrade"'+attrs+'>Upgrade to scholarship</button>';
+  if(h.offerLine>=0 && h.typeLine>h.offerLine)buttons+='<button class="rb-btn" data-edit-offer-header="1"'+attrs+'>Edit offer header</button>';
+  if(h.type==='walkon' && !hideUpgrade)buttons+='<button class="rb-btn rb-btn-gold" data-amend-action="upgrade"'+attrs+'>Upgrade to scholarship</button>';
   return buttons ? '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px;">'+buttons+'</div>' : '';
 }
-async function amendOwnOffer(pid,oid,action){
+async function amendOwnOfferConfirmedUpgrade(pid,oid){ return amendOwnOffer(pid,oid,'upgrade',true); }
+async function amendOwnOffer(pid,oid,action,confirmed){
   const p=DB.prospects[pid],o=findOfferById(pid,oid);
   if (!p || !o || UI.submitting) return;
-  const message=action==='upgrade'?'Upgrade '+p.name+' to a scholarship? This cannot be downgraded.':'Add an offer header for '+p.name+'? The pitch will stay unchanged.';
-  if(!window.confirm(message))return;
+  if(action==='upgrade' && !confirmed){ UI.pendingUpgrade={prospectId:pid,offerId:oid}; render(); return; }
+  const message='Add an offer header for '+p.name+'? The pitch will stay unchanged.';
+  if(!confirmed && !window.confirm(message))return;
   UI.submitting=true;
   try {
     const response=await fetch('/api/offers/amend',{method:'POST',credentials:'include',headers:{'content-type':'application/json'},body:JSON.stringify({prospectId:pid,offerId:oid,action,expectedText:o.text})});
@@ -4562,6 +4567,53 @@ async function amendOwnOffer(pid,oid,action){
   finally{UI.submitting=false;render();}
 }
 
+function renderUpgradeConfirmModal(){
+  const pending=UI.pendingUpgrade || {};
+  const p=DB.prospects[pending.prospectId] || {};
+  return '<div style="position:fixed;inset:0;background:rgba(0,0,0,.72);display:flex;align-items:center;justify-content:center;z-index:65;">' +
+    '<div class="rb-card" style="padding:24px;width:520px;max-width:90vw;border-color:var(--gold);">' +
+    '<div class="rb-h" style="font-size:20px;margin-bottom:8px;">Upgrade to scholarship?</div>' +
+    '<p style="font-size:14px;line-height:1.5;">Convert your walk-on offer for <strong>'+escapeHtml(p.name || 'this recruit')+'</strong> into a scholarship offer?</p>' +
+    '<p style="font-size:13px;color:var(--slate);line-height:1.5;margin-bottom:18px;">This change is recorded in edit history and cannot be downgraded using this action.</p>' +
+    '<div style="display:flex;justify-content:flex-end;gap:8px;flex-wrap:wrap;"><button type="button" class="rb-btn" id="rb-cancel-upgrade">Cancel</button><button type="button" class="rb-btn rb-btn-gold" id="rb-confirm-upgrade"'+(UI.submitting?' disabled':'')+'>Yes, upgrade offer</button></div></div></div>';
+}
+function openHeaderEdit(pid,oid){
+  const p=DB.prospects[pid],o=findOfferById(pid,oid);
+  if(!p || !o || !SESSION || teamKey(o.team)!==teamKey(SESSION.team) || o.rescinded || p.commitTeam || offersLocked())return;
+  const h=NZCFLOfferAmendments.header(o.text);
+  if(h.offerLine<0 || h.typeLine<=h.offerLine)return;
+  UI.headerEdit={prospectId:pid,offerId:oid,expectedText:o.text,line:h.lines[h.offerLine],type:h.type,error:''};render();
+}
+function renderHeaderEditModal(){
+  const edit=UI.headerEdit || {};
+  return '<div style="position:fixed;inset:0;background:rgba(0,0,0,.72);display:flex;align-items:center;justify-content:center;z-index:65;">' +
+  '<div class="rb-card" style="padding:24px;width:560px;max-width:92vw;border-color:var(--gold);">' +
+  '<div class="rb-h" style="font-size:20px;margin-bottom:8px;">Edit offer header</div>' +
+  '<p style="font-size:13px;color:var(--slate);line-height:1.5;">Only the opening offer line and offer-type line can be changed. The body of the offer is protected. Changes are timestamped in edit history.</p>' +
+  '<label style="display:block;font-size:12px;margin:12px 0 5px;" for="rb-header-line">Offer line</label>' +
+  '<input id="rb-header-line" class="rb-input" maxlength="120" value="'+escapeHtml(edit.line || '')+'" placeholder="Michigan State offers K John Smith" />' +
+  '<label style="display:block;font-size:12px;margin:12px 0 5px;" for="rb-header-type">Offer type</label>' +
+  '<select id="rb-header-type" class="rb-input"><option value="scholarship"'+(edit.type==='scholarship'?' selected':'')+'>Scholarship</option><option value="walkon"'+(edit.type==='walkon'?' selected':'')+'>Walk-On</option></select>' +
+  '<p style="font-size:12px;color:var(--slate);">Changing walk-on versus scholarship status requires the separate Upgrade action; this editor can correct its wording only.</p>' +
+  (edit.error?'<p role="alert" style="font-size:12px;color:var(--alert);">'+escapeHtml(edit.error)+'</p>':'') +
+  '<div style="display:flex;justify-content:flex-end;gap:8px;margin-top:18px;"><button class="rb-btn" id="rb-cancel-header-edit">Cancel</button><button class="rb-btn rb-btn-gold" id="rb-save-header-edit"'+(UI.submitting?' disabled':'')+'>Save header</button></div></div></div>';
+}
+async function saveHeaderEdit(){
+ const edit=UI.headerEdit;if(!edit || UI.submitting)return;
+ const line=document.getElementById('rb-header-line').value.trim(),type=document.getElementById('rb-header-type').value;
+ edit.line=line;
+ if(!/^.{1,120}\boffers?\s+\S.+$/i.test(line) || /[\r\n]/.test(line)){edit.error='Enter a single offer line such as Michigan State offers K John Smith.';render();return;}
+ if(type!==edit.type){edit.error='Use the separate Upgrade action to change the offer type.';render();return;}
+ const offer=findOfferById(edit.prospectId,edit.offerId);
+ if(!offer || offer.text!==edit.expectedText){edit.error='This offer changed. Refresh and try again.';render();return;}
+ UI.submitting=true;
+ try{
+  const response=await fetch('/api/offers/amend',{method:'POST',credentials:'include',headers:{'content-type':'application/json'},body:JSON.stringify({prospectId:edit.prospectId,offerId:edit.offerId,action:'edit-header',expectedText:edit.expectedText,headerLine:line,headerType:type})});
+  const data=await response.json();if(!response.ok || !data.ok)throw Error(data.error || 'Could not update the offer header.');
+  mergeLeagueState(data.state);UI.headerEdit=null;UI.lastSummary={errorText:'Offer header updated. The body was not changed.',dismissAt:Date.now()+6000};
+ }catch(error){edit.error=error.message || 'Could not save header.';}
+ finally{UI.submitting=false;render();}
+}
 function renderOfferBlock(o, opts){
   opts = opts || {};
   const brand = getTeamBranding(o.team);
@@ -4587,8 +4639,8 @@ function renderOfferBlock(o, opts){
     else html += wordCount + rescindedBadge;
   }
   if (o.rescinded && o.rescindReason) html += '<div class="rb-mono" style="font-size:11px;color:var(--slate);margin-top:6px;">' + escapeHtml(o.rescindReason) + '</div>';
-  const scrollStyle = opts.fullText ? '' : 'max-height:140px;overflow:auto;';
-  html += '<div style="font-size:13px;color:var(--chalk);margin-top:6px;white-space:pre-wrap;' + scrollStyle + '" class="rb-scrollbar rb-offer-body">' + formatOfferText(o.text, cleanDisplayPromises(o)) + '</div>';
+  // Let even long offers expand naturally instead of trapping their text in a resizable scroll area.
+  html += '<div style="font-size:13px;color:var(--chalk);margin-top:6px;white-space:pre-wrap;overflow-wrap:anywhere;max-height:none;overflow:visible;resize:none;" class="rb-offer-body">' + formatOfferText(o.text, cleanDisplayPromises(o)) + '</div>';
   html += renderOfferAmendments(o,opts.prospect,opts.hideUpgrade);
   const displayPromises = !o.rescinded ? cleanDisplayPromises(o) : [];
   if (displayPromises.length){
@@ -4920,6 +4972,11 @@ function bindEvents(){
   }
   bindFloatingSubmit();
   document.querySelectorAll('[data-amend-action]').forEach(function(button){button.onclick=function(e){e.preventDefault();e.stopPropagation();amendOwnOffer(button.getAttribute('data-amend-prospect'),button.getAttribute('data-amend-offer'),button.getAttribute('data-amend-action'));};});
+  document.querySelectorAll('[data-edit-offer-header]').forEach(function(button){button.onclick=function(e){e.preventDefault();e.stopPropagation();openHeaderEdit(button.getAttribute('data-amend-prospect'),button.getAttribute('data-amend-offer'));};});
+  const cancelUpgrade=document.getElementById('rb-cancel-upgrade');if(cancelUpgrade)cancelUpgrade.onclick=function(){UI.pendingUpgrade=null;render();};
+  const confirmUpgrade=document.getElementById('rb-confirm-upgrade');if(confirmUpgrade)confirmUpgrade.onclick=function(){const pending=UI.pendingUpgrade;UI.pendingUpgrade=null;if(pending)amendOwnOfferConfirmedUpgrade(pending.prospectId,pending.offerId);};
+  const cancelHeader=document.getElementById('rb-cancel-header-edit');if(cancelHeader)cancelHeader.onclick=function(){UI.headerEdit=null;render();};
+  const saveHeader=document.getElementById('rb-save-header-edit');if(saveHeader)saveHeader.onclick=saveHeaderEdit;
   const conditionalOverall=document.getElementById('rb-cond-overall-mode');
   if(conditionalOverall) conditionalOverall.onchange=function(){
     const input=document.getElementById('rb-cond-overall-value');
@@ -5058,7 +5115,8 @@ function bindEvents(){
     el.onclick = function(e){
       e.preventDefault();
       e.stopPropagation();
-      if (e.target && e.target.closest && e.target.closest('[data-offer-details]')) return;
+      // Interacting with an offer (including selecting or dragging its text) must not open the player page.
+      if (e.target && e.target.closest && e.target.closest('.rb-branded-offer')) return;
       UI.prospectReturnView = UI.view === 'myoffers' || UI.view === 'mycommits' || UI.view === 'teamcommits' || UI.view === 'teamoffers' || UI.view === 'thread' ? UI.view : 'feed';
       navigateTo('prospect', { prospectId: el.getAttribute('data-open-prospect') });
       scrollPageTop();
