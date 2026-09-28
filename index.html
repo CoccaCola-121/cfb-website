@@ -2572,7 +2572,7 @@ function extractPromises(text){
     if (!isLikelyPromiseText(promise) || seen[promise.toLowerCase()]) return;
     seen[promise.toLowerCase()] = true;
     const title = findPitchTitle(text, start) || promiseCategory(promise).replace(/_/g, ' ');
-    promises.push({ text: promise, title: title, category: promiseCategory(promise) });
+    promises.push({ text: promise, title: title, category: promiseCategory(promise), start: start });
   };
   const emphasized = [];
   const re = /(\*{1,3})([^*]+)\1/g;
@@ -2583,7 +2583,7 @@ function extractPromises(text){
       addPromise(match[2], match.index);
     }
   }
-  const plainStartRe = /\b(?:(?:I|we)\s+promise\b|Promise\s*:)/gi;
+  const plainStartRe = /\b(?:(?:I|we)\s+(?:can\s+)?promise\b|Promise\s*:)/gi;
   while ((match = plainStartRe.exec(text))){
     const start = match.index;
     const previousBreak = text.lastIndexOf('\n\n', start);
@@ -2605,12 +2605,16 @@ function extractPromises(text){
     }
     addPromise(rest.slice(0, end), start);
   }
-  return promises;
+  // Keep the archive and on-screen chips in offer order, even when a later
+  // bolded promise was discovered before an earlier plain-text promise.
+  return promises.sort(function(a,b){ return a.start - b.start; }).map(function(p){
+    return { text: p.text, title: p.title, category: p.category };
+  });
 }
 
 function isLikelyPromiseText(text){
   const out = String(text || '').replace(/\*\*/g, '').replace(/\s+/g, ' ').trim();
-  return out.length >= 18 && /\b(?:(?:i|we)\s+promise\b|promise\s*:)/i.test(out);
+  return out.length >= 18 && /\b(?:(?:i|we)\s+(?:can\s+)?promise\b|promise\s*:)/i.test(out);
 }
 
 function sanitizePromiseText(text){
