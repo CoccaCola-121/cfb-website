@@ -24,48 +24,14 @@
 <link rel="stylesheet" href="/fonts/fonts.css">
 <link rel="stylesheet" href="/styles.css" onerror="this.onerror=null;this.href='styles.css'">
 <style>
-/* CPR board: aligned filter columns, scoped to avoid affecting other stages. */
-.rb-transfer-filter-row.rb-cpr-filter-layout {
-  display:grid;
-  grid-template-columns:minmax(0,1fr) minmax(0,1fr) minmax(0,1fr);
-  align-items:start;
-  gap:24px;
-  margin-top:18px;
-}
-.rb-cpr-filter-layout > #rb-transfer-filter-controls,
-.rb-cpr-filter-layout > .rb-cpr-type-filter,
-.rb-cpr-filter-layout > .rb-board-status-filters {
-  width:100%; max-width:none; min-width:0; margin:0; justify-self:stretch;
-}
-.rb-cpr-filter-layout .rb-cpr-filter-label,
-.rb-cpr-filter-layout .rb-cpr-type-filter > .rb-transfer-filter-heading {
-  min-height:25px; margin-bottom:8px; display:flex; align-items:center;
-  font-size:12px; color:var(--slate); font-weight:600;
-}
-.rb-cpr-filter-layout .rb-cpr-type-filter > .rb-transfer-filter-heading {
-  justify-content:space-between; gap:12px;
-}
-.rb-cpr-filter-layout .rb-transfer-filter-heading .rb-transfer-filter-reset { font-weight:400; }
-.rb-cpr-filter-layout .rb-transfer-filters > .rb-transfer-filter-heading {
-  min-height:38px;
-}
-.rb-cpr-filter-layout .rb-cpr-type-filter .rb-segmented { margin-top:0; width:100%; }
-.rb-cpr-filter-layout .rb-board-status-filters { display:flex; flex-direction:column; gap:9px; align-items:stretch; }
-.rb-cpr-filter-layout .rb-board-status-filters .rb-filter-row { width:100%; margin:0; }
-.rb-cpr-filter-layout .rb-board-status-filters .rb-segmented { width:100%; }
-.rb-cpr-filter-layout .rb-cpr-hide-own-row {
-  display:flex; justify-content:flex-end; padding-top:10px; margin-top:3px !important;
-  border-top:1px solid var(--hairline);
-}
-@media (max-width:1050px) {
-  .rb-transfer-filter-row.rb-cpr-filter-layout { grid-template-columns:repeat(2,minmax(0,1fr)); gap:22px; }
-  .rb-cpr-filter-layout > .rb-board-status-filters { grid-column:1 / -1; flex-direction:column; }
-  .rb-cpr-filter-layout .rb-board-status-filters > * { flex:none; min-width:0; }
-}
-@media (max-width:600px) {
-  .rb-transfer-filter-row.rb-cpr-filter-layout { grid-template-columns:minmax(0,1fr); gap:20px; }
-  .rb-cpr-filter-layout > .rb-board-status-filters { grid-column:auto; }
-}
+/* Keep the CPR-specific toggle outside the player-filter card. */
+.rb-cpr-board-heading { display:flex; justify-content:space-between; align-items:flex-start; flex-wrap:wrap; gap:12px 24px; margin-bottom:18px; }
+.rb-cpr-board-heading .rb-cpr-board-description { margin:0; }
+.rb-cpr-board-heading .rb-toggle { display:inline-flex; align-items:center; gap:10px; font-size:12px; color:var(--slate); white-space:nowrap; cursor:pointer; margin:0; }
+.rb-cpr-board-heading .rb-toggle > span:first-child { font-size:12px; font-weight:400; }
+.rb-cpr-board-heading .rb-toggle input { flex:0 0 auto; }
+.rb-cpr-type-filter .rb-transfer-filter-heading { justify-content:flex-end; }
+@media(max-width:600px) { .rb-cpr-board-heading { align-items:flex-start; } }
 </style>
 </head>
 <body>
@@ -4191,25 +4157,26 @@ function renderThreadProspectList(t){
   const filterKey = positionFilterKey('board', t.id);
   const ended = recruitingEndedForCurrentStage();
   const cardContext = { ended: ended, thread: UI.view === 'thread' ? t : null };
-  let html = '<div class="rb-h" style="font-size:20px;margin-bottom:4px;">' + escapeHtml(t.title) + '</div>';
-  html += '<div style="font-size:13px;color:var(--slate);margin-bottom:18px;">' + (recruitingStage() === 'transfer' ? 'Transfers in class-sheet order. 800-word pitches; offer headers excluded.' : (recruitingStage() === 'cpr' ? 'Free agents meeting position minimums, plus coach-created threads.' : rankRangeForThread(t) + ' on the board. Offers from every team stay visible here.')) + '</div>';
+  let html = '<div' + (recruitingStage() === 'cpr' ? ' class="rb-cpr-board-heading"' : '') + '><div><div class="rb-h" style="font-size:20px;margin-bottom:4px;">' + escapeHtml(t.title) + '</div>';
+  html += '<div class="rb-cpr-board-description" style="font-size:13px;color:var(--slate);' + (recruitingStage() === 'cpr' ? '' : 'margin-bottom:18px;') + '">' + (recruitingStage() === 'transfer' ? 'Transfers in class-sheet order. 800-word pitches; offer headers excluded.' : (recruitingStage() === 'cpr' ? 'Free agents meeting position minimums, plus coach-created threads.' : rankRangeForThread(t) + ' on the board. Offers from every team stay visible here.')) + '</div></div>';
+  if (recruitingStage() === 'cpr') html += '<label class="rb-toggle"><span>Hide my offers</span><input type="checkbox" id="rb-hide-my-offers" ' + (UI.hideMyOffers ? 'checked' : '') + ' /><span class="rb-switch-track"><span class="rb-switch-thumb"></span></span></label>';
+  html += '</div>';
   html += '<div class="rb-card" style="padding:14px 16px;margin-bottom:14px;">';
   const visibleIds = visibleBoardProspectIds(t);
   if (recruitingStage() === 'transfer') visibleIds.sort(function(a,b){ const pa = DB.prospects[a], pb = DB.prospects[b]; return (pa.sourceOrder ?? pa.rank) - (pb.sourceOrder ?? pb.rank); });
   html += '<div class="rb-board-filter-top">' + renderPositionCounts(visibleIds, function(pid){ return DB.prospects[pid] && DB.prospects[pid].position; }, filterKey) + '<span id="rb-board-result-count" role="status" aria-live="polite">' + visibleIds.length + ' players</span></div>';
   html += '<input class="rb-input" data-thread-search="' + t.id + '" value="' + escapeHtml((UI.threadSearches || {})[t.id] || '') + '" placeholder="' + (recruitingStage() !== 'hs' ? 'Search players by name, home state or previous school' : 'Search recruits by name, rank, hometown or school') + '" />';
   if (recruitingStage() !== 'hs') {
-    html += '<div class="rb-transfer-filter-row' + (recruitingStage() === 'cpr' ? ' rb-cpr-filter-layout' : '') + '"><div id="rb-transfer-filter-controls">' + (recruitingStage() === 'cpr' ? '<div class="rb-cpr-filter-label">Eligibility</div>' : '') + renderTransferFilters() + '</div>';
+    html += '<div class="rb-transfer-filter-row"><div id="rb-transfer-filter-controls">' + renderTransferFilters() + '</div>';
   }
-  if (recruitingStage() === 'cpr') html += '<div class="rb-cpr-type-filter"><div class="rb-transfer-filter-heading"><span>Recruit type</span><button type="button" class="rb-transfer-filter-reset" data-cpr-type="">Show all</button></div><div class="rb-segmented" aria-label="Recruit type">' + [['walkon','Walk-On'],['scholarship','Scholarship'],['pitch','Pitch']].map(function(item){ return '<button type="button" data-cpr-type="' + item[0] + '" aria-pressed="' + (UI.cprTypeFilter === item[0]) + '">' + item[1] + '</button>'; }).join('') + '</div></div>';
+  if (recruitingStage() === 'cpr') html += '<div class="rb-cpr-type-filter"><div class="rb-transfer-filter-heading"><button type="button" class="rb-transfer-filter-reset" data-cpr-type="">Show all</button></div><div class="rb-segmented" aria-label="Recruit type">' + [['walkon','Walk-On'],['scholarship','Scholarship'],['pitch','Pitch']].map(function(item){ return '<button type="button" data-cpr-type="' + item[0] + '" aria-pressed="' + (UI.cprTypeFilter === item[0]) + '">' + item[1] + '</button>'; }).join('') + '</div></div>';
   const commitFilter = UI.boardCommitFilter || (UI.hideCommittedBoards ? 'uncommitted' : 'all');
-  html += '<div class="rb-board-status-filters">' + (recruitingStage() === 'cpr' ? '<div class="rb-cpr-filter-label">Status</div>' : '') + '<div class="rb-filter-row"><div class="rb-segmented" aria-label="Commit status filter">';
+  html += '<div class="rb-board-status-filters"><div class="rb-filter-row"><div class="rb-segmented" aria-label="Commit status filter">';
   [['committed','Committed'], ['all','All'], ['uncommitted','Uncommitted']].forEach(function(option){
     html += '<button type="button" data-board-commit-filter="' + option[0] + '" aria-pressed="' + (commitFilter === option[0] ? 'true' : 'false') + '">' + option[1] + '</button>';
   });
   html += '</div></div>';
   html += '<div class="rb-filter-row"><div class="rb-segmented" aria-label="Offer status">' + [['offered','Offered'],['all','All'],['unoffered','Unoffered']].map(function(option){ return '<button type="button" data-board-offer-filter="' + option[0] + '" aria-pressed="' + ((UI.boardOfferFilter || 'all') === option[0]) + '">' + option[1] + '</button>'; }).join('') + '</div></div>';
-  html += '<div class="rb-filter-row rb-cpr-hide-own-row"><label class="rb-toggle"><span>Hide my offers</span><input type="checkbox" id="rb-hide-my-offers" ' + (UI.hideMyOffers ? 'checked' : '') + ' /><span class="rb-switch-track"><span class="rb-switch-thumb"></span></span></label></div>';
   html += '</div>';
   if (recruitingStage() !== 'hs') html += '</div>';
   html += '</div>';
