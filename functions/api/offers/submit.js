@@ -13,6 +13,7 @@ export async function onRequestPost({request,env,waitUntil}){
  if(!user?.team)return json({ok:false,error:'Sign in with your linked team.'},{status:401});
  const body=await request.json().catch(()=>({}));
  if(!/^[a-zA-Z0-9_-]{8,100}$/.test(body.requestId || '') || typeof body.text!=='string' || !body.text.trim() || body.text.length>100000)return json({ok:false,error:'Enter a valid offer.'},{status:400});
+ if(body.quick && !['walkon','scholarship'].includes(body.quickType || 'walkon'))return json({ok:false,error:'Invalid quick offer type.'},{status:400});
  for(let attempt=0;attempt<30;attempt++){
   try{
    const state=await readLeagueState(env);
@@ -29,11 +30,20 @@ export async function onRequestPost({request,env,waitUntil}){
    }
    if(globalThis.NZCFLOfferWindow.locked(state,receivedAt))return json({ok:false,error:'Offers are locked.'},{status:403});
    if(row.commitTeam)return json({ok:false,error:'This player is committed.'},{status:409});
-   if(body.quick && (!existingPlayer || globalThis.NZCFLCprRules.scholarshipRecruit(row,offers)))return json({ok:false,error:'This player is not eligible for a quick walk-on offer.'},{status:409});
-   const text=body.quick?user.team+' offers '+row.position+' '+row.name+'\n\nWalk-On':body.text;
    const mode=globalThis.NZCFLCprRules.leaders(state.fullRoster)[row.position];
+   const isPitch=row.offerMode==='pitch' || mode?.rank===row.rank;
+   const isScholarship=globalThis.NZCFLCprRules.scholarshipRecruit(row,offers);
+   if(body.quick){
+    if(!existingPlayer || isPitch)return json({ok:false,error:'This player is not eligible for a quick header-only offer.'},{status:409});
+    if((body.quickType || 'walkon')==='scholarship' && !isScholarship)return json({ok:false,error:'This player is not classified as a scholarship recruit.'},{status:409});
+    if((body.quickType || 'walkon')==='walkon' && isScholarship)return json({ok:false,error:'This player is not eligible for a quick walk-on offer.'},{status:409});
+   }
+   // The server, not the submitted browser text, decides exactly what a quick offer contains.
+   const quickType=body.quickType || 'walkon';
+   const text=body.quick?user.team+' offers '+row.position+' '+row.name+'\n\n'+(quickType==='scholarship'?'Scholarship':'Walk-On'):body.text;
    const player=existingPlayer || {...row,id:pid,offerMode:mode?.rank===row.rank?'pitch':'values',coachCreated:true,stars:null};
-   const offer={id:'o_'+user.discordId+'_'+body.requestId,requestId:body.requestId,team:user.team,coach:user.displayName || user.username || '',text,visits:{},promises:Array.isArray(body.promises)?body.promises.slice(0,3):[],createdAt:receivedAt};
+   const offer={id:'o_'+user.discordId+'_'+body.requestId,requestId:body.requestId,team:user.team,coach:user.displayName || user.username || '',text,visits:{},promises:body.quick?[]:(Array.isArray(body.promises)?body.promises.slice(0,3):[]),createdAt:receivedAt};
+   if(body.quick)offer.offerType=quickType;
    const error=globalThis.NZCFLTransferRules.pitchLimitError(text,player,'cpr') || globalThis.NZCFLWalkonLimit.error(state,player,offer);
    if(error)return json({ok:false,error},{status:400});
    if(!existingPlayer){state.prospects[pid]=player;state.released[row.rank]=true;state.threads.push({id:'t_'+crypto.randomUUID(),title:row.name,prospectIds:[pid],stars:null,createdAt:receivedAt});}
