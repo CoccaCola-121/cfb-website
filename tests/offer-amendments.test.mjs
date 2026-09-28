@@ -22,8 +22,8 @@ test('upgrade changes only the standalone top offer type and never pitch wording
   assert.equal(A.allowed(expected,text,'Delaware',p),false);
  }
 });
-test('amend endpoint enforces ownership, keeps other offers and pitch text, and rejects downgrade',async()=>{
- const state={recruitingStage:'cpr',offersLocked:false,prospects:{r1:p},offersByProspect:{r1:[{id:'o1',team:'Delaware',text:'Delaware offers DL James Brooks\n\nWalk-On\n\nMy unchanged pitch.'},{id:'o2',team:'Alabama',text:'Scholarship'}]}};
+for(const stage of ['hs','cpr','transfer'])test(stage+' amendments preserve history, enforce ownership, and reject downgrade',async()=>{
+ const state={recruitingStage:stage,offersLocked:false,prospects:{r1:p},offersByProspect:{r1:[{id:'o1',team:'Delaware',editHistory:[{id:'previous',editedAt:1,editor:'Delaware',changes:['Coach visit added']}],text:'Delaware offers DL James Brooks\n\nWalk-On\n\nMy unchanged pitch.'},{id:'o2',team:'Alabama',text:'Scholarship'}]}};
  const data=new Map([['league:state',state],['discord:user:coach',{discordId:'coach',team:'Delaware'}]]);
  const env={SESSION_SECRET:'test',AUTH_KV:{get:async k=>structuredClone(data.get(k)||null),put:async(k,v)=>data.set(k,JSON.parse(v))}};
  const cookie='nzcfl_session='+await signSession(env,{discordId:'coach'});
@@ -35,6 +35,19 @@ test('amend endpoint enforces ownership, keeps other offers and pitch text, and 
  const saved=(await response.json()).state;
  assert.equal(saved.offersByProspect.r1[0].text,before[0].text.replace('Walk-On','Scholarship'));
  assert.deepEqual(saved.offersByProspect.r1[1],before[1]);
+ const history=saved.offersByProspect.r1[0].editHistory;
+ assert.equal(history.length,2);assert.deepEqual(history[0],before[0].editHistory[0]);
+ assert.equal(history[1].editor,'Delaware');assert.ok(history[1].editedAt>1);
+ assert.deepEqual(history[1].changes,['Offer type: Walk-On → Scholarship']);
+ // A missing heading can be added separately and produces another history entry.
+ const current=data.get('league:state');current.offersByProspect.r1[0].text='Scholarship\n\nOriginal pitch.';
+ const added=await run({prospectId:'r1',offerId:'o1',action:'header',expectedText:current.offersByProspect.r1[0].text});
+ assert.equal(added.status,200);
+ const updated=(await added.json()).state.offersByProspect.r1[0];
+ assert.equal(updated.editHistory.length,3);
+ assert.deepEqual(updated.editHistory[2].changes,['Added offer header. Pitch unchanged.']);
+ assert.ok(updated.text.endsWith('Original pitch.'));
+ saved.offersByProspect.r1[0].text=updated.text;
  assert.equal((await run({prospectId:'r1',offerId:'o1',action:'downgrade',expectedText:saved.offersByProspect.r1[0].text})).status,400);
 });
 

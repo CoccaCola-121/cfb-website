@@ -18,6 +18,10 @@ export async function onRequestPost({request,env,waitUntil}){
   offer.text=globalThis.NZCFLOfferAmendments.amend(offer.text,body.action,offer.team,p);
   if(body.action==='upgrade')offer.offerType='scholarship';
   offer.updatedAt=Date.now();
+  offer.editHistory=[...(offer.editHistory || []),{
+    id:'eh_'+crypto.randomUUID(), editedAt:offer.updatedAt, editor:user.team,
+    changes:[body.action==='upgrade'?'Offer type: Walk-On → Scholarship':'Added offer header. Pitch unchanged.']
+  }].slice(-20);
   const saved=await writeLeagueState(env,state);
   queueLeagueBackup(env,saved,waitUntil,{source:'offer-amendment'});
   return json({ok:true,state:saved});
