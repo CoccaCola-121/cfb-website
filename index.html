@@ -2865,9 +2865,32 @@ function canQuickOfferWalkon(p){
     !NZCFLCprRules.scholarshipRecruit(p, DB.offersByProspect[p.id] || []) &&
     !findAnyOfferForTeam(p.id, SESSION.team));
 }
+function canQuickOfferScholarship(p){
+  return !!(SESSION && SESSION.team && recruitingStage() === 'cpr' && p && DB.prospects[p.id] &&
+    DB.threads.some(t=>(t.prospectIds || []).includes(p.id)) && !p.commitTeam && !isPitchRecruit(p) &&
+    NZCFLCprRules.scholarshipRecruit(p, DB.offersByProspect[p.id] || []) &&
+    !findAnyOfferForTeam(p.id, SESSION.team));
+}
 function renderQuickWalkon(p){
-  if (!canQuickOfferWalkon(p)) return '';
-  return '<button type="button" class="rb-btn" data-quick-walkon="' + escapeHtml(p.id) + '"' + (offersLocked() || UI.submitting ? ' disabled' : '') + '>Offer walk-on</button>';
+  if (canQuickOfferWalkon(p)) return '<button type="button" class="rb-btn" data-quick-walkon="' + escapeHtml(p.id) + '"' + (offersLocked() || UI.submitting ? ' disabled' : '') + '>Offer walk-on</button>';
+  if (canQuickOfferScholarship(p)) return '<button type="button" class="rb-btn" data-quick-scholarship="' + escapeHtml(p.id) + '"' + (offersLocked() || UI.submitting ? ' disabled' : '') + '>Offer scholarship</button>';
+  return '';
+}
+function requestQuickScholarship(pid){
+  if (!canQuickOfferScholarship(DB.prospects[pid]) || offersLocked() || UI.submitting) return;
+  UI.pendingQuickScholarship = pid;
+  render();
+}
+function renderQuickScholarshipConfirm(){
+  const p=DB.prospects[UI.pendingQuickScholarship];
+  if (!p || !SESSION) return '';
+  const text=SESSION.team + ' offers ' + p.position + ' ' + p.name + '\n\nScholarship';
+  return '<div style="position:fixed;inset:0;background:rgba(0,0,0,.72);display:flex;align-items:center;justify-content:center;z-index:65;"><div class="rb-card" role="alertdialog" aria-modal="true" aria-labelledby="rb-quick-scholarship-title" aria-describedby="rb-quick-scholarship-warning" style="padding:24px;width:490px;max-width:90vw;border:1px solid var(--gold);"><div class="rb-h" id="rb-quick-scholarship-title" style="font-size:20px;margin-bottom:16px;">Submit scholarship offer?</div><p style="white-space:pre-wrap;margin:0 0 18px;">' + escapeHtml(text) + '</p><p id="rb-quick-scholarship-warning" role="alert" style="padding:14px;border:1px solid var(--gold);border-radius:6px;color:var(--chalk);font-weight:700;line-height:1.5;">WARNING: This scholarship offer has NO BODY. Once submitted, you cannot add a body or pitch to this offer later. This cannot be undone through the header editor. Only submit if you intend to send a header-only scholarship offer.</p><div style="display:flex;justify-content:flex-end;gap:8px;flex-wrap:wrap;"><button class="rb-btn" id="rb-cancel-quick-scholarship">Cancel</button><button class="rb-btn rb-btn-gold" id="rb-confirm-quick-scholarship">Submit header-only scholarship</button></div></div></div>';
+}
+async function quickOfferScholarship(pid){
+  const p=DB.prospects[pid];
+  if (!canQuickOfferScholarship(p) || offersLocked() || UI.submitting) return;
+  await submitCprOffer(SESSION.team + ' offers ' + p.position + ' ' + p.name + '\n\nScholarship', pid, 'scholarship');
 }
 function requestQuickWalkon(pid){
   if (!canQuickOfferWalkon(DB.prospects[pid]) || offersLocked() || UI.submitting) return;
@@ -2888,10 +2911,10 @@ async function quickOfferWalkon(pid){
 }
 
 let lastOfferWriteAt = 0;
-async function submitCompactCpr(rawText,quickId){
+async function submitCompactCpr(rawText,quickId,quickType){
   const key=offerDraftKey();if(!quickId)captureOfferDraft();
   const name=document.getElementById('rb-cpr-offer-name'),position=document.getElementById('rb-cpr-offer-position');
-  const body={requestId:crypto.randomUUID(),prospectId:quickId || UI.submitTargetId,text:rawText,quick:!!quickId,name:name?.value || '',position:position?.value || '',promises:extractPromises(rawText)};
+  const body={requestId:crypto.randomUUID(),prospectId:quickId || UI.submitTargetId,text:rawText,quick:!!quickId,quickType:quickId ? (quickType || 'walkon') : undefined,name:name?.value || '',position:position?.value || '',promises:extractPromises(rawText)};
   UI.submitting=true;
   try{
     let data;
@@ -2913,9 +2936,10 @@ async function submitCompactCpr(rawText,quickId){
   finally{UI.submitting=false;if(quickId)render();}
 }
 
-async function submitCprOffer(rawText, quickId){
+async function submitCprOffer(rawText, quickId, quickType){
   if (!SESSION || UI.submitting || !rawText.trim()) return;
-  if(apiAvailable() && UI.strongStorage)return submitCompactCpr(rawText,quickId);
+  if (quickId && quickType === 'scholarship' && !apiAvailable()) { UI.lastSummary={errorText:'Quick scholarship offers require the server. Please reconnect and try again.'}; render(); return; }
+  if(apiAvailable() && (UI.strongStorage || (quickId && quickType === 'scholarship')))return submitCompactCpr(rawText,quickId,quickType);
   const draftKey=offerDraftKey();
   if (!quickId) captureOfferDraft();
   const nameInput=document.getElementById('rb-cpr-offer-name');
@@ -3175,6 +3199,7 @@ function render(){
   if (UI.pendingMassRescind) html += renderMassRescindModal();
   if (UI.pendingMassRescindFinal) html += renderMassRescindFinalModal();
   if (UI.pendingQuickWalkon) html += renderQuickWalkonConfirm();
+  if (UI.pendingQuickScholarship) html += renderQuickScholarshipConfirm();
   if (UI.pendingWatchlistBulk) html += renderWatchlistBulkConfirm();
   if (UI.pendingSingleRescind) html += renderSingleRescindConfirmModal();
   if (UI.pendingUpgrade) html += renderUpgradeConfirmModal();
@@ -5132,6 +5157,11 @@ function bindEvents(){
   if (cancelQuick) cancelQuick.onclick=function(){ UI.pendingQuickWalkon=null; render(); };
   const confirmQuick=document.getElementById('rb-confirm-quick-walkon');
   if (confirmQuick) confirmQuick.onclick=function(){ const pid=UI.pendingQuickWalkon; UI.pendingQuickWalkon=null; render(); quickOfferWalkon(pid); };
+  document.querySelectorAll('[data-quick-scholarship]').forEach(function(button){ button.onclick=function(e){ e.preventDefault(); e.stopPropagation(); requestQuickScholarship(button.getAttribute('data-quick-scholarship')); }; });
+  const cancelQuickScholarship=document.getElementById('rb-cancel-quick-scholarship');
+  if (cancelQuickScholarship) cancelQuickScholarship.onclick=function(){ UI.pendingQuickScholarship=null; render(); };
+  const confirmQuickScholarship=document.getElementById('rb-confirm-quick-scholarship');
+  if (confirmQuickScholarship) confirmQuickScholarship.onclick=function(){ const pid=UI.pendingQuickScholarship; UI.pendingQuickScholarship=null; render(); quickOfferScholarship(pid); };
   const scholarshipRefresh=document.getElementById('rb-scholarship-refresh');
   if(scholarshipRefresh) scholarshipRefresh.onclick=refreshScholarshipHistory;
   const cprExport=document.getElementById('rb-cpr-export');
