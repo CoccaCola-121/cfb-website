@@ -26,6 +26,8 @@
 <style>
 /* Match quick scholarship and walk-on button typography exactly. */
 .rb-quick-offer-btn { font-family:Inter,sans-serif; font-size:14px; font-weight:600; line-height:normal; }
+/* Prospect cards have a compact Walk-On rule in styles.css; apply it to both quick-offer buttons. */
+[data-prospect-card] .rb-quick-offer-btn { font-size:12px; padding:8px 12px; }
 /* Keep the CPR-specific toggle outside the player-filter card. */
 .rb-cpr-board-heading { display:grid; grid-template-columns:minmax(0,1fr) auto minmax(0,1fr); align-items:center; gap:12px 24px; margin-bottom:18px; }
 .rb-cpr-board-heading > .rb-toggle { justify-self:end; }
