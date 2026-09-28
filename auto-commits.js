@@ -105,15 +105,17 @@
         if(positions.length && !positions.includes(p.position))return false;
         if(rule.stars!=='' && rule.stars!=null && stars(p)!==Number(rule.stars))return false;
         if(Number(rule.rankValue)>0 && (rule.rankMode==='better'?p.rank>Number(rule.rankValue):p.rank<=Number(rule.rankValue)))return false;
-        if(Number(rule.overallValue)>0 && (rating(p)===null || (rule.overallMode==='below'?rating(p)>=Number(rule.overallValue):rating(p)<Number(rule.overallValue))))return false;
+        if(Number(rule.overallValue)>0 && (rating(p)===null || (rule.overallMode==='below'?rating(p)>=Number(rule.overallValue):rule.overallMode==='atMost'?rating(p)>Number(rule.overallValue):rating(p)<Number(rule.overallValue))))return false;
         return !rule.scholarship || o && offerKind(work,p,o)===rule.scholarship;
       }
       for(const rule of work.conditionalRescinds || []){
         if(!rule.enabled || !rule.team)continue;
         const t=key(rule.team);
-        const won=players.filter(p=>key(work.prospects[p.id].commitTeam)===t && matches(rule,p,(work.offersByProspect?.[p.id] || []).find(o=>!o.rescinded && key(o.team)===t))).length;
-        if(won<Math.max(1,Number(rule.count)||0))continue;
-        for(const p of players)if(!work.prospects[p.id].commitTeam)for(const o of work.offersByProspect?.[p.id] || [])if(!o.rescinded && key(o.team)===t && matches(rule,p,o))rescind(p,o,'Conditional rescind: '+(rule.name || 'rule met'));
+        const won=players.filter(p=>key(work.prospects[p.id].commitTeam)===t && matches(rule,p,(work.offersByProspect?.[p.id] || []).find(o=>!o.rescinded && key(o.team)===t)));
+        if(won.length<Math.max(1,Number(rule.count)||0))continue;
+        const targetRule=rescindTargetRule(rule,won);
+        if(!targetRule)continue;
+        for(const p of players)if(!work.prospects[p.id].commitTeam)for(const o of work.offersByProspect?.[p.id] || [])if(!o.rescinded && key(o.team)===t && matches(targetRule,p,o))rescind(p,o,'Conditional rescind: '+(rule.name || 'rule met'));
       }
     }
     function candidates(p){
@@ -146,5 +148,12 @@
     if(result.commits.length)state.commitUpdatedAt=now;
     return result;
   }
-  root.NZCFLAutoCommits={key,rating,offerKind,commitKind,counts,remaining,parseCapacitySheet,validate,fingerprint,preview,apply};
+  function relativeOverall(mode){ return mode==='belowCommit' || mode==='atMostCommit'; }
+  function rescindTargetRule(rule, commits, getOverall=rating){
+    if (!relativeOverall(rule.overallMode)) return rule;
+    const values=commits.map(p=>getOverall(p));
+    if (!values.length || values.some(v=>v==null || !Number.isFinite(v))) return null;
+    return {...rule,overallMode:rule.overallMode==='belowCommit'?'below':'atMost',overallValue:Math.min(...values)};
+  }
+  root.NZCFLAutoCommits={relativeOverall,rescindTargetRule,key,rating,offerKind,commitKind,counts,remaining,parseCapacitySheet,validate,fingerprint,preview,apply};
 })(globalThis);

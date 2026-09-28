@@ -2384,7 +2384,7 @@ function conditionalRuleMatchesProspect(rule, prospect, offer){
     if (overall == null) return false;
     if (rule.overallMode === 'below'){
       if (overall >= overallLimit) return false;
-    } else if (overall < overallLimit) return false;
+    } else if (rule.overallMode === 'atMost' ? overall > overallLimit : overall < overallLimit) return false;
   }
   const scholarship = String(rule.scholarship || '').trim().toLowerCase();
   if (scholarship && (!offer || offerType(offer) !== scholarship)) return false;
@@ -2404,14 +2404,16 @@ function applyConditionalRescinds(){
       return prospect && teamKey(prospect.commitTeam) === teamKey(rule.team) && conditionalRuleMatchesProspect(rule, prospect, winningOffer);
     });
     if (matchingCommits.length < threshold) return;
+    const targetRule = NZCFLAutoCommits.rescindTargetRule(rule, matchingCommits.map(pid => DB.prospects[pid]), prospectOverall);
+    if (!targetRule) return;
     let rescinded = 0;
-    const prospectOnlyRule = Object.assign({}, rule, { scholarship: '' });
+    const prospectOnlyRule = Object.assign({}, targetRule, { scholarship: '' });
     Object.keys(DB.offersByProspect || {}).forEach(function(pid){
       const prospect = DB.prospects[pid];
       if (!prospect || prospect.commitTeam || !conditionalRuleMatchesProspect(prospectOnlyRule, prospect, null)) return;
       (DB.offersByProspect[pid] || []).forEach(function(offer){
         if (!offer || offer.rescinded || teamKey(offer.team) !== teamKey(rule.team)) return;
-        if (!conditionalRuleMatchesProspect(rule, prospect, offer)) return;
+        if (!conditionalRuleMatchesProspect(targetRule, prospect, offer)) return;
         offer.rescinded = true;
         offer.rescindedAt = Date.now();
         offer.rescindReason = 'Conditional rescind: ' + (rule.name || 'rule met');
@@ -3318,6 +3320,7 @@ function conditionalRuleSummary(rule){
   if (cleanPositions.length) parts.push(cleanPositions.join('/'));
   if (rule.stars !== '' && rule.stars != null) parts.push(rule.stars + ' star' + (Number(rule.stars) === 1 ? '' : 's'));
   if (rule.rankValue) parts.push((rule.rankMode === 'better' ? '#' + rule.rankValue + ' or better' : 'below #' + rule.rankValue));
+  if (NZCFLAutoCommits.relativeOverall(rule.overallMode)) parts.push((rule.overallMode === 'belowCommit' ? 'rescind below' : 'rescind at or below') + ' lowest committed overall');
   if (rule.overallValue) parts.push((rule.overallMode === 'below' ? 'ovr below ' : 'ovr at least ') + rule.overallValue);
   if (rule.scholarship) parts.push(rule.scholarship === 'walkon' ? 'walk-on' : 'scholarship');
   return parts.join(' · ');
@@ -3337,7 +3340,7 @@ function renderRescindFilterFields(prefix, includeCount){
   html += '</div>';
   html += '<div style="margin-bottom:10px;">' + renderPositionChecklist(prefix) + '</div>';
   html += '<div class="rb-mobile-stack rb-rescind-thresholds" style="display:grid;grid-template-columns:1fr 0.8fr;gap:10px;align-items:end;">';
-  html += '<label><span class="rb-mono" style="font-size:11px;color:var(--slate);">Overall filter</span><select class="rb-input" id="' + prefix + '-overall-mode"><option value="below">Overall below</option><option value="atLeast">Overall at least</option></select></label>';
+  html += '<label><span class="rb-mono" style="font-size:11px;color:var(--slate);">Overall filter</span><select class="rb-input" id="' + prefix + '-overall-mode"><option value="below">Overall below</option><option value="atLeast">Overall at least</option>' + (includeCount ? '<option value="belowCommit">Below lowest committed overall</option><option value="atMostCommit">At or below lowest committed overall</option>' : '') + '</select></label>';
   html += '<input class="rb-input" id="' + prefix + '-overall-value" type="number" min="1" max="99" aria-label="Overall threshold" placeholder="blank = any ovr" />';
   html += '</div>';
   return html;
@@ -3367,7 +3370,7 @@ function renderConditionalRescinds(){
   html += '<div class="rb-h" style="font-size:14px;margin-bottom:10px;">Conditional Rule</div>';
   html += '<div style="font-size:13px;color:var(--slate);margin-bottom:10px;">When I win this many matching recruits, rescind my other active offers matching the same filters.</div>';
   html += renderRescindFilterFields('rb-cond', true);
-  html += '<div style="margin-top:10px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;"><button class="rb-btn rb-btn-gold" id="rb-add-conditional">Save auto rule</button><span class="rb-mono" style="font-size:11px;color:var(--slate);">' + (recruitingStage() === 'transfer' ? 'Blank overall means that filter is ignored.' : 'Blank rank/overall means that filter is ignored.') + '</span></div>';
+  html += '<div style="margin-top:10px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;"><button class="rb-btn rb-btn-gold" id="rb-add-conditional">Save auto rule</button><span class="rb-mono" style="font-size:11px;color:var(--slate);">' + 'Relative overall uses the lowest-rated matching commit.' + '</span></div>';
   if (UI.conditionalError) html += '<div style="font-size:12px;color:var(--alert);margin-top:8px;">' + escapeHtml(UI.conditionalError) + '</div>';
   if (UI.conditionalStatus) html += '<div style="font-size:12px;color:var(--gold);margin-top:8px;">' + escapeHtml(UI.conditionalStatus) + '</div>';
   html += '</div>';
@@ -3389,14 +3392,16 @@ function conditionalFormValue(id){
 
 function readRescindRuleForm(prefix, includeCount){
   const rankValue = conditionalFormValue(prefix + '-rank-value');
-  const overallValue = conditionalFormValue(prefix + '-overall-value');
+  const overallMode = conditionalFormValue(prefix + '-overall-mode');
+  const relative = includeCount && NZCFLAutoCommits.relativeOverall(overallMode);
+  const overallValue = relative ? '' : conditionalFormValue(prefix + '-overall-value');
   return {
     count: includeCount ? Math.max(1, Number(conditionalFormValue(prefix + '-count')) || 1) : 1,
     positions: readPositionChecklist(prefix),
     stars: conditionalFormValue(prefix + '-stars'),
     rankMode: rankValue ? (conditionalFormValue(prefix + '-rank-mode') || 'worse') : '',
     rankValue: rankValue,
-    overallMode: overallValue ? (conditionalFormValue(prefix + '-overall-mode') || 'atLeast') : '',
+    overallMode: relative ? overallMode : overallValue ? (overallMode || 'atLeast') : '',
     overallValue: overallValue,
     scholarship: conditionalFormValue(prefix + '-scholarship')
   };
@@ -3405,7 +3410,7 @@ function readRescindRuleForm(prefix, includeCount){
 function validateRescindRuleDraft(draft, options){
   options = options || {};
   const hasRank = draft.rankMode && draft.rankValue;
-  const hasOverall = draft.overallMode && draft.overallValue;
+  const hasOverall = NZCFLAutoCommits.relativeOverall(draft.overallMode) || (draft.overallMode && draft.overallValue);
   if (!(draft.positions || []).length && draft.stars === '' && !hasRank && !hasOverall && !draft.scholarship){
     return options.actionLabel ? 'Pick at least one filter before ' + options.actionLabel + '.' : 'Pick at least one filter.';
   }
@@ -4757,6 +4762,14 @@ function bindFloatingSubmit(){
 
 function bindEvents(){
   bindFloatingSubmit();
+  const conditionalOverall=document.getElementById('rb-cond-overall-mode');
+  if(conditionalOverall) conditionalOverall.onchange=function(){
+    const input=document.getElementById('rb-cond-overall-value');
+    const relative=NZCFLAutoCommits.relativeOverall(conditionalOverall.value);
+    input.disabled=relative;
+    input.placeholder=relative?'Uses lowest committed overall':'blank = any ovr';
+    if(relative) input.value='';
+  };
   document.querySelectorAll('[data-quick-walkon]').forEach(function(button){ button.onclick=function(e){ e.preventDefault(); e.stopPropagation(); requestQuickWalkon(button.getAttribute('data-quick-walkon')); }; });
   const cancelQuick=document.getElementById('rb-cancel-quick-walkon');
   if (cancelQuick) cancelQuick.onclick=function(){ UI.pendingQuickWalkon=null; render(); };

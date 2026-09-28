@@ -1,3 +1,4 @@
+import '../../auto-commits.js';
 function teamKey(value) {
   return String(value || '').toLowerCase().replace(/[^a-z0-9]/g, '');
 }
@@ -51,7 +52,7 @@ function ruleMatchesProspect(rule, prospect, offer) {
     if (overall == null) return false;
     if (rule.overallMode === 'below') {
       if (overall >= overallLimit) return false;
-    } else if (overall < overallLimit) {
+    } else if (rule.overallMode === 'atMost' ? overall > overallLimit : overall < overallLimit) {
       return false;
     }
   }
@@ -88,14 +89,16 @@ export function applyConditionalRescinds(state, options = {}) {
 
     if (matchingCommits.length < threshold) return;
 
+    const targetRule = globalThis.NZCFLAutoCommits.rescindTargetRule(rule, matchingCommits.map(pid => prospects[pid]), overallValue);
+    if (!targetRule) return;
     let rescinded = 0;
-    const prospectOnlyRule = { ...rule, scholarship: '' };
+    const prospectOnlyRule = { ...targetRule, scholarship: '' };
     Object.keys(offersByProspect).forEach((pid) => {
       const prospect = prospects[pid];
       if (!prospect || prospect.commitTeam || !ruleMatchesProspect(prospectOnlyRule, prospect, null)) return;
       (offersByProspect[pid] || []).forEach((offer) => {
         if (!offer || offer.rescinded || teamKey(offer.team) !== teamKey(team)) return;
-        if (!ruleMatchesProspect(rule, prospect, offer)) return;
+        if (!ruleMatchesProspect(targetRule, prospect, offer)) return;
         offer.rescinded = true;
         offer.rescindedAt = now;
         offer.rescindReason = `Conditional rescind: ${rule.name || 'rule met'}`;
