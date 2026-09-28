@@ -82,7 +82,7 @@ let UI = { view: 'feed', threadId: null, showSubmitModal: false, submitting: fal
            backupStatus: null, backupError: null, backingUp: false,
            teamAdminModal: null, brandingFileName: '', adminActionStatus: null, adminActionError: null,
            commitOverrideRank: '', commitOverrideTeam: '', commitOverrideStatus: null, commitOverrideError: null,
-           pendingCommitOverride: null, pendingClearCommit: null, positionFilters: {} };
+           pendingCommitOverride: null, pendingClearCommit: null, positionFilters: {}, boardSearch: '', threadSearches: {} };
 let dbReady = false, sessionReady = false;
 let summaryTimer = null;
 let leagueSyncTimer = null;
@@ -4073,7 +4073,7 @@ function renderFeed(){
     return renderThreadProspectList(DB.threads[0]);
   }
   let html = '<div class="rb-page-heading"><div><p class="rb-eyebrow">' + escapeHtml(recruitingStageConfig().label) + ' recruiting</p><h1>Prospect board</h1></div><span class="rb-page-count">' + Object.keys(DB.prospects).length.toLocaleString() + ' prospects</span></div>';
-  html += '<label class="rb-board-search"><svg class="rb-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 4.5 4.5"/></svg><span class="rb-sr-only">Search recruits by name, rank or hometown</span><input class="rb-input" id="rb-board-search" type="search" placeholder="Search by name, rank or hometown" /></label>';
+  html += '<label class="rb-board-search"><svg class="rb-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 4.5 4.5"/></svg><span class="rb-sr-only">Search recruits by name, rank or hometown</span><input class="rb-input" id="rb-board-search" type="search" value="' + escapeHtml(UI.boardSearch || '') + '" placeholder="Search by name, rank or hometown" /></label>';
   html += '<div id="rb-board-cards" class="rb-board-list">';
   DB.threads.forEach(function(t){
     const visibleIds = visibleBoardProspectIds(t);
@@ -4149,7 +4149,7 @@ function renderThreadProspectList(t){
   const visibleIds = visibleBoardProspectIds(t);
   if (recruitingStage() === 'transfer') visibleIds.sort(function(a,b){ const pa = DB.prospects[a], pb = DB.prospects[b]; return (pa.sourceOrder ?? pa.rank) - (pb.sourceOrder ?? pb.rank); });
   html += '<div class="rb-board-filter-top">' + renderPositionCounts(visibleIds, function(pid){ return DB.prospects[pid] && DB.prospects[pid].position; }, filterKey) + '<span id="rb-board-result-count" role="status" aria-live="polite">' + visibleIds.length + ' players</span></div>';
-  html += '<input class="rb-input" data-thread-search="' + t.id + '" placeholder="' + (recruitingStage() !== 'hs' ? 'Search players by name, home state or previous school' : 'Search recruits by name, rank, hometown or school') + '" />';
+  html += '<input class="rb-input" data-thread-search="' + t.id + '" value="' + escapeHtml((UI.threadSearches || {})[t.id] || '') + '" placeholder="' + (recruitingStage() !== 'hs' ? 'Search players by name, home state or previous school' : 'Search recruits by name, rank, hometown or school') + '" />';
   if (recruitingStage() !== 'hs') {
     html += '<div class="rb-transfer-filter-row"><div id="rb-transfer-filter-controls">' + renderTransferFilters() + '</div>';
   }
@@ -4907,6 +4907,17 @@ function bindFloatingSubmit(){
 }
 
 function bindEvents(){
+  // Rebuild saved board-search results before binding their player-card actions.
+  const restoredBoardSearch = document.getElementById('rb-board-search');
+  if (restoredBoardSearch && restoredBoardSearch.value.trim()){
+    const boardCards = document.getElementById('rb-board-cards');
+    const playerResults = document.getElementById('rb-board-player-results');
+    if (boardCards) boardCards.style.display = 'none';
+    if (playerResults){
+      playerResults.style.display = 'flex';
+      playerResults.innerHTML = renderBoardSearchResults(restoredBoardSearch.value.toLowerCase().trim());
+    }
+  }
   bindFloatingSubmit();
   document.querySelectorAll('[data-amend-action]').forEach(function(button){button.onclick=function(e){e.preventDefault();e.stopPropagation();amendOwnOffer(button.getAttribute('data-amend-prospect'),button.getAttribute('data-amend-offer'),button.getAttribute('data-amend-action'));};});
   const conditionalOverall=document.getElementById('rb-cond-overall-mode');
@@ -5206,7 +5217,8 @@ function bindEvents(){
 
   const boardSearch = document.getElementById('rb-board-search');
   if (boardSearch) boardSearch.oninput = function(){
-    const q = boardSearch.value.toLowerCase().trim();
+    UI.boardSearch = boardSearch.value;
+    const q = UI.boardSearch.toLowerCase().trim();
     const boardCards = document.getElementById('rb-board-cards');
     const playerResults = document.getElementById('rb-board-player-results');
     if (boardCards) boardCards.style.display = q ? 'none' : 'flex';
@@ -5312,6 +5324,7 @@ function bindEvents(){
 
   document.querySelectorAll('[data-thread-search]').forEach(function(el){
     el.oninput = function(){
+      (UI.threadSearches ||= {})[el.getAttribute('data-thread-search')] = el.value;
       const key = document.querySelector('[data-position-filter]') ? document.querySelector('[data-position-filter]').getAttribute('data-position-filter') : '';
       applyPositionListFilters('board', key);
     };
