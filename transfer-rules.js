@@ -7,11 +7,24 @@
       try{const url=new URL(match[2]);if(!['https:','http:'].includes(url.protocol))continue;
         result.push({start:match.index,end:re.lastIndex,label:match[1],url:url.href});}catch{}
     }
-    return result;
+    const raw=String(text || '');
+    const bare=/\b(?:https?:\/\/[^\s<>]+|(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)+[a-z]{2,63}(?::\d+)?(?:[/?#][^\s<>]*)?)/gi;
+    while((match=bare.exec(raw))){
+      if(result.some(t=>match.index<t.end && bare.lastIndex>t.start))continue;
+      if(match.index && /[\w@/.-]/.test(raw[match.index-1]))continue;
+      let label=match[0].replace(/[.,!?;:'"*]+$/g,'');
+      while(label.endsWith(')') && (label.match(/\)/g)||[]).length>(label.match(/\(/g)||[]).length)label=label.slice(0,-1);
+      label=label.replace(/[\]}]+$/g,'');
+      try{const url=new URL(/^https?:\/\//i.test(label)?label:'https://'+label);
+        if(!['http:','https:'].includes(url.protocol))continue;
+        result.push({start:match.index,end:match.index+label.length,label,url:url.href,bare:true});
+      }catch{}
+    }
+    return result.sort((a,b)=>a.start-b.start);
   }
   function withoutLinkUrls(text){
     let out='',cursor=0;
-    for(const token of linkTokens(text)){out+=text.slice(cursor,token.start)+token.label;cursor=token.end;}
+    for(const token of linkTokens(text)){out+=text.slice(cursor,token.start)+(token.bare?'':token.label);cursor=token.end;}
     return (out+text.slice(cursor)).replace(/https?:\/\/[^\s<>]+/gi,'');
   }
   function pitchWordCount(text, prospect){

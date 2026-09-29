@@ -378,7 +378,7 @@ function formatOfferText(text, promises){
   let html='',cursor=0;
   tokens.forEach(function(token){
     html+=formatOfferPlainText(raw.slice(cursor,token.start),promises);
-    html+='<a href="'+escapeHtml(token.url)+'" target="_blank" rel="noopener noreferrer" style="color:var(--gold);text-decoration:underline;">'+formatOfferPlainText(token.label,promises)+'</a>';
+    html+='<a href="'+escapeHtml(token.url)+'" target="_blank" rel="noopener noreferrer" style="color:#60a5fa;text-decoration:underline;overflow-wrap:anywhere;">'+escapeHtml(token.label)+'</a>';
     cursor=token.end;
   });
   return html+formatOfferPlainText(raw.slice(cursor),promises);
@@ -3217,6 +3217,7 @@ function render(){
   if (UI.pendingWatchlistBulk) html += renderWatchlistBulkConfirm();
   if (UI.pendingSingleRescind) html += renderSingleRescindConfirmModal();
   if (UI.pendingUpgrade) html += renderUpgradeConfirmModal();
+  if (UI.pendingRemovePlayer) html += renderRemovePlayerConfirm();
   if (UI.headerEdit) html += renderHeaderEditModal();
   if (UI.teamAdminModal) html += renderTeamAdminModal();
   if (UI.confirmReset) html += renderResetConfirmModal();
@@ -5143,10 +5144,15 @@ function bindFloatingSubmit(){
   }
 }
 
+function renderRemovePlayerConfirm(){
+  const p=DB.prospects[UI.pendingRemovePlayer];
+  if(!p || !canUseDangerZone())return '';
+  return '<div style="position:fixed;inset:0;background:rgba(0,0,0,.72);display:flex;align-items:center;justify-content:center;z-index:65;"><div class="rb-card" role="dialog" aria-modal="true" aria-labelledby="rb-remove-confirm-title" style="padding:24px;width:460px;max-width:90vw;box-sizing:border-box;"><div class="rb-h" id="rb-remove-confirm-title" style="font-size:20px;margin-bottom:16px;">Remove player thread?</div><p>Remove <strong>'+escapeHtml(p.name)+'</strong> from the board?</p><p style="color:var(--slate);line-height:1.5;">Their offers will be archived. Coaches cannot recreate this player’s thread for this class.</p><div style="display:flex;justify-content:flex-end;gap:8px;flex-wrap:wrap;"><button class="rb-btn" id="rb-cancel-remove-player">Cancel</button><button class="rb-btn rb-btn-danger" id="rb-confirm-remove-player">Remove thread</button></div></div></div>';
+}
 async function removePlayerThread(pid){
   const p=DB.prospects[pid];
   if(!canUseDangerZone() || !p || UI.submitting)return;
-  if(!window.confirm('Remove '+p.name+' from this board? Their offers will be archived and coaches will not be able to recreate their thread for this class.'))return;
+  UI.pendingRemovePlayer=null;
   UI.submitting=true;
   try{
     const response=await fetch('/api/players/remove',{method:'POST',credentials:'include',headers:{'content-type':'application/json'},body:JSON.stringify({prospectId:pid,expectedUpdatedAt:DB.updatedAt})});
@@ -5159,7 +5165,11 @@ async function removePlayerThread(pid){
 }
 function bindEvents(){
   const removePlayer=document.getElementById('rb-remove-player');
-  if(removePlayer)removePlayer.onclick=function(){removePlayerThread(removePlayer.getAttribute('data-player'));};
+  if(removePlayer)removePlayer.onclick=function(){UI.pendingRemovePlayer=removePlayer.getAttribute('data-player');render();};
+  const cancelRemove=document.getElementById('rb-cancel-remove-player');
+  if(cancelRemove)cancelRemove.onclick=function(){UI.pendingRemovePlayer=null;render();};
+  const confirmRemove=document.getElementById('rb-confirm-remove-player');
+  if(confirmRemove)confirmRemove.onclick=function(){removePlayerThread(UI.pendingRemovePlayer);};
   // Rebuild saved board-search results before binding their player-card actions.
   const restoredBoardSearch = document.getElementById('rb-board-search');
   if (restoredBoardSearch && restoredBoardSearch.value.trim()){
