@@ -1,10 +1,11 @@
+import {coachStateError} from '../../_lib/state-access.js';
 import '../../../transfer-rules.js';
 import '../../../offer-amendments.js';
 import '../../../offer-window.js';
 import '../../../cpr-rules.js';
 import '../../../walkon-limit.js';
 import '../../../auto-commits.js';
-import { json } from '../../_lib/auth.js';
+import { json, getCurrentUser, canModerate, accessLevel } from '../../_lib/auth.js';
 import { queueLeagueBackup } from '../../_lib/backup.js';
 import { readLeagueState, writeLeagueState } from '../../_lib/league-state.js';
 
@@ -23,6 +24,8 @@ export async function onRequestGet({ env, request }) {
 
 export async function onRequestPut({ request, env, waitUntil }) {
  try {
+  const user=await getCurrentUser(request,env);
+  if(!user)return json({ok:false,error:'Sign in before saving.'},{status:401});
   const body = await request.json().catch(() => ({}));
   const incoming = body.state || body;
   const previous = await readLeagueState(env);
@@ -31,6 +34,13 @@ export async function onRequestPut({ request, env, waitUntil }) {
   // Preserve new settings when an older open browser tab submits its existing payload.
   for (const field of ['scholarshipCapacity','bucksRemaining']) {
     if (!Object.prototype.hasOwnProperty.call(incoming,field) && previous && Object.prototype.hasOwnProperty.call(previous,field)) incoming[field]=previous[field];
+  }
+  if(!canModerate(env,user)){
+    const error=coachStateError(previous,incoming,user);
+    if(error)return json({ok:false,error},{status:403});
+  } else if(accessLevel(env,user)!=='commissioner'){
+    const removed=Object.entries(previous?.offersByProspect || {}).some(([pid,offers])=>offers.some(o=>!(incoming.offersByProspect?.[pid] || []).some(n=>n.id===o.id)));
+    if(removed || JSON.stringify(previous?.fullRoster)!==JSON.stringify(incoming.fullRoster) || previous?.recruitingStage!==incoming.recruitingStage)return json({ok:false,error:'Commissioner access is required for resets and class changes.'},{status:403});
   }
   if (incoming.recruitingStage === 'cpr') {
     const roster = incoming.fullRoster || [];

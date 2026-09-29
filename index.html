@@ -773,7 +773,7 @@ async function loadServerAuth(){
         UI.loginStep = 'team';
       }
       await loadTeamAvailability();
-      if (SESSION) await loadWatchlist();
+      if (SESSION) void loadWatchlist();
     }
   } catch (e) { /* local preview or functions not configured */ }
 }
@@ -989,7 +989,7 @@ async function syncLeagueState(renderAfter, options){
     const data = await res.json();
     UI.strongStorage=data.storage==='d1';
     const changed = mergeLeagueState(data.state);
-    if (changed && renderAfter && !UI.showSubmitModal && !UI.editOfferTarget) render();
+    if (changed && renderAfter && !UI.showSubmitModal && !UI.editOfferTarget && !UI.headerEdit) render();
     return changed;
   } catch (e) {
     return false;
@@ -2055,7 +2055,7 @@ async function linkLoginTeam(team){
     UI.teamLinkQuery = '';
     UI.view = 'feed';
     await loadTeamAvailability();
-    await loadWatchlist();
+    void loadWatchlist();
     render();
   } catch (e) {
     UI.loginError = e.message || 'Could not link that team.';
@@ -2076,7 +2076,7 @@ async function logout(){
     try { await fetch('/api/auth/logout', { method: 'POST', credentials: 'include' }); } catch (e) {}
   }
   SESSION = null;
-  UI.watchlistIds = []; UI.watchlistLoaded = false; UI.watchlistTeam = ''; UI.watchlistStage = ''; UI.watchlistError = ''; UI.watchlistPending = {}; UI.pendingWatchlistBulk = null;
+  UI.watchlistIds = []; UI.watchlistLoaded = false; UI.watchlistTeam = ''; UI.watchlistStage = ''; UI.watchlistVersion=-1; UI.watchlistError = ''; UI.watchlistPending = {}; UI.pendingWatchlistBulk = null;
   UI.pendingDiscordUser = null;
   UI.loginStep = 'account';
   UI.teamLinkQuery = '';
@@ -4138,24 +4138,27 @@ function createCprPlayer(input){
   DB.threads.push(makeThread(row.name,[id],null));
   return id;
 }
+function renderAfterWatchlist(){if(!UI.showSubmitModal && !UI.editOfferTarget && !UI.headerEdit)render();}
 async function loadWatchlist(){
   if (!SESSION?.team || !apiAvailable()) return;
   const team = teamKey(SESSION.team), stage = recruitingStage();
   if (UI.watchlistTeam !== team || UI.watchlistStage !== stage) {
-    UI.watchlistIds = []; UI.watchlistLoaded = false; UI.watchlistPending = {};
+    UI.watchlistIds = []; UI.watchlistLoaded = false; UI.watchlistPending = {}; UI.watchlistVersion=-1;
   }
   UI.watchlistTeam = team; UI.watchlistStage = stage; UI.watchlistError = '';
   try {
     const response = await fetch('/api/watchlist',{credentials:'include',cache:'no-store'});
     const type = response.headers.get('content-type') || '';
-    if (!type.includes('application/json')) throw Error('Watchlist API is not deployed yet. Upload functions/api/watchlist.js.');
+    if (!type.includes('application/json')) throw Error('Watchlist is temporarily unavailable. Please retry shortly.');
     const data = await response.json();
     if (!response.ok || !data.ok) throw Error(data.error || 'Watchlist could not be loaded.');
     if (!SESSION || teamKey(SESSION.team) !== team || recruitingStage() !== stage) return;
+    if((data.version ?? 0)<(UI.watchlistVersion ?? -1))return;
+    UI.watchlistVersion=data.version ?? 0;
     UI.watchlistIds = Array.isArray(data.ids) ? data.ids : [];
     UI.watchlistLoaded = true;
   } catch(error) { if (SESSION && teamKey(SESSION.team) === team) { UI.watchlistLoaded = false; UI.watchlistError = error.message || 'Watchlist unavailable.'; } }
-  render();
+  renderAfterWatchlist();
 }
 function renderWatchlistFlag(pid){
   const active = UI.watchlistIds.includes(pid);
@@ -4179,7 +4182,7 @@ function requestWatchlistBulk(action){
     if (!ids.length) return;
     UI.pendingWatchlistBulk = { action:'add-many', ids:ids, count:ids.length };
   }
-  render();
+  renderAfterWatchlist();
 }
 function renderWatchlistBulkConfirm(){
   const pending=UI.pendingWatchlistBulk;
@@ -4196,15 +4199,15 @@ async function confirmWatchlistBulk(){
   const team=teamKey(SESSION.team), stage=recruitingStage();
   UI.watchlistBulkSaving=true;
   UI.pendingWatchlistBulk=null;
-  render();
+  renderAfterWatchlist();
   try {
     const response=await fetch('/api/watchlist',{method:'POST',credentials:'include',headers:{'content-type':'application/json'},body:JSON.stringify(pending.action==='clear'?{action:'clear'}:{action:'add-many',ids:pending.ids})});
-    if (!(response.headers.get('content-type') || '').includes('application/json')) throw Error('Watchlist API is outdated. Deploy the updated functions/api/watchlist.js first.');
+    if (!(response.headers.get('content-type') || '').includes('application/json')) throw Error('Watchlist is temporarily unavailable. Please retry shortly.');
     const data=await response.json();
     if (!response.ok || !data.ok) throw Error(data.error || 'Could not update watchlist.');
-    if (SESSION && teamKey(SESSION.team)===team && recruitingStage()===stage) UI.watchlistIds=Array.isArray(data.ids)?data.ids:[];
+    if (SESSION && teamKey(SESSION.team)===team && recruitingStage()===stage && (data.version ?? 0)>=(UI.watchlistVersion ?? -1)){UI.watchlistIds=Array.isArray(data.ids)?data.ids:[];UI.watchlistVersion=data.version ?? 0;}
   } catch(error) { UI.lastSummary={errorText:error.message || 'Could not update watchlist.'}; }
-  finally { UI.watchlistBulkSaving=false; render(); }
+  finally { UI.watchlistBulkSaving=false; renderAfterWatchlist(); }
 }
 async function toggleWatchlist(pid){
   if (!SESSION || !UI.watchlistLoaded || UI.watchlistBulkSaving || UI.watchlistPending[pid] || !DB.prospects[pid]) return;
@@ -4218,10 +4221,10 @@ async function toggleWatchlist(pid){
     const data=await response.json();
     if (!response.ok || !data.ok) throw Error(data.error || 'Watchlist change was not saved.');
     if (!SESSION || teamKey(SESSION.team)!==team || recruitingStage()!==stage) return;
-    UI.watchlistIds=Array.isArray(data.ids)?data.ids:[];
+    if((data.version ?? 0)>=(UI.watchlistVersion ?? -1)){UI.watchlistIds=Array.isArray(data.ids)?data.ids:[];UI.watchlistVersion=data.version ?? 0;}
   } catch(error) {
     UI.lastSummary={errorText:error.message || 'Could not save watchlist change.'};
-  } finally { delete UI.watchlistPending[pid]; render(); }
+  } finally { delete UI.watchlistPending[pid]; renderAfterWatchlist(); }
 }
 function renderWatchlist(){
   if (!UI.watchlistLoaded) return '<div class="rb-card" style="padding:24px;"><div class="rb-h" style="font-size:20px;margin-bottom:12px;">My Watchlist</div><p role="status">' + escapeHtml(UI.watchlistError || 'Loading your team watchlist…') + '</p><button class="rb-btn" id="rb-retry-watchlist">Retry</button></div>';
@@ -4734,7 +4737,7 @@ async function amendOwnOffer(pid,oid,action,confirmed){
   UI.submitting=true;
   try {
     const response=await fetch('/api/offers/amend',{method:'POST',credentials:'include',headers:{'content-type':'application/json'},body:JSON.stringify({prospectId:pid,offerId:oid,action,expectedText:o.text})});
-    const data=await response.json();
+    const data=await response.json().catch(function(){throw Error('The server is temporarily unavailable. Your changes were not confirmed; please retry.');});
     if(!response.ok || !data.ok)throw Error(data.error || 'Could not update offer.');
     mergeLeagueState(data.state);
     UI.lastSummary={errorText:action==='upgrade'?'Offer upgraded to scholarship.':'Offer header added.',dismissAt:Date.now()+6000};
@@ -4780,7 +4783,7 @@ async function saveHeaderEdit(){
  UI.submitting=true;
  try{
   const response=await fetch('/api/offers/amend',{method:'POST',credentials:'include',headers:{'content-type':'application/json'},body:JSON.stringify({prospectId:edit.prospectId,offerId:edit.offerId,action:'edit-header',expectedText:edit.expectedText,headerLine:line})});
-  const data=await response.json();if(!response.ok || !data.ok)throw Error(data.error || 'Could not update the offer header.');
+  const data=await response.json().catch(function(){throw Error('The server is temporarily unavailable. Your changes were not confirmed; please retry.');});if(!response.ok || !data.ok)throw Error(data.error || 'Could not update the offer header.');
   mergeLeagueState(data.state);UI.headerEdit=null;UI.lastSummary={errorText:'Offer header updated. The body was not changed.',dismissAt:Date.now()+6000};
  }catch(error){edit.error=error.message || 'Could not save header.';}
  finally{UI.submitting=false;render();}
@@ -5147,6 +5150,7 @@ function bindEvents(){
   const cancelUpgrade=document.getElementById('rb-cancel-upgrade');if(cancelUpgrade)cancelUpgrade.onclick=function(){UI.pendingUpgrade=null;render();};
   const confirmUpgrade=document.getElementById('rb-confirm-upgrade');if(confirmUpgrade)confirmUpgrade.onclick=function(){const pending=UI.pendingUpgrade;UI.pendingUpgrade=null;if(pending)amendOwnOfferConfirmedUpgrade(pending.prospectId,pending.offerId);};
   const cancelHeader=document.getElementById('rb-cancel-header-edit');if(cancelHeader)cancelHeader.onclick=function(){UI.headerEdit=null;render();};
+  const headerLine=document.getElementById('rb-header-line');if(headerLine)headerLine.oninput=function(){if(UI.headerEdit)UI.headerEdit.line=headerLine.value;};
   const saveHeader=document.getElementById('rb-save-header-edit');if(saveHeader)saveHeader.onclick=saveHeaderEdit;
   const conditionalOverall=document.getElementById('rb-cond-overall-mode');
   if(conditionalOverall) conditionalOverall.onchange=function(){
@@ -5299,10 +5303,10 @@ function bindEvents(){
   if (confirmBulkWatchlist) confirmBulkWatchlist.onclick=confirmWatchlistBulk;
   document.querySelectorAll('[data-open-prospect]').forEach(function(el){
     el.onclick = function(e){
+      // Keep native details expansion and text selection working inside offer cards.
+      if (e.target && e.target.closest && e.target.closest('.rb-branded-offer, [data-watchlist-flag]')) return;
       e.preventDefault();
       e.stopPropagation();
-      // Interacting with an offer (including selecting or dragging its text) must not open the player page.
-      if (e.target && e.target.closest && e.target.closest('.rb-branded-offer, [data-watchlist-flag]')) return;
       UI.prospectReturnView = UI.view === 'watchlist' || UI.view === 'myoffers' || UI.view === 'mycommits' || UI.view === 'teamcommits' || UI.view === 'teamoffers' || UI.view === 'thread' ? UI.view : 'feed';
       navigateTo('prospect', { prospectId: el.getAttribute('data-open-prospect') });
       scrollPageTop();
@@ -5850,7 +5854,7 @@ function bindEvents(){
 }
 
 let lastOfferWindowLocked = offersLocked();
-setInterval(function(){ const locked = offersLocked(); if (locked !== lastOfferWindowLocked) { lastOfferWindowLocked = locked; if (UI.view !== 'setup' && !UI.showSubmitModal && !UI.editOfferTarget) render(); } }, 1000);
+setInterval(function(){ const locked = offersLocked(); if (locked !== lastOfferWindowLocked) { lastOfferWindowLocked = locked; if (UI.view !== 'setup' && !UI.showSubmitModal && !UI.editOfferTarget && !UI.headerEdit) render(); } }, 1000);
 
 applyRoute(routeFromPath(window.location.pathname));
 render();

@@ -25,36 +25,38 @@ function present(ids, state) {
   return [...new Set(Array.isArray(ids) ? ids : [])].filter(id =>
     typeof id === 'string' && Object.prototype.hasOwnProperty.call(state.prospects || {},id));
 }
-export async function onRequestGet({request, env}) {
-  try {
-    const ctx = await context(request,env);
-    if (ctx.error) return ctx.error;
-    const ids = present(await env.AUTH_KV.get(ctx.key,'json'),ctx.state);
-    return json({ok:true,ids},{headers:cacheHeaders});
-  } catch(error) { return json({ok:false,error:'Could not load your team watchlist.'},{status:503,headers:cacheHeaders}); }
+async function stored(ctx,env){
+  if(!env.LEAGUE_DB)throw Error('D1 is required for watchlist saves.');
+  await env.LEAGUE_DB.prepare('CREATE TABLE IF NOT EXISTS private_watchlists (key TEXT PRIMARY KEY, ids TEXT NOT NULL, version INTEGER NOT NULL)').run();
+  let row=await env.LEAGUE_DB.prepare('SELECT ids,version FROM private_watchlists WHERE key=?').bind(ctx.key).first();
+  if(!row){
+    const ids=present(await env.AUTH_KV.get(ctx.key,'json'),ctx.state);
+    await env.LEAGUE_DB.prepare('INSERT OR IGNORE INTO private_watchlists(key,ids,version) VALUES(?,?,0)').bind(ctx.key,JSON.stringify(ids)).run();
+    row=await env.LEAGUE_DB.prepare('SELECT ids,version FROM private_watchlists WHERE key=?').bind(ctx.key).first();
+  }
+  return row;
 }
-export async function onRequestPost({request,env}) {
-  try {
-    const ctx = await context(request,env);
-    if (ctx.error) return ctx.error;
-    const body = await request.json().catch(()=>({}));
-    if (body.action === 'clear') {
-      await env.AUTH_KV.put(ctx.key,JSON.stringify([]));
-      return json({ok:true,ids:[]},{headers:cacheHeaders});
-    }
-    if (body.action === 'add-many') {
-      if (!Array.isArray(body.ids) || body.ids.length > 5000 || body.ids.some(id => typeof id !== 'string' || !Object.prototype.hasOwnProperty.call(ctx.state.prospects || {},id)))
-        return json({ok:false,error:'Select valid players from the current board.'},{status:400,headers:cacheHeaders});
-      const existing = present(await env.AUTH_KV.get(ctx.key,'json'),ctx.state);
-      const next = [...new Set([...existing,...body.ids])];
-      await env.AUTH_KV.put(ctx.key,JSON.stringify(next));
-      return json({ok:true,ids:next},{headers:cacheHeaders});
-    }
-    if(typeof body.prospectId !== 'string' || !Object.prototype.hasOwnProperty.call(ctx.state.prospects || {},body.prospectId) || typeof body.flagged !== 'boolean')
-      return json({ok:false,error:'Select a valid player and flag state.'},{status:400,headers:cacheHeaders});
-    const ids = present(await env.AUTH_KV.get(ctx.key,'json'),ctx.state);
-    const next = body.flagged ? [...new Set([...ids,body.prospectId])] : ids.filter(id=>id!==body.prospectId);
-    await env.AUTH_KV.put(ctx.key,JSON.stringify(next));
-    return json({ok:true,ids:next},{headers:cacheHeaders});
-  } catch(error) { return json({ok:false,error:'Could not save your team watchlist. Try again.'},{status:503,headers:cacheHeaders}); }
+export async function onRequestGet({request,env}){
+ try{
+  const ctx=await context(request,env);if(ctx.error)return ctx.error;
+  const row=await stored(ctx,env);
+  return json({ok:true,ids:present(JSON.parse(row.ids),ctx.state),version:row.version},{headers:cacheHeaders});
+ }catch{return json({ok:false,error:'Could not load your team watchlist.'},{status:503,headers:cacheHeaders});}
+}
+export async function onRequestPost({request,env}){
+ try{
+  const ctx=await context(request,env);if(ctx.error)return ctx.error;
+  const body=await request.json().catch(()=>({}));
+  const valid=id=>typeof id==='string' && Object.prototype.hasOwnProperty.call(ctx.state.prospects || {},id);
+  if(body.action!=='clear' && (body.action==='add-many' ? !Array.isArray(body.ids) || body.ids.length>5000 || !body.ids.every(valid) : !valid(body.prospectId) || typeof body.flagged!=='boolean'))return json({ok:false,error:'Select valid players and an action.'},{status:400,headers:cacheHeaders});
+  let row=await stored(ctx,env);
+  for(let attempt=0;attempt<8;attempt++){
+    const ids=present(JSON.parse(row.ids),ctx.state);
+    const next=body.action==='clear'?[]:body.action==='add-many'?[...new Set([...ids,...body.ids])]:body.flagged?[...new Set([...ids,body.prospectId])]:ids.filter(id=>id!==body.prospectId);
+    const result=await env.LEAGUE_DB.prepare('UPDATE private_watchlists SET ids=?,version=version+1 WHERE key=? AND version=?').bind(JSON.stringify(next),ctx.key,row.version).run();
+    if(result.meta.changes)return json({ok:true,ids:next,version:row.version+1},{headers:cacheHeaders});
+    row=await env.LEAGUE_DB.prepare('SELECT ids,version FROM private_watchlists WHERE key=?').bind(ctx.key).first();
+  }
+  return json({ok:false,error:'Watchlist changed elsewhere. Please retry.'},{status:409,headers:cacheHeaders});
+ }catch{return json({ok:false,error:'Could not save your team watchlist. Try again.'},{status:503,headers:cacheHeaders});}
 }
