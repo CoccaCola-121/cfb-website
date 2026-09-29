@@ -199,7 +199,8 @@ const VIEW_ROUTES = {
   myoffers: '/myoffers',
   mycommits: '/mycommits',
   teams: '/teams',
-  setup: '/settings'
+  setup: '/settings',
+  modlog: '/mod-log'
 };
 
 function canUseBrowserRoutes(){
@@ -259,6 +260,7 @@ function routeFromPath(pathname){
   if (path === '/mycommits') return { view: 'mycommits' };
   if (path === '/teams') return { view: 'teams' };
   if (path === '/settings') return { view: 'setup' };
+  if (path === '/mod-log') return { view: 'modlog' };
   const prospectMatch = path.match(/^\/prospect\/([^/]+)$/);
   if (prospectMatch) return { view: 'prospect', prospectId: decodeURIComponent(prospectMatch[1]) };
   const boardMatch = path.match(/^\/prospectboard\/([^/]+)$/);
@@ -311,6 +313,7 @@ function navigateTo(view, options){
   const nextThreadId = options.threadId != null ? options.threadId : (view === 'thread' ? UI.threadId : null);
   if (shouldResetBoardFilters(view, nextThreadId)) resetBoardFilters();
   if (UI.view !== view && UI.adminActionStatus === 'Team changes saved.') UI.adminActionStatus = null;
+  if(view === 'modlog')UI.modLogLoaded=false;
   UI.view = view;
   if (options.threadId != null) { UI.threadId = options.threadId; UI.threadSlug = ''; }
   if (options.prospectId != null) UI.prospectId = options.prospectId;
@@ -780,6 +783,7 @@ async function loadServerAuth(){
         };
       } else {
         SESSION = null;
+  UI.modLogEntries=[];UI.modLogLoaded=false;UI.modLogNext=null;
         UI.loginStep = 'team';
       }
       await loadTeamAvailability();
@@ -2086,6 +2090,7 @@ async function logout(){
     try { await fetch('/api/auth/logout', { method: 'POST', credentials: 'include' }); } catch (e) {}
   }
   SESSION = null;
+  UI.modLogEntries=[];UI.modLogLoaded=false;UI.modLogNext=null;
   UI.watchlistIds = []; UI.watchlistLoaded = false; UI.watchlistTeam = ''; UI.watchlistStage = ''; UI.watchlistVersion=-1; UI.watchlistError = ''; UI.watchlistPending = {}; UI.pendingWatchlistBulk = null;
   UI.pendingDiscordUser = null;
   UI.loginStep = 'account';
@@ -3196,6 +3201,7 @@ function render(){
   if (DB.unmatched.length) html += renderUnmatchedReview();
   if (UI.view === 'feed') html += renderFeed();
   else if (UI.view === 'setup') html += canViewSettings() ? renderClassSetup() : renderAccessDenied();
+  else if (UI.view === 'modlog') html += canViewSettings() ? renderModLog() : renderAccessDenied();
   else if (UI.view === 'thread') html += renderThread();
   else if (UI.view === 'prospect') html += renderProspectDetail();
   else if (UI.view === 'watchlist') html += renderWatchlist();
@@ -3311,13 +3317,43 @@ function renderHomePage(){
   return html;
 }
 
+async function loadModLog(more){
+  if(!canViewSettings() || UI.modLogLoading)return;
+  UI.modLogLoading=true;UI.modLogError=null;
+  const viewer=SESSION.discordId;
+  try{
+    const response=await fetch('/api/admin/mod-log'+(more && UI.modLogNext?'?before='+UI.modLogNext:''),{credentials:'include',cache:'no-store'});
+    const data=await response.json();
+    if(!response.ok || !data.ok)throw Error(data.error || 'Could not load the moderation log.');
+    if(!SESSION || SESSION.discordId!==viewer || !canViewSettings())return;
+    UI.modLogEntries=more?(UI.modLogEntries || []).concat(data.entries):data.entries;
+    UI.modLogNext=data.next;
+  }catch(error){UI.modLogError=error.message;}
+  finally{UI.modLogLoading=false;UI.modLogLoaded=true;if(UI.view==='modlog')render();}
+}
+function renderModLog(){
+  if(!UI.modLogLoaded && !UI.modLogLoading)loadModLog(false);
+  let html='<div class="rb-card" style="padding:20px;"><div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;"><h2 class="rb-h">Mod Log</h2><button class="rb-btn" id="rb-refresh-mod-log"'+(UI.modLogLoading?' disabled':'')+'>Refresh</button></div>';
+  if(UI.modLogError)html+='<p role="alert">'+escapeHtml(UI.modLogError)+'</p>';
+  if(!(UI.modLogEntries || []).length)html+='<p style="color:var(--slate);">'+(UI.modLogLoading?'Loading…':'No moderation actions recorded yet. Actions are recorded from this update onward.')+'</p>';
+  (UI.modLogEntries || []).forEach(function(entry){
+    const actor=entry.actor || {};
+    html+='<article style="border-top:1px solid var(--line);padding:16px 0;overflow-wrap:anywhere;"><div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;"><strong>'+escapeHtml(entry.action)+'</strong><time style="font-size:12px;color:var(--slate);" datetime="'+new Date(entry.at).toISOString()+'">'+escapeHtml(new Date(entry.at).toLocaleString())+'</time></div><p style="font-size:13px;margin:8px 0;">'+escapeHtml(actor.name || actor.id)+' · '+escapeHtml(actor.role || '')+(actor.team?' · '+escapeHtml(actor.team):'')+' <span style="color:var(--slate);">('+escapeHtml(actor.id || '')+')</span></p>';
+    if(entry.status!=='completed')html+='<p style="color:var(--alert);">'+(entry.status==='failed'?'Action failed': 'Completion not confirmed')+'</p>';
+    if(entry.details.length)html+='<details><summary style="cursor:pointer;">View changes ('+entry.details.length+')</summary><ul style="padding-left:20px;">'+entry.details.map(function(detail){return '<li style="margin-top:8px;white-space:pre-wrap;">'+escapeHtml(detail)+'</li>';}).join('')+'</ul></details>';
+    html+='</article>';
+  });
+  if(UI.modLogNext)html+='<button class="rb-btn" id="rb-more-mod-log"'+(UI.modLogLoading?' disabled':'')+'>Load older actions</button>';
+  return html+'</div>';
+}
+
 function renderNav(){
   let activeView = UI.view;
   if (activeView === 'prospect') activeView = UI.prospectReturnView || 'feed';
   if (activeView === 'thread') activeView = 'feed';
   if (activeView === 'teamcommits' || activeView === 'teamoffers') activeView = 'teams';
   const items = [['feed', 'Prospect Board'], ['watchlist', 'My Watchlist'], ['myoffers', 'My Offers'], ['mycommits', 'My Commits'], ['teams', 'Teams']];
-  if (canViewSettings()) items.push(['setup', 'Settings']);
+  if (canViewSettings()) items.push(['setup', 'Settings'], ['modlog', 'Mod Log']);
   let html = '<header class="rb-nav-shell"><div class="rb-nav-top">' +
     '<button type="button" class="rb-nav-brand" data-nav="feed" aria-label="RecruitHQ prospect board">' + renderBrand() + '</button>' +
     '<div class="rb-nav-session">' + renderTeamCoachBadge(SESSION.team) + '<span class="rb-session-divider" aria-hidden="true"></span><a href="#" id="rb-logout">Log out</a></div>' +
@@ -5164,6 +5200,8 @@ async function removePlayerThread(pid){
   finally{UI.submitting=false;render();}
 }
 function bindEvents(){
+  const refreshLog=document.getElementById('rb-refresh-mod-log');if(refreshLog)refreshLog.onclick=function(){loadModLog(false);};
+  const moreLog=document.getElementById('rb-more-mod-log');if(moreLog)moreLog.onclick=function(){loadModLog(true);};
   const removePlayer=document.getElementById('rb-remove-player');
   if(removePlayer)removePlayer.onclick=function(){UI.pendingRemovePlayer=removePlayer.getAttribute('data-player');render();};
   const cancelRemove=document.getElementById('rb-cancel-remove-player');
