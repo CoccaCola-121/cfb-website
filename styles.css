@@ -288,7 +288,8 @@ button, a, input, select, textarea, summary { -webkit-tap-highlight-color: trans
   content: "";
   position: absolute;
   inset: 0 auto 0 0;
-  width: var(--value-fill, 0%);
+  width: 100%;
+  clip-path: inset(0 calc(100% - var(--value-fill, 0%)) 0 0);
   background: linear-gradient(90deg, rgba(210,86,76,0.32), rgba(201,162,39,0.34), rgba(88,191,114,0.36));
   opacity: 0.9;
 }
@@ -877,3 +878,7 @@ html { scrollbar-gutter: stable; }
 .rb-own-offer-type-row { display:flex; gap:6px; align-items:center; flex-wrap:wrap; }
 .rb-own-offer-type { margin:0; }
 .rb-upgrade-small { font-size:11px; padding:5px 8px; }
+
+.rb-offer-invalid { border-color:var(--alert) !important; }
+.rb-offer-invalid .rb-offer-team-title img { filter:grayscale(1);opacity:.4; }
+.rb-board-offer-rescinded img { filter:grayscale(1); }

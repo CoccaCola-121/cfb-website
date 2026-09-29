@@ -25,6 +25,7 @@
       return text.slice(0,match[0].length)+'\nScholarship\n'+text.slice(match[0].length);
     }
     if(action==='upgrade'){
+      if(!h.type) return amend(text,'header',team,p);
       if(h.type!=='walkon') throw Error('Only walk-on offers can be upgraded.');
       let index=0;
       const lines=text.match(/[^\n]*(?:\n|$)/g) || [];

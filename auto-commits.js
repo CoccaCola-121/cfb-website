@@ -12,10 +12,11 @@
   function order(a,b){return (rating(a) ?? Infinity)-(rating(b) ?? Infinity) || (rating(a,1) ?? Infinity)-(rating(b,1) ?? Infinity) || a.name.localeCompare(b.name) || a.id.localeCompare(b.id);}
   function offerKind(state,p,o){
     if(root.NZCFLCprRules.scholarshipOffer(o)) return 'scholarship';
-    if(o.offerType==='walkon' || String(o.text || '').split(/\r?\n/).slice(0,5).some(line=>/^(?:walk\s*-?\s*on|wo)(?:\s+offer)?[.!:]?$/i.test(line.replace(/[*_`]/g,'').trim()) || /\boffers?\b.*\bwalk\s*-?\s*on\b/i.test(line))) return 'walkon';
-    return state.recruitingStage==='cpr' && !root.NZCFLCprRules.scholarshipRecruit(p) ? 'walkon' : 'scholarship';
+    return 'walkon';
   }
-  function scholarshipOnly(state,p){return state.recruitingStage==='transfer' || state.recruitingStage==='cpr' && root.NZCFLCprRules.scholarshipRecruit(p);}
+  function scholarshipOnly(state,p){return state.recruitingStage==='transfer' || state.recruitingStage==='cpr' && root.NZCFLCprRules.scholarshipRecruit(p,state.offersByProspect?.[p.id] || []);}
+  function invalidOffer(state,p,o){return !!p && scholarshipOnly(state,p) && offerKind(state,p,o)==='walkon';}
+
   function commitKind(state,id,p){
     if(['scholarship','walkon'].includes(p.commitType)) return p.commitType;
     const winning=(state.offersByProspect?.[id] || []).find(o=>key(o.team)===key(p.commitTeam) && !o.rescinded);
@@ -155,5 +156,5 @@
     if (!values.length || values.some(v=>v==null || !Number.isFinite(v))) return null;
     return {...rule,overallMode:rule.overallMode==='belowCommit'?'below':'atMost',overallValue:Math.min(...values)};
   }
-  root.NZCFLAutoCommits={relativeOverall,rescindTargetRule,key,rating,offerKind,commitKind,counts,remaining,parseCapacitySheet,validate,fingerprint,preview,apply};
+  root.NZCFLAutoCommits={invalidOffer,relativeOverall,rescindTargetRule,key,rating,offerKind,commitKind,counts,remaining,parseCapacitySheet,validate,fingerprint,preview,apply};
 })(globalThis);

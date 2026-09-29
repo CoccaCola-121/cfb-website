@@ -376,6 +376,8 @@ function uniquePush(list, value){
   list.push(value);
 }
 
+function invalidOffer(p,o){return NZCFLAutoCommits.invalidOffer(DB,p,o);}
+function activeValidOffer(pid,o){return !o.rescinded && !invalidOffer(DB.prospects[pid],o);}
 function formatOfferText(text, promises){
   const raw=String(text || ''),tokens=NZCFLTransferRules.linkTokens(raw);
   let html='',cursor=0;
@@ -675,7 +677,7 @@ function teamBorderColor(brand){
 }
 
 function offerCountForProspect(pid){
-  return (DB.offersByProspect[pid] || []).filter(function(offer){ return !offer.rescinded; }).length;
+  return (DB.offersByProspect[pid] || []).filter(function(offer){ return activeValidOffer(pid,offer); }).length;
 }
 
 function offerCountTag(pid){
@@ -692,7 +694,7 @@ function visibleBoardProspectIds(t){
     const p = DB.prospects[pid];
     const filter = UI.boardCommitFilter || (UI.hideCommittedBoards ? 'uncommitted' : 'all');
     if (!p) return false;
-    const offered = (DB.offersByProspect[pid] || []).some(function(o){ return !o.rescinded; });
+    const offered = (DB.offersByProspect[pid] || []).some(function(o){ return activeValidOffer(pid,o); });
     if (UI.boardOfferFilter === 'offered' && !offered) return false;
     if (UI.boardOfferFilter === 'unoffered' && offered) return false;
     if (UI.hideMyOffers && SESSION && (DB.offersByProspect[pid] || []).some(function(o){ return o && !o.rescinded && teamKey(o.team) === teamKey(SESSION.team); })) return false;
@@ -2416,9 +2418,7 @@ function findAnyOfferForTeam(prospectId, team){
 }
 
 function offerType(offer){
-  const text = String((offer && offer.text) || '').toLowerCase();
-  if (/\bwalk\s*-?\s*on\b|\bwo\b/.test(text)) return 'walkon';
-  return 'scholarship';
+  return NZCFLCprRules.scholarshipOffer(offer || {}) ? 'scholarship' : 'walkon';
 }
 
 function prospectOverall(prospect){
@@ -4429,9 +4429,10 @@ function renderProspectBoardCard(pid, searchAttr, context){
   if (offers.length && !p.commitTeam){
     html += '<div class="rb-board-offer-logos" role="list" aria-label="Offering teams">';
     offers.forEach(function(o){
-      const label = o.team + (o.rescinded ? ' (rescinded)' : '');
+      const inactive=o.rescinded || invalidOffer(p,o);
+      const label = o.team + (o.rescinded ? ' (rescinded)' : invalidOffer(p,o) ? ' (invalid: scholarship required)' : '');
       const brand = getTeamBranding(o.team);
-      html += '<span role="listitem" class="rb-board-offer-logo' + (o.rescinded ? ' rb-board-offer-rescinded' : '') + '" title="' + escapeHtml(label) + '" aria-label="' + escapeHtml(label) + '">' + renderTeamLogo(brand && brand.logoUrl ? brand : {logoUrl:'/nzcfl-free-agent.png'}, 28) + '</span>';
+      html += '<span role="listitem" class="rb-board-offer-logo' + (inactive ? ' rb-board-offer-rescinded' : '') + '" title="' + escapeHtml(label) + '" aria-label="' + escapeHtml(label) + '">' + renderTeamLogo(brand && brand.logoUrl ? brand : {logoUrl:'/nzcfl-free-agent.png'}, 28) + '</span>';
     });
     html += '</div>';
   }
@@ -4772,7 +4773,7 @@ function renderOfferAmendments(o,p,hideUpgrade){
   let buttons='';
   if(h.offerLine<0 || h.typeLine<0)buttons+='<button class="rb-btn" data-amend-action="header"'+attrs+'>Add offer header</button>';
   if(h.offerLine>=0 && h.typeLine>h.offerLine)buttons+='<button class="rb-btn" data-edit-offer-header="1"'+attrs+'>Edit offer header</button>';
-  if(h.type==='walkon' && !hideUpgrade)buttons+='<button class="rb-btn rb-btn-gold" data-amend-action="upgrade"'+attrs+'>Upgrade to scholarship</button>';
+  if(!NZCFLCprRules.scholarshipOffer(o) && !hideUpgrade)buttons+='<button class="rb-btn rb-btn-gold" data-amend-action="upgrade"'+attrs+'>Upgrade to scholarship</button>';
   return buttons ? '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px;">'+buttons+'</div>' : '';
 }
 async function amendOwnOfferConfirmedUpgrade(pid,oid){ return amendOwnOffer(pid,oid,'upgrade',true); }
@@ -4840,9 +4841,10 @@ function renderOfferBlock(o, opts){
   opts = opts || {};
   const brand = getTeamBranding(o.team);
   const offerStyle = '--offer-team-color:' + escapeHtml(teamBorderColor(brand)) + ';';
+  const invalid=invalidOffer(opts.prospect,o);
   const badges = visitBadges(o.visits, !!opts.collapsed);
   const wordCount = (recruitingStage() === 'transfer' || (recruitingStage() === 'cpr' && isPitchRecruit(opts.prospect))) && !o.rescinded ? '<span class="rb-offer-word-count">' + NZCFLTransferRules.pitchWordCount(o.text, opts.prospect) + ' / 800 words</span>' : '';
-  const rescindedBadge = o.rescinded ? '<span class="rb-rescinded-badge">Rescinded</span>' : '';
+  const rescindedBadge = o.rescinded ? '<span class="rb-rescinded-badge">Rescinded</span>' : invalid ? '<span class="rb-rescinded-badge">Invalid · Scholarship required</span>' : '';
   const header = '<div class="rb-offer-block-header" style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:' + (opts.collapsed ? 'nowrap' : 'wrap') + ';min-width:0;">' +
     '<span class="rb-offer-team-title">' + renderTeamLogo(brand, 28) + '<strong>' + escapeHtml(o.team) + '</strong>' + rescindedBadge + '</span>' +
     '<span class="rb-offer-visit-wrap" style="display:flex;gap:6px;flex-wrap:' + (opts.collapsed ? 'nowrap' : 'wrap') + ';align-items:center;min-width:0;overflow:hidden;">' +
@@ -4852,11 +4854,11 @@ function renderOfferBlock(o, opts){
   '</div>';
   let html = '';
   if (opts.collapsed){
-    html += '<details class="rb-branded-offer' + (o.rescinded ? ' rb-offer-rescinded' : '') + '" data-offer-details="1" style="' + offerStyle + 'padding:10px 14px;">';
+    html += '<details class="rb-branded-offer' + (o.rescinded ? ' rb-offer-rescinded' : invalid ? ' rb-offer-invalid' : '') + '" data-offer-details="1" style="' + offerStyle + 'padding:10px 14px;">';
     html += '<summary class="rb-offer-summary" style="list-style:none;cursor:pointer;">' + header + '</summary>';
     html += '<div style="margin-top:8px;">';
   } else {
-    html += '<div class="rb-branded-offer' + (o.rescinded ? ' rb-offer-rescinded' : '') + '" style="' + offerStyle + 'padding:14px 16px;">';
+    html += '<div class="rb-branded-offer' + (o.rescinded ? ' rb-offer-rescinded' : invalid ? ' rb-offer-invalid' : '') + '" style="' + offerStyle + 'padding:14px 16px;">';
     if (!opts.hideHeader) html += header;
     else html += wordCount + rescindedBadge;
   }
