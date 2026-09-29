@@ -5313,7 +5313,18 @@ function bindEvents(){
     };
   });
   document.querySelectorAll('[data-close-modal]').forEach(function(el){
-    el.onclick = function(){ UI.showSubmitModal = false; UI.submitTargetId = null; render(); };
+    let startedOnBackdrop = false;
+    el.onpointerdown = function(e){ startedOnBackdrop = e.target === el; };
+    el.onpointercancel = function(){ startedOnBackdrop = false; };
+    el.onclick = function(e){
+      // A text-selection drag can generate a click on the surrounding backdrop.
+      const cancelButton = el.tagName === 'BUTTON';
+      const dismiss = cancelButton || (startedOnBackdrop && e.target === el);
+      startedOnBackdrop = false;
+      if (!dismiss || UI.submitting) return;
+      captureOfferDraft();
+      UI.showSubmitModal = false; UI.submitTargetId = null; render();
+    };
   });
   document.querySelectorAll('[data-close-edit-modal]').forEach(function(el){
     el.onclick = closeEditOffer;
