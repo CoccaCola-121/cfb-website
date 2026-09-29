@@ -1,3 +1,4 @@
+import {applyRemovedPlayers} from './removed-players.js';
 import {readTransactionalState,initializeTransactionalState,writeTransactionalState} from './transactional-state.js';
 import '../../cpr-rules.js';
 import '../../walkon-limit.js';
@@ -7,6 +8,7 @@ import { teamKey } from './teams-util.js';
 export const STATE_KEY = 'league:state';
 
 const STATE_FIELDS = [
+  'removedPlayers',
   'fullRoster',
   'scholarshipHistory',
   'scholarshipSource',
@@ -57,6 +59,7 @@ export async function readLeagueState(env) {
 }
 
 export async function writeLeagueState(env, state, previous = state) {
+  applyRemovedPlayers(state);
   globalThis.NZCFLWalkonLimit.apply(state);
   const clean = sanitizeState(globalThis.NZCFLTransferRules.cleanCommitOverrides(state || {}));
   if(env.LEAGUE_DB)return writeTransactionalState(env.LEAGUE_DB,clean,previous);

@@ -1,3 +1,4 @@
+import {removedPlayer} from '../../_lib/removed-players.js';
 import '../../../cpr-rules.js';
 import '../../../offer-window.js';
 import '../../../walkon-limit.js';
@@ -20,6 +21,7 @@ export async function onRequestPost({request,env,waitUntil}){
    if(state?.recruitingStage!=='cpr')return json({ok:false,error:'The CPR board is no longer active.'},{status:409});
    const existingPlayer=state.prospects?.[body.prospectId];
    const row=existingPlayer || globalThis.NZCFLCprRules.resolveOffer(state.fullRoster,body.text,{name:body.name,position:body.position});
+   if(removedPlayer(state,row))return json({ok:false,error:'This player was removed by a commissioner and cannot receive offers.'},{status:403});
    const pid='r'+row.rank;
    const offers=state.offersByProspect?.[pid] || [];
    const prior=offers.find(o=>teamKey(o.team)===teamKey(user.team));

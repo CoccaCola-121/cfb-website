@@ -29,6 +29,8 @@ export async function onRequestPut({ request, env, waitUntil }) {
   const body = await request.json().catch(() => ({}));
   const incoming = body.state || body;
   const previous = await readLeagueState(env);
+  // Only the commissioner removal endpoint can add removal records. Never trust a board snapshot to clear them.
+  incoming.removedPlayers=previous?.removedPlayers || {};
   if(env.LEAGUE_DB && !Object.prototype.hasOwnProperty.call(body,'expectedUpdatedAt'))return json({ok:false,error:'Refresh the page before saving; this tab uses an older version.'},{status:409});
   if (Object.prototype.hasOwnProperty.call(body,'expectedUpdatedAt') && (previous && previous.updatedAt || null) !== body.expectedUpdatedAt) return json({ok:false,error:'The league changed before saving. Your draft is intact; try Save again.'},{status:409});
   // Preserve new settings when an older open browser tab submits its existing payload.
@@ -40,7 +42,7 @@ export async function onRequestPut({ request, env, waitUntil }) {
     if(error)return json({ok:false,error},{status:403});
   } else if(accessLevel(env,user)!=='commissioner'){
     const removed=Object.entries(previous?.offersByProspect || {}).some(([pid,offers])=>offers.some(o=>!(incoming.offersByProspect?.[pid] || []).some(n=>n.id===o.id)));
-    if(removed || JSON.stringify(previous?.fullRoster)!==JSON.stringify(incoming.fullRoster) || previous?.recruitingStage!==incoming.recruitingStage)return json({ok:false,error:'Commissioner access is required for resets and class changes.'},{status:403});
+    if(removed || Object.keys(previous?.prospects || {}).some(id=>!incoming.prospects?.[id]) || JSON.stringify(previous?.fullRoster)!==JSON.stringify(incoming.fullRoster) || previous?.recruitingStage!==incoming.recruitingStage)return json({ok:false,error:'Commissioner access is required for resets and class changes.'},{status:403});
   }
   if (incoming.recruitingStage === 'cpr') {
     const roster = incoming.fullRoster || [];

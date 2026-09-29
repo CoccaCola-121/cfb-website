@@ -374,6 +374,16 @@ function uniquePush(list, value){
 }
 
 function formatOfferText(text, promises){
+  const raw=String(text || ''),tokens=NZCFLTransferRules.linkTokens(raw);
+  let html='',cursor=0;
+  tokens.forEach(function(token){
+    html+=formatOfferPlainText(raw.slice(cursor,token.start),promises);
+    html+='<a href="'+escapeHtml(token.url)+'" target="_blank" rel="noopener noreferrer" style="color:var(--gold);text-decoration:underline;">'+formatOfferPlainText(token.label,promises)+'</a>';
+    cursor=token.end;
+  });
+  return html+formatOfferPlainText(raw.slice(cursor),promises);
+}
+function formatOfferPlainText(text, promises){
   const raw = String(text || '');
   const clean = raw.replace(/\*\*([\s\S]*?)\*\*/g, '$1');
   const phrases = [];
@@ -960,7 +970,7 @@ function mergeLeagueState(state){
     discordCommitUpdatedAt: DB.discordCommitUpdatedAt,
     commitSeasonEnded: DB.commitSeasonEnded
   });
-  ['scholarshipCapacity','bucksRemaining','scholarshipHistory','scholarshipSource','fullRoster','recruitingStage','released','wave1Released','wave2Released','prospects','threads','offersByProspect','unmatched','teams','teamBranding','commitSheetUrl','commitUpdatedAt','discordCommitUpdatedAt','discordCommitChannelId','commitSeasonEnded','defaultClassLoaded','offersLocked','offerSchedule','dangerApprovals','conditionalRescinds','manualCommitOverrides'].forEach(function(field){
+  ['removedPlayers','scholarshipCapacity','bucksRemaining','scholarshipHistory','scholarshipSource','fullRoster','recruitingStage','released','wave1Released','wave2Released','prospects','threads','offersByProspect','unmatched','teams','teamBranding','commitSheetUrl','commitUpdatedAt','discordCommitUpdatedAt','discordCommitChannelId','commitSeasonEnded','defaultClassLoaded','offersLocked','offerSchedule','dangerApprovals','conditionalRescinds','manualCommitOverrides'].forEach(function(field){
     if (Object.prototype.hasOwnProperty.call(state, field)) DB[field] = state[field];
   });
   DB.updatedAt=state.updatedAt;
@@ -4682,6 +4692,7 @@ function renderProspectDetail(){
   const returnView = UI.prospectReturnView || 'feed';
   const returnLabel = returnView === 'watchlist' ? 'Back to My Watchlist' : (returnView === 'myoffers' ? 'Back to My Offers' : (returnView === 'mycommits' ? 'Back to My Commits' : (returnView === 'teamcommits' ? 'Back to Team Commits' : (returnView === 'teamoffers' ? 'Back to Team Offers' : 'Back to board'))));
   let html = '<div style="margin-bottom:16px;"><button class="rb-btn" data-nav="' + escapeHtml(returnView) + '">&larr; ' + escapeHtml(returnLabel) + '</button></div>';
+  if(canUseDangerZone())html+='<div style="display:flex;justify-content:flex-end;margin-bottom:12px;"><button class="rb-btn rb-btn-danger" id="rb-remove-player" data-player="'+escapeHtml(p.id)+'">Remove player thread</button></div>';
   html += '<div class="rb-card" style="padding:18px 20px;margin-bottom:14px;' + (p.transferFrom ? transferCardStyle(p) : (p.commitTeam ? committedCardStyle(p.commitTeam) : '')) + '">';
   html += '<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;">';
   html += '<div style="min-width:0;flex:1 1 420px;">';
@@ -5132,7 +5143,23 @@ function bindFloatingSubmit(){
   }
 }
 
+async function removePlayerThread(pid){
+  const p=DB.prospects[pid];
+  if(!canUseDangerZone() || !p || UI.submitting)return;
+  if(!window.confirm('Remove '+p.name+' from this board? Their offers will be archived and coaches will not be able to recreate their thread for this class.'))return;
+  UI.submitting=true;
+  try{
+    const response=await fetch('/api/players/remove',{method:'POST',credentials:'include',headers:{'content-type':'application/json'},body:JSON.stringify({prospectId:pid,expectedUpdatedAt:DB.updatedAt})});
+    const data=await response.json().catch(()=>{throw Error('The server is unavailable. Removal was not confirmed.');});
+    if(!response.ok || !data.ok)throw Error(data.error || 'Could not remove player.');
+    mergeLeagueState(data.state);UI.prospectId=null;UI.view='feed';syncBrowserRoute();
+    UI.lastSummary={errorText:'Player removed and blocked from being offered again.',dismissAt:Date.now()+6000};
+  }catch(error){UI.lastSummary={errorText:error.message};}
+  finally{UI.submitting=false;render();}
+}
 function bindEvents(){
+  const removePlayer=document.getElementById('rb-remove-player');
+  if(removePlayer)removePlayer.onclick=function(){removePlayerThread(removePlayer.getAttribute('data-player'));};
   // Rebuild saved board-search results before binding their player-card actions.
   const restoredBoardSearch = document.getElementById('rb-board-search');
   if (restoredBoardSearch && restoredBoardSearch.value.trim()){
