@@ -18,12 +18,12 @@ export async function onRequest(context){
  }catch{ return json({ok:false,error:'The moderation log is unavailable. No action was performed; please retry.'},{status:503}); }
  let response;
  try{response=await context.next();}catch(error){await finish('unknown');throw error;}
- let succeeded=response.ok;
- if(succeeded){try{const result=await response.clone().json();if(result.ok===false || result.error)succeeded=false;}catch{}}
- await finish(succeeded?'completed':'failed');
+ let succeeded=response.ok,reason='';
+ try{const result=await response.clone().json();if(result.ok===false || result.error)succeeded=false;if(!succeeded)reason=String(result.error || 'Request rejected').slice(0,1000);}catch{if(!succeeded)reason='HTTP '+response.status;}
+ await finish(succeeded?'completed':'failed',reason);
  return response;
- async function finish(status){
-  const write=()=>env.LEAGUE_DB.prepare('UPDATE moderation_log SET status=? WHERE id=?').bind(status,id).run();
+ async function finish(status,reason=''){
+  const write=()=>reason ? env.LEAGUE_DB.prepare("UPDATE moderation_log SET status=?, details=json_insert(details,'$[#]',?) WHERE id=?").bind(status,'Failure reason: '+reason,id).run() : env.LEAGUE_DB.prepare('UPDATE moderation_log SET status=? WHERE id=?').bind(status,id).run();
   try{await write();}catch{context.waitUntil(write().catch(error=>console.error('Mod log status update failed',id,error)));}
  }
 }

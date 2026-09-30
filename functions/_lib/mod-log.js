@@ -16,6 +16,7 @@ function changes(before,after,path='',out=[]){
 export async function describeModeration(env,path,body){
  if(path==='/api/league/state'){
   const before=await readLeagueState(env) || {},after=body.state || body,out=[];
+  if(Object.hasOwn(body,'expectedUpdatedAt') && body.expectedUpdatedAt!==(before.updatedAt || null))return {action:'League save attempt',details:['Submitted an older board version. Differences from newer offers are not deletion requests.']};
   for(const field of Object.keys(after)){
    if(['updatedAt','removedPlayers'].includes(field) || same(before[field],after[field]))continue;
    if(field==='prospects'){
