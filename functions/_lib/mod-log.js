@@ -1,4 +1,4 @@
-import {readTeamClaim} from './teams-util.js';
+import {teamKey,readTeamClaim} from './teams-util.js';
 import {readLeagueState} from './league-state.js';
 export async function ensureModLog(env){
  if(!env.LEAGUE_DB)throw Error('Moderation logging requires the league database.');
@@ -13,7 +13,7 @@ function changes(before,after,path='',out=[]){
  }else out.push(path+': '+show(before)+' → '+show(after));
  return out;
 }
-export async function describeModeration(env,path,body){
+export async function describeModeration(env,path,body,user){
  if(path==='/api/league/state'){
   const before=await readLeagueState(env) || {},after=body.state || body,out=[];
   if(Object.hasOwn(body,'expectedUpdatedAt') && body.expectedUpdatedAt!==(before.updatedAt || null))return {action:'League save attempt',details:['Submitted an older board version. Differences from newer offers are not deletion requests.']};
@@ -28,13 +28,15 @@ export async function describeModeration(env,path,body){
    }else if(field==='offersByProspect'){
     for(const id of new Set([...Object.keys(before[field] || {}),...Object.keys(after[field] || {})])){
      const old=before[field]?.[id] || [],next=after[field]?.[id] || [],name=after.prospects?.[id]?.name || before.prospects?.[id]?.name || id;
-     for(const o of old){const n=next.find(x=>x.id===o.id);if(!n)out.push('Deleted offer: '+o.team+' → '+name);else if(!same(o,n))out.push('Changed offer: '+o.team+' → '+name+' ('+Object.keys({...o,...n}).filter(k=>!same(o[k],n[k])).join(', ')+')');}
-     for(const n of next)if(!old.some(o=>o.id===n.id))out.push('Added offer: '+n.team+' → '+name);
+     for(const o of old){const n=next.find(x=>x.id===o.id);
+      if(n && user?.team && teamKey(o.team)===teamKey(user.team) && teamKey(n.team)===teamKey(user.team) && Object.keys({...o,...n}).filter(k=>!same(o[k],n[k])).every(k=>['rescinded','rescindedAt','rescindReason','visits','text','editHistory','updatedAt'].includes(k)))continue;
+if(!n)out.push('Deleted offer: '+o.team+' → '+name);else if(!same(o,n))out.push('Changed offer: '+o.team+' → '+name+' ('+Object.keys({...o,...n}).filter(k=>!same(o[k],n[k])).join(', ')+')');}
+     for(const n of next)if(!old.some(o=>o.id===n.id) && (!user?.team || teamKey(n.team)!==teamKey(user.team)))out.push('Added offer: '+n.team+' → '+name);
     }
    }else if(['fullRoster','scholarshipHistory','threads','unmatched'].includes(field))out.push('Updated '+field+' ('+(Array.isArray(after[field])?after[field].length+' entries':'data replaced')+')');
    else changes(before[field],after[field],field,out);
   }
-  return {action:'Published league changes',details:out};
+  return out.length ? {action:'Published league changes',details:out} : null;
  }
  if(path==='/api/players/remove'){
   const state=await readLeagueState(env),p=state?.prospects?.[body.prospectId];

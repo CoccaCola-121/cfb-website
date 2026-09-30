@@ -11,7 +11,8 @@ export async function onRequest(context){
  try{
   await ensureModLog(env);
   const body=await request.clone().json().catch(()=>({}));
-  const entry=await describeModeration(env,path,body);
+  const entry=await describeModeration(env,path,body,user);
+  if(!entry)return context.next();
   const actor={id:user.discordId,name:user.displayName || user.username || user.discordId,team:user.team,role:accessLevel(env,user)};
   const inserted=await env.LEAGUE_DB.prepare('INSERT INTO moderation_log (at,actor,action,details,status) VALUES (?,?,?,?,?)').bind(Date.now(),JSON.stringify(actor),entry.action,JSON.stringify(entry.details),'pending').run();
   id=inserted.meta.last_row_id;
