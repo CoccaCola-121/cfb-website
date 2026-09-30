@@ -35,6 +35,7 @@ export async function describeModeration(env,path,body){
   }
   return {action:'Published league changes',details:out};
  }
+ if(path==='/api/admin/correct-kenny-promises')return {action:'Corrected Michigan State promises for Kenny Phillips',details:['Playing Time: I promise that you will start every game this year','Location: I promise, we’ll win a game in your adjacent state']};
  if(path==='/api/players/remove'){
   const state=await readLeagueState(env),p=state?.prospects?.[body.prospectId];
   return {action:'Removed player thread',details:[p?`${p.name} · ${p.position} (${body.prospectId})`:String(body.prospectId)]};
