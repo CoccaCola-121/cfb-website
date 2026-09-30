@@ -5645,9 +5645,19 @@ function bindEvents(){
       if (!key || !bucket) return;
       if (!UI.positionFilters) UI.positionFilters = {};
       if (!UI.positionFilters[key]) UI.positionFilters[key] = {};
-      UI.positionFilters[key][bucket] = !UI.positionFilters[key][bucket];
-      el.classList.toggle('rb-position-count-muted', !!UI.positionFilters[key][bucket]);
-      el.setAttribute('aria-pressed', UI.positionFilters[key][bucket] ? 'true' : 'false');
+      const chips = Array.from(document.querySelectorAll('[data-position-filter="' + cssEscape(key) + '"]'));
+      const allSelected = chips.every(function(chip){ return !UI.positionFilters[key][chip.getAttribute('data-position-bucket')]; });
+      if (allSelected){
+        chips.forEach(function(chip){
+          const position = chip.getAttribute('data-position-bucket');
+          UI.positionFilters[key][position] = position !== bucket;
+        });
+      } else UI.positionFilters[key][bucket] = !UI.positionFilters[key][bucket];
+      chips.forEach(function(chip){
+        const muted = !!UI.positionFilters[key][chip.getAttribute('data-position-bucket')];
+        chip.classList.toggle('rb-position-count-muted', muted);
+        chip.setAttribute('aria-pressed', muted ? 'true' : 'false');
+      });
       applyPositionListFilters(UI.view === 'teamoffers' && key.indexOf('offers:') === 0 ? 'teamoffers' : (key.split(':')[0] || 'offers'), key);
     };
   });
