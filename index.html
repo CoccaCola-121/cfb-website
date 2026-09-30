@@ -3224,6 +3224,7 @@ function render(){
   if (UI.pendingSingleRescind) html += renderSingleRescindConfirmModal();
   if (UI.pendingUpgrade) html += renderUpgradeConfirmModal();
   if (UI.pendingRemovePlayer) html += renderRemovePlayerConfirm();
+  if(UI.removeKennyTest && canUseDangerZone())html+='<div style="position:fixed;inset:0;background:rgba(0,0,0,.72);display:flex;align-items:center;justify-content:center;z-index:65;"><div class="rb-card" role="dialog" aria-modal="true" aria-labelledby="rb-test-title" style="padding:24px;width:460px;max-width:90vw;box-sizing:border-box;"><h2 class="rb-h" id="rb-test-title">Remove test offer?</h2><p>Remove Michigan State’s test offer for Kenny Phillips so you can submit a new one?</p><div style="display:flex;justify-content:flex-end;gap:8px;"><button class="rb-btn" id="rb-cancel-kenny-test">Cancel</button><button class="rb-btn rb-btn-danger" id="rb-confirm-kenny-test">Remove offer</button></div></div></div>';
   if (UI.headerEdit) html += renderHeaderEditModal();
   if (UI.teamAdminModal) html += renderTeamAdminModal();
   if (UI.confirmReset) html += renderResetConfirmModal();
@@ -4866,6 +4867,7 @@ function renderOfferBlock(o, opts){
   // Let even long offers expand naturally instead of trapping their text in a resizable scroll area.
   html += '<div style="font-size:13px;color:var(--chalk);margin-top:6px;white-space:pre-wrap;overflow-wrap:anywhere;max-height:none;overflow:visible;resize:none;" class="rb-offer-body">' + formatOfferText(o.text, cleanDisplayPromises(o)) + '</div>';
   html += renderOfferAmendments(o,opts.prospect,opts.hideUpgrade);
+  if(canUseDangerZone() && o.id==='o_638767694988050432_fe7a8a75-d6dc-47dc-b2c9-384dae25732d' && o.team==='Michigan State')html+='<div style="margin-top:12px;"><button class="rb-btn rb-btn-danger" data-remove-kenny-test="1">Remove test offer</button></div>';
   const displayPromises = !o.rescinded ? cleanDisplayPromises(o) : [];
   if (displayPromises.length){
     html += '<div style="margin-top:8px;">';
@@ -5201,7 +5203,22 @@ async function removePlayerThread(pid){
   }catch(error){UI.lastSummary={errorText:error.message};}
   finally{UI.submitting=false;render();}
 }
+async function removeKennyTestOffer(){
+  if(!canUseDangerZone() || UI.submitting)return;
+  UI.removeKennyTest=false;UI.submitting=true;
+  try{
+    const response=await fetch('/api/admin/remove-kenny-test-offer',{method:'POST',credentials:'include'});
+    const data=await response.json();
+    if(!response.ok || !data.ok)throw Error(data.error || 'Could not remove test offer.');
+    mergeLeagueState(data.state);
+    UI.lastSummary={errorText:'Test offer removed. You can now submit a new offer.',dismissAt:Date.now()+6000};
+  }catch(error){UI.lastSummary={errorText:error.message};}
+  finally{UI.submitting=false;render();}
+}
 function bindEvents(){
+  document.querySelectorAll('[data-remove-kenny-test]').forEach(function(button){button.onclick=function(e){e.stopPropagation();UI.removeKennyTest=true;render();};});
+  const cancelTest=document.getElementById('rb-cancel-kenny-test');if(cancelTest)cancelTest.onclick=function(){UI.removeKennyTest=false;render();};
+  const confirmTest=document.getElementById('rb-confirm-kenny-test');if(confirmTest)confirmTest.onclick=removeKennyTestOffer;
   const refreshLog=document.getElementById('rb-refresh-mod-log');if(refreshLog)refreshLog.onclick=function(){loadModLog(false);};
   const moreLog=document.getElementById('rb-more-mod-log');if(moreLog)moreLog.onclick=function(){loadModLog(true);};
   const removePlayer=document.getElementById('rb-remove-player');

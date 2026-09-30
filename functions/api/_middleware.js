@@ -3,6 +3,8 @@ import {ensureModLog,describeModeration} from '../_lib/mod-log.js';
 export async function onRequest(context){
  const {request,env}=context,path=new URL(request.url).pathname;
  if(!['POST','PUT','PATCH','DELETE'].includes(request.method) || !(/^\/api\/admin\//.test(path) || ['/api/league/state','/api/players/remove','/api/commits/discord'].includes(path)))return context.next();
+ // Explicit exception requested for the single identified test submission.
+ if(path==='/api/admin/remove-kenny-test-offer')return context.next();
  const user=await getCurrentUser(request,env);
  if(!user || !canModerate(env,user))return context.next();
  let id;
