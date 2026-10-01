@@ -27,6 +27,8 @@ function starsForRank(rank) {
 
 function ruleMatchesProspect(rule, prospect, offer) {
   if (!rule || !prospect) return false;
+  const selectedPlayers=rule.playerIds || rule.triggerIds;
+  if(selectedPlayers?.length)return selectedPlayers.includes(prospect.id);
   const positions = Array.isArray(rule.positions)
     ? rule.positions.map((pos) => String(pos || '').trim().toUpperCase()).filter(Boolean)
     : String(rule.position || '').split(',').map((pos) => pos.trim().toUpperCase()).filter(Boolean);

@@ -2433,6 +2433,8 @@ function normalizeConditionalRules(){
 
 function conditionalRuleMatchesProspect(rule, prospect, offer){
   if (!rule || !prospect) return false;
+  const selectedPlayers=rule.playerIds || rule.triggerIds;
+  if(selectedPlayers?.length)return selectedPlayers.includes(prospect.id);
   const positions = Array.isArray(rule.positions) ? rule.positions.map(function(pos){ return String(pos || '').trim().toUpperCase(); }).filter(Boolean) : String(rule.position || '').split(',').map(function(pos){ return pos.trim().toUpperCase(); }).filter(Boolean);
   if (positions.length && positions.indexOf(String(prospect.position || '').trim().toUpperCase()) === -1) return false;
   if (rule.stars !== '' && rule.stars != null){
@@ -3509,6 +3511,8 @@ function conditionalRuleSummary(rule){
   if (NZCFLAutoCommits.relativeOverall(rule.overallMode)) parts.push((rule.overallMode === 'belowCommit' ? 'rescind below' : 'rescind at or below') + ' lowest committed overall');
   if (rule.overallValue) parts.push((rule.overallMode === 'below' ? 'ovr below ' : 'ovr at least ') + rule.overallValue);
   if (rule.scholarship) parts.push(rule.scholarship === 'walkon' ? 'walk-on' : 'scholarship');
+  if(rule.triggerIds?.length)parts.push('trigger: '+rule.triggerIds.map(id=>DB.prospects[id]?.name || id).join(', '));
+  if(rule.targetIds?.length)parts.push('rescind: '+rule.targetIds.map(id=>DB.prospects[id]?.name || id).join(', '));
   return parts.join(' · ');
 }
 
@@ -3537,6 +3541,10 @@ function rulesForTeam(team){
   return normalizeConditionalRules().filter(function(rule){ return rule && teamKey(rule.team) === teamKey(team); });
 }
 
+function renderConditionalPlayers(kind,label){
+  const rows=getOfferRowsForTeam(SESSION.team).filter(row=>!row.offer.rescinded && !row.prospect.commitTeam).sort((a,b)=>a.prospect.name.localeCompare(b.prospect.name));
+  return '<details style="margin-top:12px;"><summary style="cursor:pointer;">'+label+'</summary><p style="font-size:12px;color:var(--slate);">Optional: selected players replace the filters for this list.</p><div style="max-height:220px;overflow:auto;display:grid;gap:8px;padding:8px;">'+rows.map(row=>'<label style="display:flex;gap:8px;align-items:center;"><input type="checkbox" data-conditional-players="'+kind+'" value="'+escapeHtml(row.prospectId)+'">'+escapeHtml(row.prospect.name+' · '+row.prospect.position+' · '+(row.prospect.rating || ''))+'</label>').join('')+'</div></details>';
+}
 function renderConditionalRescinds(){
   const rules = rulesForTeam(SESSION.team);
   let html = '<div class="rb-card rb-rescind-center" style="padding:18px 20px;margin-bottom:14px;">';
@@ -3546,7 +3554,7 @@ function renderConditionalRescinds(){
     html += '<div style="display:flex;flex-direction:column;gap:8px;margin-bottom:14px;">';
     rules.forEach(function(rule){
       html += '<div class="rb-card" style="padding:10px 12px;background:var(--panel-alt);display:flex;justify-content:space-between;align-items:center;gap:12px;">';
-      html += '<span style="min-width:0;"><strong>After ' + escapeHtml(conditionalRuleSummary(rule)) + '</strong><span class="rb-mono" style="display:block;color:var(--slate);font-size:12px;margin-top:3px;">Rescind remaining active offers matching those filters.</span></span>';
+      html += '<span style="min-width:0;"><strong>After ' + escapeHtml(conditionalRuleSummary(rule)) + '</strong><span class="rb-mono" style="display:block;color:var(--slate);font-size:12px;margin-top:3px;">Rescind the selected offers, or matching filters when no custom list is selected.</span></span>';
       html += '<button class="rb-btn rb-btn-danger" data-delete-conditional="' + escapeHtml(rule.id) + '">Delete</button>';
       html += '</div>';
     });
@@ -3556,6 +3564,8 @@ function renderConditionalRescinds(){
   html += '<div class="rb-h" style="font-size:14px;margin-bottom:10px;">Conditional Rule</div>';
   html += '<div style="font-size:13px;color:var(--slate);margin-bottom:10px;">When I win this many matching recruits, rescind my other active offers matching the same filters.</div>';
   html += renderRescindFilterFields('rb-cond', true);
+  html += renderConditionalPlayers('trigger','Trigger players — current offers');
+  html += renderConditionalPlayers('target','Offers to rescind — custom list');
   html += '<div style="margin-top:10px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;"><button class="rb-btn rb-btn-gold" id="rb-add-conditional">Save auto rule</button><span class="rb-mono" style="font-size:11px;color:var(--slate);">' + 'Relative overall uses the lowest-rated matching commit.' + '</span></div>';
   if (UI.conditionalError) html += '<div style="font-size:12px;color:var(--alert);margin-top:8px;">' + escapeHtml(UI.conditionalError) + '</div>';
   if (UI.conditionalStatus) html += '<div style="font-size:12px;color:var(--gold);margin-top:8px;">' + escapeHtml(UI.conditionalStatus) + '</div>';
@@ -3620,7 +3630,9 @@ function normalizeRescindRuleDraft(draft){
 function addConditionalRule(){
   if (!SESSION) return;
   const draft = readRescindRuleForm('rb-cond', true);
-  const error = validateRescindRuleDraft(draft, { actionLabel: 'saving a conditional rescind' });
+  draft.triggerIds=Array.from(document.querySelectorAll('[data-conditional-players="trigger"]:checked')).map(el=>el.value);
+  draft.targetIds=Array.from(document.querySelectorAll('[data-conditional-players="target"]:checked')).map(el=>el.value);
+  const error = draft.triggerIds.length && draft.targetIds.length ? '' : validateRescindRuleDraft(draft, { actionLabel: 'saving a conditional rescind' });
   if (error){
     UI.conditionalError = error;
     UI.conditionalStatus = null;
@@ -3629,6 +3641,8 @@ function addConditionalRule(){
   const normalized = normalizeRescindRuleDraft(draft);
   const rule = {
     id: uid('cr'),
+    triggerIds: draft.triggerIds,
+    targetIds: draft.targetIds,
     team: SESSION.team,
     enabled: true,
     count: normalized.count,
@@ -3872,6 +3886,8 @@ function renderMyOffers(){
   html += renderPositionCounts(rows, function(row){ return row.prospect && row.prospect.position; }, filterKey);
   html += '<div style="margin-bottom:12px;"><button class="rb-btn rb-btn-gold" id="rb-open-submit" ' + (offersLocked() ? 'disabled title="Offers are locked"' : '') + '>' + (offersLocked() ? 'Offers locked' : 'Submit offer') + '</button></div>';
   if (recruitingStage() === 'cpr') html += '<p class="rb-transfer-limit">Your offer goes to the matching player thread, or creates one from the free-agent list.</p>';
+  const walkonCount=rows.filter(row=>NZCFLAutoCommits.offerKind(DB,row.prospect,row.offer)==='walkon').length;
+  html += '<p style="font-size:13px;color:var(--slate);">'+walkonCount+' walk-on · '+(rows.length-walkonCount)+' scholarship</p>';
   html += renderOwnTypeFilter('offers');
   html += '<input class="rb-input" id="rb-my-offer-search" placeholder="' + (recruitingStage() === 'transfer' ? 'Search offers by player name' : 'Search your offers by recruit name, rank, or hometown') + '" />';
   if (UI.rescindError) html += '<div style="font-size:12px;color:var(--alert);margin-top:8px;">' + escapeHtml(UI.rescindError) + '</div>';
@@ -5395,8 +5411,19 @@ function bindEvents(){
   if (cancelBulkWatchlist) cancelBulkWatchlist.onclick=function(){UI.pendingWatchlistBulk=null;render();};
   const confirmBulkWatchlist=document.getElementById('rb-confirm-watchlist-bulk');
   if (confirmBulkWatchlist) confirmBulkWatchlist.onclick=confirmWatchlistBulk;
+  document.querySelectorAll('strong[data-open-prospect]').forEach(function(el){
+    const link=document.createElement('a');
+    Array.from(el.attributes).forEach(attr=>link.setAttribute(attr.name,attr.value));
+    link.href='/prospect/'+encodeURIComponent(el.getAttribute('data-open-prospect'));
+    link.style.textDecoration='none';link.style.fontWeight='700';link.innerHTML=el.innerHTML;el.replaceWith(link);
+  });
+  document.querySelectorAll('[data-prospect-card][data-open-prospect]').forEach(function(card){
+    const name=card.querySelector('.rb-list-identity > span[title]');
+    if(name){const link=document.createElement('a');link.href='/prospect/'+encodeURIComponent(card.getAttribute('data-open-prospect'));link.style.cssText=name.style.cssText+';text-decoration:none';link.innerHTML=name.innerHTML;name.replaceWith(link);}
+  });
   document.querySelectorAll('[data-open-prospect]').forEach(function(el){
     el.onclick = function(e){
+      if(e.ctrlKey || e.metaKey || e.shiftKey || e.altKey){if(el.tagName!=='A' && !e.target.closest('a'))window.open('/prospect/'+encodeURIComponent(el.getAttribute('data-open-prospect')),'_blank','noopener');return;}
       // Keep native details expansion and text selection working inside offer cards.
       if (e.target && e.target.closest && e.target.closest('.rb-branded-offer, [data-watchlist-flag]')) return;
       e.preventDefault();
