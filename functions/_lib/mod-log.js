@@ -19,6 +19,7 @@ export async function describeModeration(env,path,body,user){
   if(Object.hasOwn(body,'expectedUpdatedAt') && body.expectedUpdatedAt!==(before.updatedAt || null))return {action:'League save attempt',details:['Submitted an older board version. Differences from newer offers are not deletion requests.']};
   for(const field of Object.keys(after)){
    if(['updatedAt','removedPlayers'].includes(field) || same(before[field],after[field]))continue;
+   if(field==='conditionalRescinds' && user?.team && same((before[field] || []).filter(r=>teamKey(r.team)!==teamKey(user.team)),(after[field] || []).filter(r=>teamKey(r.team)!==teamKey(user.team))))continue;
    if(field==='prospects'){
     for(const id of new Set([...Object.keys(before.prospects || {}),...Object.keys(after.prospects || {})])){
      const a=before.prospects?.[id],b=after.prospects?.[id],name=b?.name || a?.name || id;
@@ -29,7 +30,7 @@ export async function describeModeration(env,path,body,user){
     for(const id of new Set([...Object.keys(before[field] || {}),...Object.keys(after[field] || {})])){
      const old=before[field]?.[id] || [],next=after[field]?.[id] || [],name=after.prospects?.[id]?.name || before.prospects?.[id]?.name || id;
      for(const o of old){const n=next.find(x=>x.id===o.id);
-      if(n && user?.team && teamKey(o.team)===teamKey(user.team) && teamKey(n.team)===teamKey(user.team) && Object.keys({...o,...n}).filter(k=>!same(o[k],n[k])).every(k=>['rescinded','rescindedAt','rescindReason','visits','text','editHistory','updatedAt'].includes(k)))continue;
+      if(n && user?.team && teamKey(o.team)===teamKey(user.team) && teamKey(n.team)===teamKey(user.team) && Object.keys({...o,...n}).filter(k=>!same(o[k],n[k])).every(k=>['rescinded','rescindedAt','rescindReason','conditionalRescindRuleId','visits','text','editHistory','updatedAt'].includes(k)))continue;
 if(!n)out.push('Deleted offer: '+o.team+' → '+name);else if(!same(o,n))out.push('Changed offer: '+o.team+' → '+name+' ('+Object.keys({...o,...n}).filter(k=>!same(o[k],n[k])).join(', ')+')');}
      for(const n of next)if(!old.some(o=>o.id===n.id) && (!user?.team || teamKey(n.team)!==teamKey(user.team)))out.push('Added offer: '+n.team+' → '+name);
     }
@@ -55,4 +56,18 @@ if(!n)out.push('Deleted offer: '+o.team+' → '+name);else if(!same(o,n))out.pus
  if(body.discordId){const u=await env.AUTH_KV.get('discord:user:'+body.discordId,'json');details.push('Coach: '+(u?.displayName || u?.username || body.discordId)+' ('+body.discordId+')');if(u?.team)details.push('Previous team: '+u.team);if(path.endsWith('access-level'))details.push('Previous access: '+(u?.accessLevel || 'coach'));}
  for(const key of ['team','accessLevel'])if(body[key])details.push(key+': '+String(body[key]));
  return {action,details};
+}
+
+export function ownConditionalLogDetail(detail,team){
+ if(!team || !detail.startsWith('conditionalRescinds: '))return false;
+ const text=detail.slice('conditionalRescinds: '.length);
+ for(let i=text.indexOf(' → ');i>=0;i=text.indexOf(' → ',i+3)){
+  try{
+   const parse=s=>s==='none'?[]:JSON.parse(s);
+   const before=parse(text.slice(0,i)),after=parse(text.slice(i+3));
+   if(!Array.isArray(before) || !Array.isArray(after))continue;
+   return same(before.filter(r=>teamKey(r.team)!==teamKey(team)),after.filter(r=>teamKey(r.team)!==teamKey(team)));
+  }catch{}
+ }
+ return false;
 }
