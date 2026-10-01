@@ -690,7 +690,7 @@ function freeAgentTag(){
 }
 
 function visibleBoardProspectIds(t){
-  return (t.prospectIds || []).filter(function(pid){
+  const ids = (t.prospectIds || []).filter(function(pid){
     const p = DB.prospects[pid];
     const filter = UI.boardCommitFilter || (UI.hideCommittedBoards ? 'uncommitted' : 'all');
     if (!p) return false;
@@ -702,6 +702,13 @@ function visibleBoardProspectIds(t){
     if (filter === 'uncommitted') return !p.commitTeam;
     return true;
   });
+  if(recruitingStage()==='cpr')ids.sort(function(a,b){
+    const pa=DB.prospects[a],pb=DB.prospects[b];
+    return (NZCFLAutoCommits.rating(pb) ?? -Infinity)-(NZCFLAutoCommits.rating(pa) ?? -Infinity) ||
+      (NZCFLAutoCommits.rating(pb,1) ?? -Infinity)-(NZCFLAutoCommits.rating(pa,1) ?? -Infinity) ||
+      pa.name.localeCompare(pb.name) || String(a).localeCompare(String(b));
+  });
+  return ids;
 }
 
 function rankRangeForThread(t){
