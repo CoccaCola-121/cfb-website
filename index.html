@@ -48,7 +48,7 @@
 .rb-watchlist-flag:hover { background:rgba(160,164,168,.13); }
 .rb-watchlist-flag:focus-visible { outline:2px solid var(--gold); outline-offset:2px; }
 .rb-watchlist-flag:disabled { cursor:wait; opacity:.5; }
-.rb-watchlist-bulk-row { display:flex; justify-content:flex-start; margin:0 0 14px; }
+.rb-watchlist-bulk-row { display:flex; justify-content:space-between; gap:12px; flex-wrap:wrap; margin:0 0 14px; }
 .rb-watchlist-bulk-button { display:inline-flex; align-items:center; gap:8px; padding:8px 13px; border:1px solid var(--hairline); border-radius:8px; background:var(--panel-alt); color:var(--chalk); font:600 12px Inter, sans-serif; cursor:pointer; }
 .rb-watchlist-bulk-button:hover:not(:disabled) { border-color:var(--slate); }
 .rb-watchlist-bulk-button:disabled { opacity:.55; cursor:not-allowed; }
@@ -3230,6 +3230,7 @@ function render(){
   if (UI.pendingQuickWalkon) html += renderQuickWalkonConfirm();
   if (UI.pendingQuickScholarship) html += renderQuickScholarshipConfirm();
   if (UI.pendingWatchlistBulk) html += renderWatchlistBulkConfirm();
+  if (UI.pendingBulkOffers) html += renderBulkOfferConfirm();
   if (UI.pendingSingleRescind) html += renderSingleRescindConfirmModal();
   if (UI.pendingUpgrade) html += renderUpgradeConfirmModal();
   if (UI.pendingRemovePlayer) html += renderRemovePlayerConfirm();
@@ -4261,6 +4262,34 @@ function visibleUnflaggedBoardIds(){
     .map(card => card.getAttribute('data-open-prospect')))]
     .filter(pid => !!DB.prospects[pid] && !UI.watchlistIds.includes(pid));
 }
+function requestBulkOffers(){
+  if(!SESSION?.team || UI.submitting || offersLocked() || recruitingStage()!=='cpr')return;
+  const ids=[...new Set(Array.from(document.querySelectorAll('[data-prospect-card][data-open-prospect]')).filter(card=>card.getClientRects().length && getComputedStyle(card).display!=='none').map(card=>card.getAttribute('data-open-prospect')))];
+  const leaders=NZCFLCprRules.leaders(DB.fullRoster || []),players=[];
+  ids.forEach(function(id){
+    const p=DB.prospects[id],offers=DB.offersByProspect[id] || [];
+    if(!p || p.commitTeam || isPitchRecruit(p) || leaders[p.position]?.rank===p.rank || offers.some(o=>teamKey(o.team)===teamKey(SESSION.team)))return;
+    players.push({id,type:NZCFLCprRules.scholarshipRecruit(p,offers)?'scholarship':'walkon',name:p.name,position:p.position});
+  });
+  UI.pendingBulkOffers={requestId:crypto.randomUUID(),players,skipped:ids.length-players.length};render();
+}
+function renderBulkOfferConfirm(){
+  const batch=UI.pendingBulkOffers,scholarships=batch.players.filter(p=>p.type==='scholarship').length;
+  return '<div style="position:fixed;inset:0;background:rgba(0,0,0,.72);display:flex;align-items:center;justify-content:center;z-index:75;"><div class="rb-card rb-watchlist-bulk-dialog" role="dialog" aria-modal="true" aria-labelledby="rb-bulk-offer-title" style="max-height:90dvh;overflow:auto;"><h2 class="rb-h" id="rb-bulk-offer-title">Offer all shown?</h2><p>'+batch.players.length+' offers: '+scholarships+' scholarship · '+(batch.players.length-scholarships)+' walk-on.</p><p>Uses the players shown by your filters when you clicked. Pitch recruits, committed players, and players you already offered (including rescinded offers) are skipped.</p><p style="color:var(--gold);"><strong>Scholarship offers contain only a header—no pitch, promises, or visits. You cannot add a pitch afterward.</strong></p><p>Format: '+escapeHtml(SESSION.team)+' offers POSITION NAME, followed by Scholarship or Walk-On. Changes since this preview may cause additional players to be skipped.</p><details><summary>Review players ('+batch.players.length+')</summary><ul style="max-height:200px;overflow:auto;padding-left:20px;">'+batch.players.map(p=>'<li>'+escapeHtml(p.name+' · '+p.position+' · '+(p.type==='scholarship'?'Scholarship':'Walk-On'))+'</li>').join('')+'</ul></details>'+(batch.error?'<p role="alert" style="color:var(--alert);">'+escapeHtml(batch.error)+'</p>':'')+'<div class="rb-watchlist-bulk-dialog-actions"><button class="rb-btn" id="rb-cancel-bulk-offers"'+(UI.submitting?' disabled':'')+'>Cancel</button><button class="rb-btn rb-btn-gold" id="rb-confirm-bulk-offers"'+(UI.submitting || !batch.players.length?' disabled':'')+'>'+(UI.submitting?'Submitting…':'Confirm '+batch.players.length+' offers')+'</button></div></div></div>';
+}
+async function submitBulkOffers(){
+  const batch=UI.pendingBulkOffers;
+  if(!batch || !batch.players.length || UI.submitting)return;
+  UI.submitting=true;batch.error='';render();
+  try{
+    const response=await fetch('/api/offers/bulk',{method:'POST',credentials:'include',headers:{'content-type':'application/json'},body:JSON.stringify({requestId:batch.requestId,players:batch.players.map(p=>({id:p.id,type:p.type}))})});
+    const data=await response.json().catch(()=>{throw Error('Server response unavailable. Retry this same batch safely.');});
+    if(!response.ok || !data.ok)throw Error(data.error || 'Batch not confirmed. Retry safely.');
+    mergeLeagueState(data.state);UI.pendingBulkOffers=null;
+    UI.lastSummary={errorText:data.submitted+' offers submitted'+(data.skipped?' · '+data.skipped+' skipped':'')+'.',dismissAt:Date.now()+8000};
+  }catch(error){batch.error=error.message;}
+  finally{UI.submitting=false;render();}
+}
 function requestWatchlistBulk(action){
   if (!SESSION || !UI.watchlistLoaded || UI.watchlistBulkSaving) return;
   if (action === 'clear') {
@@ -4432,7 +4461,7 @@ function renderThreadProspectList(t, options){
   html += '</div>';
   if (isWatchlist || UI.view === 'feed' || UI.view === 'thread') {
     const clear=isWatchlist;
-    html += '<div class="rb-watchlist-bulk-row"><button type="button" class="rb-watchlist-bulk-button" id="rb-watchlist-bulk-action" data-watchlist-bulk="' + (clear?'clear':'add-many') + '"' + (!UI.watchlistLoaded || UI.watchlistBulkSaving || (clear && !UI.watchlistIds.length) ? ' disabled' : '') + '><svg viewBox="0 0 20 24" aria-hidden="true"><path d="M3 1.5v21h2V14c4-2.4 6 2.5 12-1.4V2.9C11 6.8 9 .2 5 2.3v-.8H3z"/></svg>' + (clear?'Clear watchlist':'Add all to watchlist') + '</button></div>';
+    html += '<div class="rb-watchlist-bulk-row"><button type="button" class="rb-watchlist-bulk-button" id="rb-watchlist-bulk-action" data-watchlist-bulk="' + (clear?'clear':'add-many') + '"' + (!UI.watchlistLoaded || UI.watchlistBulkSaving || (clear && !UI.watchlistIds.length) ? ' disabled' : '') + '><svg viewBox="0 0 20 24" aria-hidden="true"><path d="M3 1.5v21h2V14c4-2.4 6 2.5 12-1.4V2.9C11 6.8 9 .2 5 2.3v-.8H3z"/></svg>' + (clear?'Clear watchlist':'Add all to watchlist') + '</button>' + (!clear && recruitingStage()==='cpr' ? '<button type="button" class="rb-watchlist-bulk-button" id="rb-offer-all-shown"'+(offersLocked() || UI.submitting || !UI.strongStorage?' disabled':'')+'>Offer all shown</button>' : '') + '</div>';
   }
 
   html += '<div class="' + (recruitingStage() !== 'hs' ? 'rb-transfer-results' : '') + '" style="display:flex;flex-direction:column;gap:10px;">';
@@ -5258,6 +5287,9 @@ async function removeKennyTestOffer(){
   finally{UI.submitting=false;render();}
 }
 function bindEvents(){
+  const bulkOffer=document.getElementById('rb-offer-all-shown');if(bulkOffer)bulkOffer.onclick=requestBulkOffers;
+  const cancelBulk=document.getElementById('rb-cancel-bulk-offers');if(cancelBulk)cancelBulk.onclick=function(){if(!UI.submitting){UI.pendingBulkOffers=null;render();}};
+  const confirmBulk=document.getElementById('rb-confirm-bulk-offers');if(confirmBulk)confirmBulk.onclick=submitBulkOffers;
   const jumpRescind=document.getElementById('rb-jump-rescind');
   if(jumpRescind)jumpRescind.onclick=function(){const target=document.getElementById('rb-rescind-center');if(target){target.focus({preventScroll:true});target.scrollIntoView({behavior:window.matchMedia('(prefers-reduced-motion: reduce)').matches?'auto':'smooth',block:'start'});}};
   document.querySelectorAll('[data-remove-kenny-test]').forEach(function(button){button.onclick=function(e){e.stopPropagation();UI.removeKennyTest=true;render();};});
