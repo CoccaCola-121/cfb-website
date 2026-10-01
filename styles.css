@@ -883,11 +883,7 @@ html { scrollbar-gutter: stable; }
 .rb-offer-invalid .rb-offer-team-title img { filter:grayscale(1);opacity:.4; }
 .rb-board-offer-rescinded img { filter:grayscale(1); }
 
-.rb-my-offers-heading { display:grid;grid-template-columns:1fr auto 1fr;align-items:center;gap:6px 12px;margin-bottom:18px; }
-.rb-my-offers-subtitle { grid-column:1 / -1;font-size:13px;color:var(--slate); }
-.rb-jump-rescind { grid-column:2;background:#F2F2F0;color:#202224;border-color:#F2F2F0; }
+/* Match the CPR submit control, retaining the white jump button. */
+.rb-my-offers-subtitle { font-size:13px;color:var(--slate); }
+.rb-jump-rescind { background:#F2F2F0;color:#202224;border-color:#F2F2F0; }
 .rb-jump-rescind:hover { background:#fff;border-color:#fff; }
-@media(max-width:600px){
- .rb-my-offers-heading { grid-template-columns:1fr; }
- .rb-jump-rescind { grid-column:1;grid-row:3;justify-self:center;margin-top:8px; }
-}
