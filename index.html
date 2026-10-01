@@ -77,6 +77,7 @@
 
 <script src="team-branding.js"></script>
 <script src="offer-amendments.js"></script>
+<script src="scholarship-template.js"></script>
 <script src="default-class-2062.js"></script>
 <script src="/cpr-rules.js" onerror="this.onerror=null;this.src='cpr-rules.js'"></script>
 <script src="/walkon-limit.js" onerror="this.onerror=null;this.src='walkon-limit.js'"></script>
@@ -2662,13 +2663,13 @@ function sanitizePromiseText(text){
 }
 
 function cleanDisplayPromises(offer){
-  const source = offer && offer.text ? extractPromises(offer.text) : ((offer && offer.promises) || []);
+  const source = offer?.templatePromises ? (offer.promises || []) : offer && offer.text ? extractPromises(offer.text) : ((offer && offer.promises) || []);
   const seen = {};
   const cleaned = [];
   (source || []).forEach(function(p){
     const text = sanitizePromiseText(p && p.text);
     const key = text.toLowerCase();
-    if (!isLikelyPromiseText(text) || seen[key]) return;
+    if ((!offer?.templatePromises && !isLikelyPromiseText(text)) || !text || seen[key]) return;
     seen[key] = true;
     cleaned.push(Object.assign({}, p, { text: text }));
   });
@@ -2889,16 +2890,18 @@ function renderQuickWalkon(p){
   if (canQuickOfferScholarship(p)) return '<button type="button" class="rb-btn rb-quick-offer-btn" data-quick-scholarship="' + escapeHtml(p.id) + '"' + (offersLocked() || UI.submitting ? ' disabled' : '') + '>Offer scholarship</button>';
   return '';
 }
-function requestQuickScholarship(pid){
+async function requestQuickScholarship(pid){
   if (!canQuickOfferScholarship(DB.prospects[pid]) || offersLocked() || UI.submitting) return;
+  await loadScholarshipTemplate();
+  UI.quickTemplate={template:savedScholarshipTemplate(),useTemplate:false,promiseChoices:[-1,-1,-1]};
   UI.pendingQuickScholarship = pid;
   render();
 }
 function renderQuickScholarshipConfirm(){
-  const p=DB.prospects[UI.pendingQuickScholarship];
-  if (!p || !SESSION) return '';
-  const text=SESSION.team + ' offers ' + p.position + ' ' + p.name + '\n\nScholarship';
-  return '<div style="position:fixed;inset:0;background:rgba(0,0,0,.72);display:flex;align-items:center;justify-content:center;z-index:65;"><div class="rb-card" role="alertdialog" aria-modal="true" aria-labelledby="rb-quick-scholarship-title" aria-describedby="rb-quick-scholarship-warning" style="padding:24px;width:490px;max-width:90vw;border:1px solid var(--gold);"><div class="rb-h" id="rb-quick-scholarship-title" style="font-size:20px;margin-bottom:16px;">Submit scholarship offer?</div><p style="white-space:pre-wrap;margin:0 0 18px;">' + escapeHtml(text) + '</p><p id="rb-quick-scholarship-warning" role="alert" style="padding:14px;border:1px solid var(--gold);border-radius:6px;color:var(--chalk);font-weight:700;line-height:1.5;">WARNING: This scholarship offer has NO BODY. Once submitted, you cannot add a body or pitch to this offer later. This cannot be undone through the header editor. Only submit if you intend to send a header-only scholarship offer.</p><div style="display:flex;justify-content:flex-end;gap:8px;flex-wrap:wrap;"><button class="rb-btn" id="rb-cancel-quick-scholarship">Cancel</button><button class="rb-btn rb-btn-gold" id="rb-confirm-quick-scholarship">Submit header-only scholarship</button></div></div></div>';
+  const p=DB.prospects[UI.pendingQuickScholarship],config=UI.quickTemplate;
+  if(!p || !SESSION || !config)return '';
+  const text=config.useTemplate?templatePreview(config.template,p,config.promiseChoices):SESSION.team+' offers '+p.position+' '+p.name+'\n\nScholarship';
+  return '<div style="position:fixed;inset:0;background:rgba(0,0,0,.72);display:flex;align-items:center;justify-content:center;z-index:65;"><div class="rb-card" role="dialog" aria-modal="true" aria-label="Confirm scholarship offer" style="padding:24px;width:560px;max-width:90vw;max-height:90dvh;overflow:auto;box-sizing:border-box;"><h2 class="rb-h">Submit scholarship offer?</h2>'+templateUseControl('quick',config.template,config.useTemplate)+'<div data-template-preview-wrap>'+(config.useTemplate?renderPromiseSelects(config.template,config.promiseChoices,'quick'):'')+'<pre style="white-space:pre-wrap;overflow-wrap:anywhere;font:inherit;">'+escapeHtml(text)+'</pre></div><p style="color:var(--gold);"><strong>'+(config.useTemplate?'Review the text and promises above. Leave promises out of your template if using dropdown choices.':'This sends a header-only scholarship offer with no body or promises.')+' You cannot add or edit the pitch body after submitting.</strong></p><div style="display:flex;justify-content:flex-end;gap:8px;"><button class="rb-btn" id="rb-cancel-quick-scholarship">Cancel</button><button class="rb-btn rb-btn-gold" id="rb-confirm-quick-scholarship">Submit scholarship offer</button></div></div></div>';
 }
 async function quickOfferScholarship(pid){
   const p=DB.prospects[pid];
@@ -2928,6 +2931,7 @@ async function submitCompactCpr(rawText,quickId,quickType){
   const key=offerDraftKey();if(!quickId)captureOfferDraft();
   const name=document.getElementById('rb-cpr-offer-name'),position=document.getElementById('rb-cpr-offer-position');
   const body={requestId:crypto.randomUUID(),prospectId:quickId || UI.submitTargetId,text:rawText,quick:!!quickId,quickType:quickId ? (quickType || 'walkon') : undefined,name:name?.value || '',position:position?.value || '',promises:extractPromises(rawText)};
+  if(quickId && quickType==='scholarship' && UI.quickTemplate?.useTemplate){body.template=UI.quickTemplate.template;body.promiseChoices=UI.quickTemplate.promiseChoices;}
   UI.submitting=true;
   try{
     let data;
@@ -3907,6 +3911,75 @@ function currentOfferAutoPreview(){
   }catch{result.pending=false;result.unavailable=true;}
   return result;
 }
+let scholarshipTemplateState={owner:'',loaded:false,loading:false,saving:false,version:0,template:null,draft:null,error:''};
+function templateOwner(){return SESSION?.discordId+':'+SESSION?.team;}
+async function loadScholarshipTemplate(force=false){
+ const owner=templateOwner();
+ if(scholarshipTemplateState.owner!==owner)scholarshipTemplateState={owner,loaded:false,loading:false,saving:false,version:0,template:null,draft:null,error:''};
+ const state=scholarshipTemplateState;
+ if(state.loading || state.loaded && !force)return;
+ state.loading=true;state.error='';
+ try{
+  const response=await fetch('/api/scholarship-template',{credentials:'include',cache:'no-store'}),data=await response.json();
+  if(!response.ok || !data.ok)throw Error(data.error || 'Template unavailable.');
+  if(templateOwner()!==owner)return;
+  state.template=data.template;state.draft=JSON.parse(JSON.stringify(data.template));state.version=data.version;state.loaded=true;
+ }catch(error){state.error=error.message;}
+ finally{state.loading=false;}
+}
+function renderScholarshipTemplateEditor(){
+ if(recruitingStage()!=='cpr')return '';
+ const state=scholarshipTemplateState;
+ if(state.owner!==templateOwner() || !state.loaded && !state.loading && !state.error)loadScholarshipTemplate().then(()=>{if(UI.view==='myoffers')render();});
+ const draft=state.draft;
+ return '<details class="rb-card" style="padding:16px;margin-bottom:14px;" id="rb-scholarship-template-editor"'+(UI.templateEditorOpen?' open':'')+'><summary class="rb-h" style="cursor:pointer;">CPR scholarship auto-offer template</summary><p>Optional. The player’s name, position, and Scholarship header are added automatically.</p><p style="color:var(--gold);"><strong>Leave promises out of the template text if you use the promise dropdowns.</strong> Save one promise choice per line; choose one per value or None when offering.</p>'+(draft?draft.sections.map((row,i)=>'<label style="display:block;margin-top:14px;">'+escapeHtml(row.label)+' template<textarea class="rb-input" data-template-body="'+i+'" rows="5" maxlength="20000" style="width:100%;box-sizing:border-box;resize:vertical;">'+escapeHtml(row.body)+'</textarea></label><label style="display:block;margin-top:8px;">'+escapeHtml(row.label)+' promise choices<textarea class="rb-input" data-template-choices="'+i+'" rows="3" style="width:100%;box-sizing:border-box;resize:vertical;" placeholder="One complete promise per line">'+escapeHtml(row.choices.join('\n'))+'</textarea></label>').join(''):'<p>Loading template…</p>')+(state.error?'<p role="alert" style="color:var(--alert);">'+escapeHtml(state.error)+'</p>':'')+(state.status?'<p role="status">'+escapeHtml(state.status)+'</p>':'')+'<div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap;"><button class="rb-btn rb-btn-gold" id="rb-save-scholarship-template"'+(!draft || state.saving?' disabled':'')+'>'+(state.saving?'Saving…':'Save template')+'</button><button class="rb-btn" id="rb-reload-scholarship-template"'+(state.loading || state.saving?' disabled':'')+'>Reload saved template</button></div></details>';
+}
+async function saveScholarshipTemplate(){
+ const state=scholarshipTemplateState;if(!state.draft || state.saving)return;
+ state.saving=true;state.error='';state.status='';
+ const submittedDraft=JSON.stringify(state.draft);
+ try{
+  const response=await fetch('/api/scholarship-template',{method:'POST',credentials:'include',headers:{'content-type':'application/json'},body:JSON.stringify({template:state.draft,version:state.version})}),data=await response.json();
+  if(!response.ok || !data.ok)throw Error(data.error || 'Could not save template.');
+  state.template=data.template;if(JSON.stringify(state.draft)===submittedDraft)state.draft=JSON.parse(JSON.stringify(data.template));state.version=data.version;state.status='Template saved.';
+ }catch(error){state.error=error.message;}
+ finally{state.saving=false;if(UI.view==='myoffers')render();}
+}
+function savedScholarshipTemplate(){return scholarshipTemplateState.owner===templateOwner() && scholarshipTemplateState.loaded?JSON.parse(JSON.stringify(scholarshipTemplateState.template)):null;}
+function renderPromiseSelects(template,choices,context){
+ return template.sections.map((row,i)=>'<label style="display:block;margin-top:10px;">'+escapeHtml(row.label)+' promise<select class="rb-input" style="display:block;width:100%;" data-offer-promise="'+i+'" data-template-context="'+escapeHtml(context)+'"'+(UI.submitting?' disabled':'')+'><option value="-1">None</option>'+row.choices.map((text,n)=>'<option value="'+n+'"'+(choices[i]===n?' selected':'')+'>'+escapeHtml(text)+'</option>').join('')+'</select></label>').join('');
+}
+function templatePreview(template,p,choices){
+ try{return NZCFLScholarshipTemplate.build(SESSION.team,p,template,choices).text;}catch(error){return error.message;}
+}
+function templateUseControl(context,template,use){
+ return template?'<label style="display:flex;gap:8px;align-items:center;margin:14px 0;"><input type="checkbox" data-use-offer-template="'+context+'"'+(use?' checked':'')+(UI.submitting?' disabled':'')+'>Use my saved scholarship template</label>':'<p style="font-size:12px;color:var(--slate);">Optional templates are available in My Offers.</p>';
+}
+function bindScholarshipTemplates(){
+ const editor=document.getElementById('rb-scholarship-template-editor');if(editor)editor.ontoggle=function(){UI.templateEditorOpen=editor.open;};
+ document.querySelectorAll('[data-template-body]').forEach(el=>el.oninput=function(){scholarshipTemplateState.draft.sections[Number(el.dataset.templateBody)].body=el.value;});
+ document.querySelectorAll('[data-template-choices]').forEach(el=>el.oninput=function(){scholarshipTemplateState.draft.sections[Number(el.dataset.templateChoices)].choices=el.value.split(/\r?\n/);});
+ const save=document.getElementById('rb-save-scholarship-template');if(save)save.onclick=saveScholarshipTemplate;
+ const reload=document.getElementById('rb-reload-scholarship-template');if(reload)reload.onclick=async function(){await loadScholarshipTemplate(true);if(UI.view==='myoffers')render();};
+ document.querySelectorAll('[data-use-offer-template]').forEach(el=>el.onchange=function(){const config=el.dataset.useOfferTemplate==='quick'?UI.quickTemplate:UI.pendingBulkOffers;config.useTemplate=el.checked;render();});
+ const bindChoices=function(root){root.querySelectorAll('[data-offer-promise]').forEach(el=>el.onchange=function(){
+   const context=el.dataset.templateContext,index=Number(el.dataset.offerPromise);
+   const config=context==='quick'?UI.quickTemplate:UI.pendingBulkOffers;
+   const row=context==='quick'?config:UI.pendingBulkOffers.players.find(p=>p.id===context);
+   row.promiseChoices ||= [-1,-1,-1];row.promiseChoices[index]=Number(el.value);
+   const p=context==='quick'?DB.prospects[UI.pendingQuickScholarship]:DB.prospects[context];
+   const preview=el.closest('[data-template-preview-wrap]').querySelector('pre');if(preview)preview.textContent=templatePreview(config.template,p,row.promiseChoices);
+ });};
+ bindChoices(document);
+ document.querySelectorAll('[data-bulk-template-player]').forEach(el=>el.ontoggle=function(){
+   if(!el.open || el.dataset.loaded)return;el.dataset.loaded='true';
+   const batch=UI.pendingBulkOffers,row=batch.players.find(p=>p.id===el.dataset.bulkTemplatePlayer),p=DB.prospects[row.id];
+   const wrap=el.querySelector('[data-template-preview-wrap]');
+   wrap.innerHTML=renderPromiseSelects(batch.template,row.promiseChoices || [-1,-1,-1],row.id)+'<pre style="white-space:pre-wrap;overflow-wrap:anywhere;font:inherit;">'+escapeHtml(templatePreview(batch.template,p,row.promiseChoices || [-1,-1,-1]))+'</pre>';
+   bindChoices(wrap);
+ });
+}
+
 function renderMyOffers(){
   if (!SESSION){
     return '<div class="rb-card" style="padding:32px;text-align:center;color:var(--slate);">Log in to view your offers.</div>';
@@ -3915,6 +3988,7 @@ function renderMyOffers(){
   const autoPreview=currentOfferAutoPreview();
   const filterKey = positionFilterKey('offers', SESSION.team);
   let html = '<div class="rb-cpr-board-heading rb-my-offers-heading"><div><div class="rb-h" style="font-size:20px;margin-bottom:4px;">My Offers</div><div class="rb-my-offers-subtitle">'+rows.length+' offer'+(rows.length===1?'':'s')+' from '+escapeHtml(SESSION.team)+'.</div></div><div class="rb-card rb-cpr-submit-wrap"><button type="button" class="rb-btn rb-jump-rescind" id="rb-jump-rescind">Jump to Rescind Center</button></div></div>';
+  html += renderScholarshipTemplateEditor();
   html += renderVisitLedger();
   html += '<div class="rb-card" style="padding:18px 20px;margin-bottom:14px;">';
   html += renderPositionCounts(rows, function(row){ return row.prospect && row.prospect.position; }, filterKey);
@@ -4270,7 +4344,7 @@ function visibleUnflaggedBoardIds(){
     .map(card => card.getAttribute('data-open-prospect')))]
     .filter(pid => !!DB.prospects[pid] && !UI.watchlistIds.includes(pid));
 }
-function requestBulkOffers(){
+async function requestBulkOffers(){
   if(!SESSION?.team || UI.submitting || offersLocked() || recruitingStage()!=='cpr')return;
   const ids=[...new Set(Array.from(document.querySelectorAll('[data-prospect-card][data-open-prospect]')).filter(card=>card.getClientRects().length && getComputedStyle(card).display!=='none').map(card=>card.getAttribute('data-open-prospect')))];
   const leaders=NZCFLCprRules.leaders(DB.fullRoster || []),players=[];
@@ -4279,18 +4353,19 @@ function requestBulkOffers(){
     if(!p || p.commitTeam || isPitchRecruit(p) || leaders[p.position]?.rank===p.rank || offers.some(o=>teamKey(o.team)===teamKey(SESSION.team)))return;
     players.push({id,type:NZCFLCprRules.scholarshipRecruit(p,offers)?'scholarship':'walkon',name:p.name,position:p.position});
   });
-  UI.pendingBulkOffers={requestId:crypto.randomUUID(),players,skipped:ids.length-players.length};render();
+  await loadScholarshipTemplate();
+  UI.pendingBulkOffers={requestId:crypto.randomUUID(),players,skipped:ids.length-players.length,template:savedScholarshipTemplate(),useTemplate:false};render();
 }
 function renderBulkOfferConfirm(){
   const batch=UI.pendingBulkOffers,scholarships=batch.players.filter(p=>p.type==='scholarship').length;
-  return '<div style="position:fixed;inset:0;background:rgba(0,0,0,.72);display:flex;align-items:center;justify-content:center;z-index:75;"><div class="rb-card rb-watchlist-bulk-dialog" role="dialog" aria-modal="true" aria-labelledby="rb-bulk-offer-title" style="max-height:90dvh;overflow:auto;"><h2 class="rb-h" id="rb-bulk-offer-title">Offer all shown?</h2><p>'+batch.players.length+' offers: '+scholarships+' scholarship · '+(batch.players.length-scholarships)+' walk-on.</p><p>Uses the players shown by your filters when you clicked. Pitch recruits, committed players, and players you already offered (including rescinded offers) are skipped.</p><p style="color:var(--gold);"><strong>Scholarship offers contain only a header—no pitch, promises, or visits. You cannot add a pitch afterward.</strong></p><p>Format: '+escapeHtml(SESSION.team)+' offers POSITION NAME, followed by Scholarship or Walk-On. Changes since this preview may cause additional players to be skipped.</p><details><summary>Review players ('+batch.players.length+')</summary><ul style="max-height:200px;overflow:auto;padding-left:20px;">'+batch.players.map(p=>'<li>'+escapeHtml(p.name+' · '+p.position+' · '+(p.type==='scholarship'?'Scholarship':'Walk-On'))+'</li>').join('')+'</ul></details>'+(batch.error?'<p role="alert" style="color:var(--alert);">'+escapeHtml(batch.error)+'</p>':'')+'<div class="rb-watchlist-bulk-dialog-actions"><button class="rb-btn" id="rb-cancel-bulk-offers"'+(UI.submitting?' disabled':'')+'>Cancel</button><button class="rb-btn rb-btn-gold" id="rb-confirm-bulk-offers"'+(UI.submitting || !batch.players.length?' disabled':'')+'>'+(UI.submitting?'Submitting…':'Confirm '+batch.players.length+' offers')+'</button></div></div></div>';
+  return '<div style="position:fixed;inset:0;background:rgba(0,0,0,.72);display:flex;align-items:center;justify-content:center;z-index:75;"><div class="rb-card rb-watchlist-bulk-dialog" role="dialog" aria-modal="true" aria-labelledby="rb-bulk-offer-title" style="max-height:90dvh;overflow:auto;"><h2 class="rb-h" id="rb-bulk-offer-title">Offer all shown?</h2><p>'+batch.players.length+' offers: '+scholarships+' scholarship · '+(batch.players.length-scholarships)+' walk-on.</p><p>Uses the players shown by your filters when you clicked. Pitch recruits, committed players, and players you already offered (including rescinded offers) are skipped.</p>'+templateUseControl('bulk',batch.template,batch.useTemplate)+'<p style="color:var(--gold);"><strong>'+(batch.useTemplate?'Scholarship offers use your template. Choose promises per player below; leave promises out of template text when using dropdowns.':'Scholarship offers contain only a header—no pitch, promises, or visits.')+' You cannot change the pitch body afterward.</strong></p><p>Format: '+escapeHtml(SESSION.team)+' offers POSITION NAME, followed by Scholarship or Walk-On. Changes since this preview may cause additional players to be skipped.</p><details><summary>Review players ('+batch.players.length+')</summary><ul style="max-height:200px;overflow:auto;padding-left:20px;">'+batch.players.map(p=>'<li>'+escapeHtml(p.name+' · '+p.position+' · '+(p.type==='scholarship'?'Scholarship':'Walk-On'))+(batch.useTemplate && p.type==='scholarship'?'<details data-bulk-template-player="'+escapeHtml(p.id)+'"><summary>Choose promises / preview</summary><div data-template-preview-wrap></div></details>':'')+'</li>').join('')+'</ul></details>'+(batch.error?'<p role="alert" style="color:var(--alert);">'+escapeHtml(batch.error)+'</p>':'')+'<div class="rb-watchlist-bulk-dialog-actions"><button class="rb-btn" id="rb-cancel-bulk-offers"'+(UI.submitting?' disabled':'')+'>Cancel</button><button class="rb-btn rb-btn-gold" id="rb-confirm-bulk-offers"'+(UI.submitting || !batch.players.length?' disabled':'')+'>'+(UI.submitting?'Submitting…':'Confirm '+batch.players.length+' offers')+'</button></div></div></div>';
 }
 async function submitBulkOffers(){
   const batch=UI.pendingBulkOffers;
   if(!batch || !batch.players.length || UI.submitting)return;
   UI.submitting=true;batch.error='';render();
   try{
-    const response=await fetch('/api/offers/bulk',{method:'POST',credentials:'include',headers:{'content-type':'application/json'},body:JSON.stringify({requestId:batch.requestId,players:batch.players.map(p=>({id:p.id,type:p.type}))})});
+    const response=await fetch('/api/offers/bulk',{method:'POST',credentials:'include',headers:{'content-type':'application/json'},body:JSON.stringify({requestId:batch.requestId,template:batch.useTemplate?batch.template:undefined,players:batch.players.map(p=>({id:p.id,type:p.type,promiseChoices:p.promiseChoices || [-1,-1,-1]}))})});
     const data=await response.json().catch(()=>{throw Error('Server response unavailable. Retry this same batch safely.');});
     if(!response.ok || !data.ok)throw Error(data.error || 'Batch not confirmed. Retry safely.');
     mergeLeagueState(data.state);UI.pendingBulkOffers=null;
@@ -5295,6 +5370,7 @@ async function removeKennyTestOffer(){
   finally{UI.submitting=false;render();}
 }
 function bindEvents(){
+  bindScholarshipTemplates();
   const bulkOffer=document.getElementById('rb-offer-all-shown');if(bulkOffer)bulkOffer.onclick=requestBulkOffers;
   const cancelBulk=document.getElementById('rb-cancel-bulk-offers');if(cancelBulk)cancelBulk.onclick=function(){if(!UI.submitting){UI.pendingBulkOffers=null;render();}};
   const confirmBulk=document.getElementById('rb-confirm-bulk-offers');if(confirmBulk)confirmBulk.onclick=submitBulkOffers;

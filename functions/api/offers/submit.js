@@ -1,3 +1,4 @@
+import '../../../scholarship-template.js';
 import {removedPlayer} from '../../_lib/removed-players.js';
 import '../../../cpr-rules.js';
 import '../../../offer-window.js';
@@ -42,9 +43,10 @@ export async function onRequestPost({request,env,waitUntil}){
    }
    // The server, not the submitted browser text, decides exactly what a quick offer contains.
    const quickType=body.quickType || 'walkon';
-   const text=body.quick?user.team+' offers '+row.position+' '+row.name+'\n\n'+(quickType==='scholarship'?'Scholarship':'Walk-On'):body.text;
+   const templateOffer=body.quick && quickType==='scholarship' && body.template ? globalThis.NZCFLScholarshipTemplate.build(user.team,row,body.template,body.promiseChoices || []):null;
+   const text=templateOffer?templateOffer.text:body.quick?user.team+' offers '+row.position+' '+row.name+'\n\n'+(quickType==='scholarship'?'Scholarship':'Walk-On'):body.text;
    const player=existingPlayer || {...row,id:pid,offerMode:mode?.rank===row.rank?'pitch':'values',coachCreated:true,stars:null};
-   const offer={id:'o_'+user.discordId+'_'+body.requestId,requestId:body.requestId,team:user.team,coach:user.displayName || user.username || '',text,visits:{},promises:body.quick?[]:(Array.isArray(body.promises)?body.promises.slice(0,3):[]),createdAt:receivedAt};
+   const offer={id:'o_'+user.discordId+'_'+body.requestId,requestId:body.requestId,team:user.team,coach:user.displayName || user.username || '',text,templatePromises:!!templateOffer,visits:{},promises:templateOffer?templateOffer.promises:body.quick?[]:(Array.isArray(body.promises)?body.promises.slice(0,3):[]),createdAt:receivedAt};
    if(body.quick)offer.offerType=quickType;
    const error=globalThis.NZCFLTransferRules.pitchLimitError(text,player,'cpr') || globalThis.NZCFLWalkonLimit.error(state,player,offer);
    if(error)return json({ok:false,error},{status:400});

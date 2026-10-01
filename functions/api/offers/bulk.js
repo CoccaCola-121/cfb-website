@@ -1,3 +1,4 @@
+import '../../../scholarship-template.js';
 import '../../../cpr-rules.js';
 import '../../../offer-window.js';
 import '../../../walkon-limit.js';
@@ -31,7 +32,8 @@ export async function onRequestPost({request,env,waitUntil}){
     const type=globalThis.NZCFLCprRules.scholarshipRecruit(p,offers)?'scholarship':'walkon';
     // Don't silently change a reviewed walk-on into a scholarship offer, or vice versa.
     if(type!==item.type || type==='walkon' && fullWalkons){skipped++;continue;}
-    const offer={id:'o_'+user.discordId+'_'+body.requestId+'_'+item.id,requestId:body.requestId,team:user.team,coach:user.displayName || user.username || '',text:user.team+' offers '+p.position+' '+p.name+'\n\n'+(type==='scholarship'?'Scholarship':'Walk-On'),offerType:type,visits:{},promises:[],createdAt:receivedAt};
+    const templateOffer=type==='scholarship' && body.template ? globalThis.NZCFLScholarshipTemplate.build(user.team,p,body.template,item.promiseChoices || []):null;
+    const offer={id:'o_'+user.discordId+'_'+body.requestId+'_'+item.id,requestId:body.requestId,team:user.team,coach:user.displayName || user.username || '',text:templateOffer?templateOffer.text:user.team+' offers '+p.position+' '+p.name+'\n\n'+(type==='scholarship'?'Scholarship':'Walk-On'),offerType:type,templatePromises:!!templateOffer,visits:{},promises:templateOffer?templateOffer.promises:[],createdAt:receivedAt};
     state.offersByProspect[item.id]=[...offers,offer];submitted++;
    }
    if(!submitted)return json({ok:true,state,submitted:0,skipped});
