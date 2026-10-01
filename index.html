@@ -3881,11 +3881,29 @@ function renderListPageHeading(title, subtitle){
     '<div style="font-size:13px;color:var(--slate);">' + escapeHtml(subtitle) + '</div></div>';
 }
 
+let offerAutoPreviewCache=null;
+function currentOfferAutoPreview(){
+  const signature=NZCFLAutoCommits.fingerprint(DB);
+  if(offerAutoPreviewCache?.signature===signature)return offerAutoPreviewCache;
+  const result={signature,offers:new Set(),unavailable:false};
+  try{
+    // Simulate on a detached copy. Never save these hypothetical commits or rescinds.
+    const work=JSON.parse(JSON.stringify(DB));work.offersLocked=true;
+    const scholarships=NZCFLAutoCommits.apply(work,'scholarship');
+    scholarships.commits.forEach(row=>result.offers.add(row.prospectId+':'+row.offerId));
+    if(work.recruitingStage!=='transfer'){
+      const walkons=NZCFLAutoCommits.apply(work,'walkon');
+      walkons.commits.forEach(row=>result.offers.add(row.prospectId+':'+row.offerId));
+    }
+  }catch(error){result.unavailable=true;result.offers.clear();}
+  offerAutoPreviewCache=result;return result;
+}
 function renderMyOffers(){
   if (!SESSION){
     return '<div class="rb-card" style="padding:32px;text-align:center;color:var(--slate);">Log in to view your offers.</div>';
   }
   const rows = getOfferRowsForTeam(SESSION.team);
+  const autoPreview=currentOfferAutoPreview();
   const filterKey = positionFilterKey('offers', SESSION.team);
   let html = renderListPageHeading('My Offers', rows.length + ' offer' + (rows.length === 1 ? '' : 's') + ' from ' + SESSION.team + '.');
   html += renderVisitLedger();
@@ -3895,6 +3913,7 @@ function renderMyOffers(){
   if (recruitingStage() === 'cpr') html += '<p class="rb-transfer-limit">Your offer goes to the matching player thread, or creates one from the free-agent list.</p>';
   const walkonCount=rows.filter(row=>NZCFLAutoCommits.offerKind(DB,row.prospect,row.offer)==='walkon').length;
   html += '<p style="font-size:13px;color:var(--slate);">'+walkonCount+' walk-on · '+(rows.length-walkonCount)+' scholarship</p>';
+  html += '<p style="font-size:12px;color:var(--slate);">'+(autoPreview.unavailable?'Auto preview unavailable until scholarship counts and team limits are ready.':'Auto if closed now includes team limits and conditional rescinds. Updates as offers change.')+'</p>';
   html += renderOwnTypeFilter('offers');
   html += '<input class="rb-input" id="rb-my-offer-search" placeholder="' + (recruitingStage() === 'transfer' ? 'Search offers by player name' : 'Search your offers by recruit name, rank, or hometown') + '" />';
   if (UI.rescindError) html += '<div style="font-size:12px;color:var(--alert);margin-top:8px;">' + escapeHtml(UI.rescindError) + '</div>';
@@ -3919,7 +3938,7 @@ function renderMyOffers(){
         '<span class="rb-mono" style="color:var(--slate);font-size:13px;flex:0 0 auto;">' + escapeHtml(p.position || '') + (p.rating ? '<span class="rb-recruit-rating"> &middot; ' + escapeHtml(p.rating) + '</span>' : '') + '</span>' +
         (p.hometown ? '<span class="rb-mono rb-desktop-only" style="color:var(--slate);font-size:13px;flex:0 0 auto;">&middot;</span><span class="rb-mono rb-desktop-only" title="' + escapeHtml(p.hometown) + '" style="color:var(--slate);font-size:13px;overflow:hidden;text-overflow:ellipsis;">' + escapeHtml(shortText(p.hometown, 24)) + '</span>' : '') +
       '</span>';
-      html += '<span class="rb-own-offer-type-row">' + ownOfferTypeBadge(o,p) + '</span>';
+      html += '<span class="rb-own-offer-type-row">' + ownOfferTypeBadge(o,p) + (autoPreview.offers.has(row.prospectId+':'+o.id) && !o.rescinded && !p.commitTeam ? '<span class="rb-tag" style="font-size:11px;color:#91d6a4;border-color:#477d55;background:rgba(88,191,114,.1);">Auto if closed now</span>' : '') + '</span>';
       html += '<span class="rb-my-offer-visits" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">' + visitBadges(o.visits, true) + '</span>';
       html += '</span>';
       html += '<span class="rb-my-offer-actions" style="display:flex;align-items:center;justify-content:flex-end;gap:8px;white-space:nowrap;">' + (o.rescinded ? '<span class="rb-mono" style="color:var(--alert);font-size:12px;">rescinded</span>' : (p.commitTeam ? '<span class="rb-mono" style="color:var(--slate);font-size:12px;">committed</span>' : (recruitingStage() === 'hs' ? '<button class="rb-btn" data-edit-offer="' + escapeHtml(row.prospectId) + ':' + escapeHtml(o.id) + '">Edit</button>' : '') + '<button class="rb-btn" data-rescind-offer="' + escapeHtml(row.prospectId) + ':' + escapeHtml(o.id) + '">Rescind</button>')) + '</span>';
