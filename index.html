@@ -3554,7 +3554,7 @@ function renderConditionalPlayers(kind,label){
 }
 function renderConditionalRescinds(){
   const rules = rulesForTeam(SESSION.team);
-  let html = '<div class="rb-card rb-rescind-center" style="padding:18px 20px;margin-bottom:14px;">';
+  let html = '<div class="rb-card rb-rescind-center" id="rb-rescind-center" tabindex="-1" style="padding:18px 20px;margin-bottom:14px;scroll-margin-top:80px;">';
   html += '<div class="rb-h" style="font-size:18px;margin-bottom:6px;">Rescind Center</div>';
   html += '<div style="font-size:13px;color:var(--slate);margin-bottom:12px;">Build automatic rescind rules or mass rescind matching active offers right now.</div>';
   if (rules.length){
@@ -3905,7 +3905,7 @@ function renderMyOffers(){
   const rows = getOfferRowsForTeam(SESSION.team);
   const autoPreview=currentOfferAutoPreview();
   const filterKey = positionFilterKey('offers', SESSION.team);
-  let html = renderListPageHeading('My Offers', rows.length + ' offer' + (rows.length === 1 ? '' : 's') + ' from ' + SESSION.team + '.');
+  let html = '<div class="rb-my-offers-heading"><div class="rb-h" style="font-size:20px;">My Offers</div><button type="button" class="rb-btn rb-jump-rescind" id="rb-jump-rescind">Jump to Rescind Center</button><div class="rb-my-offers-subtitle">'+rows.length+' offer'+(rows.length===1?'':'s')+' from '+escapeHtml(SESSION.team)+'.</div></div>';
   html += renderVisitLedger();
   html += '<div class="rb-card" style="padding:18px 20px;margin-bottom:14px;">';
   html += renderPositionCounts(rows, function(row){ return row.prospect && row.prospect.position; }, filterKey);
@@ -5258,6 +5258,8 @@ async function removeKennyTestOffer(){
   finally{UI.submitting=false;render();}
 }
 function bindEvents(){
+  const jumpRescind=document.getElementById('rb-jump-rescind');
+  if(jumpRescind)jumpRescind.onclick=function(){const target=document.getElementById('rb-rescind-center');if(target){target.focus({preventScroll:true});target.scrollIntoView({behavior:window.matchMedia('(prefers-reduced-motion: reduce)').matches?'auto':'smooth',block:'start'});}};
   document.querySelectorAll('[data-remove-kenny-test]').forEach(function(button){button.onclick=function(e){e.stopPropagation();UI.removeKennyTest=true;render();};});
   const cancelTest=document.getElementById('rb-cancel-kenny-test');if(cancelTest)cancelTest.onclick=function(){UI.removeKennyTest=false;render();};
   const confirmTest=document.getElementById('rb-confirm-kenny-test');if(confirmTest)confirmTest.onclick=removeKennyTestOffer;
