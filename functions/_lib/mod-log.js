@@ -16,7 +16,7 @@ function changes(before,after,path='',out=[]){
 export async function describeModeration(env,path,body,user){
  if(path==='/api/league/state'){
   const before=await readLeagueState(env) || {},after=body.state || body,out=[];
-  if(Object.hasOwn(body,'expectedUpdatedAt') && body.expectedUpdatedAt!==(before.updatedAt || null))return {action:'League save attempt',details:['Submitted an older board version. Differences from newer offers are not deletion requests.']};
+  if(Object.hasOwn(body,'expectedUpdatedAt') && body.expectedUpdatedAt!==(before.updatedAt || null))return null;
   for(const field of Object.keys(after)){
    if(['updatedAt','removedPlayers'].includes(field) || same(before[field],after[field]))continue;
    if(field==='conditionalRescinds' && user?.team && same((before[field] || []).filter(r=>teamKey(r.team)!==teamKey(user.team)),(after[field] || []).filter(r=>teamKey(r.team)!==teamKey(user.team))))continue;
@@ -37,7 +37,8 @@ if(!n)out.push('Deleted offer: '+o.team+' → '+name);else if(!same(o,n))out.pus
    }else if(['fullRoster','scholarshipHistory','threads','unmatched'].includes(field))out.push('Updated '+field+' ('+(Array.isArray(after[field])?after[field].length+' entries':'data replaced')+')');
    else changes(before[field],after[field],field,out);
   }
-  return out.length ? {action:'Published league changes',details:out} : null;
+  const readable=readableLogDetails(out);
+  return readable.length ? {action:'Updated league settings',details:readable} : null;
  }
  if(path==='/api/players/remove'){
   const state=await readLeagueState(env),p=state?.prospects?.[body.prospectId];
@@ -71,4 +72,18 @@ export function ownConditionalLogDetail(detail,team){
   }catch{}
  }
  return false;
+}
+
+export function readableLogDetails(details){
+ const out=[];
+ for(const detail of details){
+  if(/^(?:commitUpdatedAt|discordCommitUpdatedAt|updatedAt|manualCommitOverrides[.:])/.test(detail))continue;
+  const commit=detail.match(/^(.+)\.commitTeam: (.*?) → (.*)$/);
+  if(commit){const [,name,old,team]=commit;out.push(team && team!=='none' ? name+' committed to '+team+(old && old!=='none'?' (previously '+old+')':'') : 'Cleared '+name+'’s commitment'+(old && old!=='none'?' to '+old:''));continue;}
+  if(/\.(?:commitType|commitSource|updatedAt|lastTriggeredAt|lastMatchedCommitCount|lastRescindedCount)(?:[.:])/.test(detail))continue;
+  let text=detail.replace(/\bcommitSheetUrl\b/g,'Commit sheet link').replace(/\boffersLocked: false → true/g,'Closed offers').replace(/\boffersLocked: true → false/g,'Opened offers').replace(/\bfullRoster\b/g,'player roster').replace(/\bscholarshipHistory\b/g,'scholarship history').replace(/\bconditionalRescinds\b/g,'conditional rescind rules').replace(/\bscholarshipCapacity\b/g,'scholarship limits').replace(/\bbucksRemaining\b/g,'Bucks spots remaining').replace(/\baccessLevel\b/g,'Access').replace(/\brecruitingStage\b/g,'Recruiting stage');
+  if(text.includes('{') || text.includes('[')){const label=text.split(':')[0].replace(/([a-z])([A-Z])/g,'$1 $2');text='Updated '+label+'.';}
+  out.push(text);
+ }
+ return [...new Set(out)];
 }

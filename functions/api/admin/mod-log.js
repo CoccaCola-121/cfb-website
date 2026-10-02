@@ -1,6 +1,6 @@
 import {getCurrentUser,canModerate,json} from '../../_lib/auth.js';
 import {teamKey} from '../../_lib/teams-util.js';
-import {ensureModLog,ownConditionalLogDetail} from '../../_lib/mod-log.js';
+import {ensureModLog,ownConditionalLogDetail,readableLogDetails} from '../../_lib/mod-log.js';
 export async function onRequestGet({request,env}){
  const user=await getCurrentUser(request,env);
  if(!user || !canModerate(env,user))return json({ok:false,error:'Moderator access required.'},{status:403});
@@ -15,6 +15,7 @@ export async function onRequestGet({request,env}){
    const match=detail.match(/^Changed offer: (.+?) → .+ \(([^)]+)\)$/);
    return match && teamKey(match[1])===teamKey(entry.actor.team) && match[2].split(', ').every(field=>['rescinded','rescindedAt','rescindReason','conditionalRescindRuleId'].includes(field));
   })));
-  return json({ok:true,entries:visible,next:rows.length>50?entries.at(-1).id:null},{headers:{'cache-control':'private, no-store'}});
+  const readable=visible.filter(entry=>entry.action!=='League save attempt').map(entry=>({...entry,action:entry.action==='Published league changes'?'Updated league settings':entry.action,details:readableLogDetails(entry.details)}));
+  return json({ok:true,entries:readable,next:rows.length>50?entries.at(-1).id:null},{headers:{'cache-control':'private, no-store'}});
  }catch{return json({ok:false,error:'Could not load the moderation log.'},{status:503});}
 }
