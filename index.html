@@ -602,6 +602,7 @@ function teamMatchesForQuery(query){
 }
 
 function renderTeamLogo(brand){
+  if(brand?.logoUrl?.includes('Nebraska_Cornhuskers_logo.svg'))brand={...brand,logoUrl:'/nebraska-logo.svg'};
   if (!brand || !brand.logoUrl) return '';
   const size = (arguments.length > 1 ? Number(arguments[1]) : 22) + 6;
   // Fit the entire image box inside the circle, including square logo corners.

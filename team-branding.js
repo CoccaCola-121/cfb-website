@@ -249,7 +249,7 @@ window.NZCFL_TEAM_BRANDS = [
     "displayName": "Nebraska Cornhuskers",
     "primary": "#e31937",
     "secondary": "#ffffff",
-    "logoUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/e/e5/Nebraska_Cornhuskers_logo.svg/1280px-Nebraska_Cornhuskers_logo.svg.png"
+    "logoUrl": "/nebraska-logo.svg"
   },
   {
     "region": "Northwestern",
