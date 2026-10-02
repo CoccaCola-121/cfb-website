@@ -75,7 +75,7 @@
     if(kind==='walkon'){
       const schol=preview(state,'scholarship',now);
       if(schol.errors.length){result.errors=schol.errors;return result;}
-      if(schol.commits.length || schol.rescinds.length){result.errors.push('Apply the scholarship autos and cap rescinds before producing walk-ons.');return result;}
+      if(schol.commits.length || schol.rescinds.length){result.errors.push('Run scholarship autos first to fill spots and rescind offers from full teams.');return result;}
     }
     const work=copy(state);
     const players=Object.entries(work.prospects || {}).map(([id,p])=>({...p,id})).sort(order);

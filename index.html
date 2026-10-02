@@ -4935,9 +4935,9 @@ function renderProspectDetail(){
   else html += renderStorylineLine(p.storyline, 'margin-top:8px;');
   html += renderLegacySchoolLine(p.legacySchool, 'margin-top:8px;');
   if (recruitingStage() === 'transfer'){
-    html += '<p class="rb-transfer-limit">800-word pitch limit. A standalone offer header does not count.</p>';
+    html += '<p class="rb-transfer-limit">Include your offer header, then your pitch (800 words max). Header words don’t count.</p>';
   } else if (isPitchRecruit(p)){
-    html += '<div class="rb-mono" style="font-size:10px;color:var(--slate);margin-top:8px;line-height:1.2;"><span style="color:var(--gold);">Pitch recruit:</span> free-write pitch, 800 words maximum; offer header excluded.</div>';
+    html += '<div class="rb-mono" style="font-size:10px;color:var(--slate);margin-top:8px;line-height:1.2;"><span style="color:var(--gold);">Pitch recruit:</span> Include your offer header, then your pitch (800 words max). Header words don’t count.</div>';
   } else {
     html += renderRecruitValues(p.values);
   }
@@ -5110,7 +5110,7 @@ function renderSubmitModal(){
   const locked = offersLocked();
   const pitchOffer = recruitingStageConfig().pitchOnly || isPitchRecruit(target);
   const submitHelp = locked ? 'Offers are currently locked. New offers cannot be posted.' :
-    (recruitingStage() === 'cpr' ? (target ? 'Submit your offer for ' + escapeHtml(target.name) + (isPitchRecruit(target) ? '. Free-write pitch, 800 words maximum.' : '.') : 'Paste your offer. We’ll match the player by name and position, then use their existing thread or create one from the CSV. Pitch recruits allow 800 words.') : pitchOffer ? (target ? 'Write or paste a personalized pitch for ' + (recruitNumber(target) ? recruitNumber(target) + ' ' : '') + renderRecruitName(target.name) + '. Include up to 3 promises; short pitch-only submissions are fine.' : 'Write or paste a personalized pitch. Include up to 3 promises; short pitch-only submissions are fine.') :
+    (recruitingStage() === 'cpr' ? (target ? 'Submit your offer for ' + escapeHtml(target.name) + (isPitchRecruit(target) ? '. Include your offer header, then your pitch (800 words max).' : '.') : 'Paste your offer. We’ll match the player by name and position, then use their existing thread or create one from the CSV. Pitch recruits allow 800 words.') : pitchOffer ? (target ? 'Write or paste a personalized pitch for ' + (recruitNumber(target) ? recruitNumber(target) + ' ' : '') + renderRecruitName(target.name) + '. Include up to 3 promises; short pitch-only submissions are fine.' : 'Write or paste a personalized pitch. Include up to 3 promises; short pitch-only submissions are fine.') :
       (target ? 'Paste one offer sheet as-is. This will post directly to ' + (recruitNumber(target) ? recruitNumber(target) + ' ' : '') + renderRecruitName(target.name) + ', detect visits, and file your team name automatically.' : 'Paste one offer sheet as-is. We\'ll match it to the right prospect, detect visits, and file your team name automatically.'));
   const placeholder = pitchOffer ? 'Write or paste your pitch here' : 'Paste your auto-offer sheet output here';
   return '<div style="position:fixed;inset:0;background:rgba(0,0,0,0.6);display:flex;align-items:center;justify-content:center;z-index:50;" data-close-modal="1">' +
@@ -5122,7 +5122,7 @@ function renderSubmitModal(){
       (recruitingStage() === 'cpr' && !target ? '<div class="rb-cpr-offer-identity"><label>Player name (if not clear in offer)<input class="rb-input" id="rb-cpr-offer-name" value="' + escapeHtml(draft.name || '') + '" /></label><label>Position<select class="rb-input" id="rb-cpr-offer-position"><option value="">Detect from offer</option>' + Object.keys(NZCFLCprRules.thresholds).map(pos=>'<option' + (draft.position === pos ? ' selected' : '') + '>' + pos + '</option>').join('') + '</select></label></div>' : '') +
       '<p id="rb-submit-error" role="alert" style="color:var(--alert);font-size:12px;"></p>' +
       '<textarea class="rb-textarea rb-scrollbar" id="rb-sheet-text" rows="10" placeholder="' + escapeHtml(placeholder) + '" ' + (locked ? 'disabled' : '') + '>' + escapeHtml(draft.text || '') + '</textarea>' +
-      (pitchOffer || recruitingStage() === 'cpr' ? '<div id="rb-pitch-count" role="status" class="rb-transfer-limit">0 / 800 words · standalone offer header excluded</div>' : '') +
+      (pitchOffer || recruitingStage() === 'cpr' ? '<div id="rb-pitch-count" role="status" class="rb-transfer-limit">0 / 800 pitch words · include your own header</div>' : '') +
       '<div style="display:flex;justify-content:flex-end;gap:8px;margin-top:14px;">' +
         '<button class="rb-btn" data-close-modal="1">Cancel</button>' +
         '<button class="rb-btn rb-btn-gold" id="rb-submit-sheet-btn" ' + (UI.submitting || locked ? 'disabled' : '') + '>' + (locked ? 'Offers locked' : (UI.submitting ? 'Posting...' : 'Post offer')) + '</button>' +
@@ -5666,7 +5666,7 @@ function bindEvents(){
     const count = NZCFLTransferRules.pitchWordCount(pitchInput.value, prospect);
     const status = document.getElementById('rb-pitch-count');
     if (status && recruitingStage() === 'cpr' && !isPitchRecruit(prospect)) { status.textContent = prospect ? 'Standard offer recruit' : 'Pitch recruits have an 800-word limit.'; return; }
-    if (status) { status.textContent = count + ' / 800 words · standalone offer header excluded'; status.style.color = count > 800 ? 'var(--alert)' : 'var(--slate)'; }
+    if (status) { status.textContent = count + ' / 800 pitch words · include your own header'; status.style.color = count > 800 ? 'var(--alert)' : 'var(--slate)'; }
   };
   if (pitchInput){
     const updateCount=pitchInput.oninput;
