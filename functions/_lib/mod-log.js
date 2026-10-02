@@ -49,9 +49,10 @@ if(!n)out.push('Deleted offer: '+o.team+' → '+name);else if(!same(o,n))out.pus
   for(const t of after){const old=before.find(n=>n.region===t.region);if(!old)out.push('Added team: '+t.region);else changes(old,t,t.region,out);}
   return {action:'Published team changes',details:out};
  }
- const names={'unlink':'Removed coach from team','switch-team':'Changed coach team','access-level':'Changed account access','backup':'Requested backup','discord':'Synced Discord commitments'};
+ const names={'paste-commits':'Imported pasted commitments','unlink':'Removed coach from team','switch-team':'Changed coach team','access-level':'Changed account access','backup':'Requested backup','discord':'Synced Discord commitments'};
  const action=names[path.split('/').pop()] || 'Moderation action';
  const details=[];
+ if(path.endsWith('/paste-commits'))details.push(String(body.text || '').slice(0,100000));
  if(!body.discordId && body.team && path.endsWith('/unlink'))body.discordId=(await readTeamClaim(env,body.team))?.discordId;
  if(body.discordId){const u=await env.AUTH_KV.get('discord:user:'+body.discordId,'json');details.push('Coach: '+(u?.displayName || u?.username || body.discordId)+' ('+body.discordId+')');if(u?.team)details.push('Previous team: '+u.team);if(path.endsWith('access-level'))details.push('Previous access: '+(u?.accessLevel || 'coach'));}
  for(const key of ['team','accessLevel'])if(body[key])details.push(key+': '+String(body[key]));

@@ -1920,6 +1920,19 @@ async function clearManualCommitOverride(){
   render();
 }
 
+async function pushPastedCommits(){
+ if(UI.submitting || !String(UI.pastedCommits || '').trim())return;
+ UI.submitting=true;UI.pastedCommitResult='';render();
+ try{
+  const response=await fetch('/api/admin/paste-commits',{method:'POST',credentials:'include',headers:{'content-type':'application/json'},body:JSON.stringify({text:UI.pastedCommits,classKey:conditionalClassKey()})});
+  const data=await response.json().catch(()=>{throw Error('Import was not confirmed. Your text is kept; retry.');});
+  if(!response.ok || !data.ok)throw Error(data.error || 'Import failed.');
+  mergeLeagueState(data.state);
+  UI.pastedCommitResult=data.updated+' updated · '+data.unchanged+' already current'+(data.unmatched.length?'\nNot matched:\n'+data.unmatched.join('\n'):'');
+ }catch(error){UI.pastedCommitResult=error.message;}
+ finally{UI.submitting=false;render();}
+}
+
 async function updateCommitsFromSheet(){
   if (queueSettingsAction('commits')) return;
   const input = document.getElementById('rb-commit-sheet-url');
@@ -4803,6 +4816,7 @@ function renderClassSetup(){
   if (DB.commitUpdatedAt) html += '<span class="rb-mono" style="font-size:12px;color:var(--slate);">Last update: ' + escapeHtml(new Date(DB.commitUpdatedAt).toLocaleString()) + '</span>';
   html += '</div>';
   }
+  html += '<details style="margin-top:14px;border-top:1px solid var(--hairline);padding-top:14px;" '+(UI.pastedCommitsOpen?'open':'')+' id="rb-paste-commits-panel"><summary style="cursor:pointer;">Mass manual push</summary><p style="font-size:13px;color:var(--slate);">Paste commitment messages from Discord. Existing manual overrides stay in effect.</p><textarea class="rb-textarea" id="rb-paste-commits" rows="7" style="width:100%;box-sizing:border-box;" placeholder="Paste commitments here" '+(UI.submitting?'disabled':'')+'>'+escapeHtml(UI.pastedCommits || '')+'</textarea><button class="rb-btn rb-btn-gold" id="rb-push-pasted-commits" style="margin-top:10px;" '+(UI.submitting?'disabled':'')+'>'+(UI.submitting?'Importing…':'Push commitments')+'</button><div role="status" style="white-space:pre-wrap;overflow-wrap:anywhere;margin-top:10px;">'+escapeHtml(UI.pastedCommitResult || '')+'</div></details>';
   if (seasonEnd){
     html += '<div class="rb-mono" style="font-size:12px;color:var(--slate);margin-top:8px;">' + escapeHtml(stageConfig.shortLabel) + ' recruiting ended' + (seasonEnd.season ? ' for ' + escapeHtml(seasonEnd.season) : '') + '.</div>';
   }
@@ -6132,6 +6146,12 @@ function bindEvents(){
   });
   const exportPromiseArchiveBtn = document.getElementById('rb-export-promise-archive');
   if (exportPromiseArchiveBtn) exportPromiseArchiveBtn.onclick = exportPromiseArchive;
+  const pasted=document.getElementById('rb-paste-commits');
+  if(pasted)pasted.oninput=function(){UI.pastedCommits=pasted.value;};
+  const pastePanel=document.getElementById('rb-paste-commits-panel');
+  if(pastePanel)pastePanel.ontoggle=function(){UI.pastedCommitsOpen=pastePanel.open;};
+  const pastePush=document.getElementById('rb-push-pasted-commits');
+  if(pastePush)pastePush.onclick=pushPastedCommits;
   const updateCommitsBtn = document.getElementById('rb-update-commits');
   if (updateCommitsBtn) updateCommitsBtn.onclick = updateCommitsFromSheet;
   const applyCommitOverrideBtn = document.getElementById('rb-apply-commit-override');
