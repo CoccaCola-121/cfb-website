@@ -52,20 +52,22 @@ async function parseCommitLine(env, line) {
     if (!team) return null;
     return { name: transfer[2].trim(), transferFrom: transfer[1].trim(), stage: 'transfer', team, sourceLine: String(line).trim() };
   }
-  const match = text.match(/#\s*(\d+)\s+(.+?)\s+(?:\([^)]+\)\s+)?commits\s+to\s+(.+)$/i);
+  const match = text.match(/^#\s*(CPR\s*)?(\d+)\s+(.+?)\s+(?:\(([^)]+)\)\s+)?commits\s+to\s+(.+)$/i);
   if (!match) {
     const pitch=text.match(/^(.+?)\s+commits\s+to\s+(.+)$/i);
     if(!pitch)return null;
     const team=await resolveTeam(env,pitch[2]);
     return team?{name:pitch[1].trim(),team,stage:'cpr',pitch:true,sourceLine:String(line).trim()}:null;
   }
-  const rank = Number(match[1]);
-  const team = await resolveTeam(env, match[3]);
+  const rank = Number(match[2]);
+  const team = await resolveTeam(env, match[5]);
   if (!rank || !team) return null;
   return {
     rank,
     prospectId: `r${rank}`,
-    name: match[2].trim(),
+    name: match[3].trim(),
+    position: (match[4] || '').trim().toUpperCase(),
+    ...(match[1] ? {stage:'cpr',commitType:/\(WO\)/i.test(match[5])?'walkon':'scholarship'} : {}),
     team,
     sourceLine: String(line || '').trim(),
   };
@@ -170,17 +172,19 @@ export function applyDiscordCommits(state, commits) {
       const matches = Object.values(prospects).filter(p => p.name && p.name.toLowerCase() === String(commit.name || '').toLowerCase());
       prospect = matches.length === 1 && (!commit.pitch || matches[0].offerMode==='pitch') ? matches[0] : null;
     } else if (prospect && commit.name && prospect.name.toLowerCase() !== commit.name.toLowerCase()) prospect = null;
+    if(prospect && commit.position && String(prospect.position || '').toUpperCase()!==commit.position)prospect=null;
     if (prospect && seen.has(prospect.id)) return;
     if (prospect) seen.add(prospect.id);
     if (!prospect) {
       unmatched.push(commit);
       return;
     }
-    if (prospect.commitTeam === commit.team) {
+    if (prospect.commitTeam === commit.team && (!commit.commitType || prospect.commitType===commit.commitType)) {
       unchanged++;
       return;
     }
     prospect.commitTeam = commit.team;
+    if(commit.commitType)prospect.commitType=commit.commitType;
     prospect.commitSource = { type: 'discord', name: prospect.name, messageId: commit.messageId, timestamp: commit.timestamp };
     updated++;
   });
