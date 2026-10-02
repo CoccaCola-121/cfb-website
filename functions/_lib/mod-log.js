@@ -50,7 +50,7 @@ if(!n)out.push('Deleted offer: '+o.team+' → '+name);else if(!same(o,n))out.pus
   for(const t of after){const old=before.find(n=>n.region===t.region);if(!old)out.push('Added team: '+t.region);else changes(old,t,t.region,out);}
   return {action:'Published team changes',details:out};
  }
- const names={'paste-commits':'Imported pasted commitments','unlink':'Removed coach from team','switch-team':'Changed coach team','access-level':'Changed account access','backup':'Requested backup','discord':'Synced Discord commitments'};
+ const names={'archive-cycle':'Archived recruiting cycle','paste-commits':'Imported pasted commitments','unlink':'Removed coach from team','switch-team':'Changed coach team','access-level':'Changed account access','backup':'Requested backup','discord':'Synced Discord commitments'};
  const action=names[path.split('/').pop()] || 'Moderation action';
  const details=[];
  if(path.endsWith('/paste-commits'))details.push(String(body.text || '').slice(0,100000));
