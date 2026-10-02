@@ -2,7 +2,8 @@
   function locked(state, now = Date.now()) {
     const schedule = state.offerSchedule || {};
     const closes = Date.parse(schedule.closesAt || '');
-    if (Number.isFinite(closes) && now >= closes) return true;
+    // Preserve windows already closed when scheduling was retired; future schedules are ignored.
+    if (Number.isFinite(closes) && closes <= 1790969643659 && now >= closes) return true;
     return !!state.offersLocked;
   }
   function localTime(instant, zone) {
