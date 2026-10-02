@@ -3890,7 +3890,7 @@ function updateAutoPreviewBadges(){
     el.innerHTML=preview.offers.has(el.getAttribute('data-auto-offer'))?'<span class="rb-tag" style="font-size:11px;color:#91d6a4;border-color:#477d55;background:rgba(88,191,114,.1);">Auto if closed now</span>':'';
   });
   const status=document.getElementById('rb-auto-preview-status');
-  if(status)status.textContent=preview.pending?'Checking current autos…':preview.unavailable?'Auto preview unavailable. Check scholarship counts and team limits, or refresh to retry.':'Auto if closed now includes team limits and conditional rescinds. Updates as offers change.';
+  if(status)status.textContent=preview.pending?'Checking current autos…':preview.unavailable?'Auto preview unavailable. Check scholarship counts and team limits, or refresh to retry.':'Auto if closed now requires one eligible team with room. Competing active offers prevent the badge.';
 }
 function currentOfferAutoPreview(){
   const signature=[DB.updatedAt,lastLocalChangeAt,lastOfferWriteAt,recruitingStage()].join(':');
@@ -4007,7 +4007,7 @@ function renderMyOffers(){
   if (recruitingStage() === 'cpr') html += '<p class="rb-transfer-limit">Your offer goes to the matching player thread, or creates one from the free-agent list.</p>';
   const walkonCount=rows.filter(row=>NZCFLAutoCommits.offerKind(DB,row.prospect,row.offer)==='walkon').length;
   html += '<p style="font-size:13px;color:var(--slate);">'+walkonCount+' walk-on · '+(rows.length-walkonCount)+' scholarship</p>';
-  html += '<p id="rb-auto-preview-status" style="font-size:12px;color:var(--slate);">'+(autoPreview.pending?'Checking current autos…':autoPreview.unavailable?'Auto preview unavailable until scholarship counts and team limits are ready.':'Auto if closed now includes team limits and conditional rescinds. Updates as offers change.')+'</p>';
+  html += '<p id="rb-auto-preview-status" style="font-size:12px;color:var(--slate);">'+(autoPreview.pending?'Checking current autos…':autoPreview.unavailable?'Auto preview unavailable until scholarship counts and team limits are ready.':'Auto if closed now requires one eligible team with room. Competing active offers prevent the badge.')+'</p>';
   html += renderOwnTypeFilter('offers');
   html += '<input class="rb-input" id="rb-my-offer-search" placeholder="' + (recruitingStage() === 'transfer' ? 'Search offers by player name' : 'Search your offers by recruit name, rank, or hometown') + '" />';
   if (UI.rescindError) html += '<div style="font-size:12px;color:var(--alert);margin-top:8px;">' + escapeHtml(UI.rescindError) + '</div>';
