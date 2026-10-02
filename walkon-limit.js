@@ -2,15 +2,16 @@
  const key=value=>String(value || '').toLowerCase().replace(/[^a-z0-9]/g,'');
  const enabled=state=>['hs','cpr'].includes(state.recruitingStage || 'hs');
  function isWalkon(state,p,offer){
-   if(state.recruitingStage==='cpr') return !root.NZCFLCprRules.scholarshipRecruit(p, [...(state.offersByProspect?.[p.id] || []), ...(offer ? [offer] : [])]);
-   return /\bwalk\s*-?\s*on\b|\bwo\b/i.test(String(offer?.text || ''));
+   // Caps apply to this team's offer, never another team's scholarship offer.
+   if(offer)return !root.NZCFLCprRules.scholarshipOffer(offer);
+   return state.recruitingStage==='cpr' && !root.NZCFLCprRules.scholarshipRecruit(p);
  }
  function counts(state){
    const result={}; if(!enabled(state))return result;
    for(const [id,p] of Object.entries(state.prospects || {})){
      if(!p.commitTeam)continue;
      const offer=(state.offersByProspect?.[id] || []).find(o=>!o.rescinded && key(o.team)===key(p.commitTeam));
-     if((offer || state.recruitingStage==='cpr') && isWalkon(state,{...p,id:p.id || id},offer)) result[key(p.commitTeam)]=(result[key(p.commitTeam)] || 0)+1;
+     if(p.commitType==='walkon' || !p.commitType && (offer || state.recruitingStage==='cpr') && isWalkon(state,{...p,id:p.id || id},offer)) result[key(p.commitTeam)]=(result[key(p.commitTeam)] || 0)+1;
    }
    return result;
  }
