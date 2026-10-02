@@ -2448,7 +2448,7 @@ function conditionalRuleMatchesProspect(rule, prospect, offer){
     } else if (rule.overallMode === 'atMost' ? overall > overallLimit : overall < overallLimit) return false;
   }
   const scholarship = String(rule.scholarship || '').trim().toLowerCase();
-  if (scholarship && (!offer || offerType(offer) !== scholarship)) return false;
+  if (scholarship && NZCFLAutoCommits.conditionalKind(prospect,offer) !== scholarship) return false;
   return true;
 }
 
@@ -3178,6 +3178,7 @@ async function confirmReset(){
 // ---------- Rendering ----------
 
 function render(){
+  captureRescindDraft();
   const root = document.getElementById('rb-app');
   const previousNav = document.getElementById('rb-main-nav');
   const navScrollLeft = previousNav ? previousNav.scrollLeft : 0;
@@ -3544,7 +3545,7 @@ function renderConditionalPlayers(kind,label){
 }
 function renderConditionalRescinds(){
   const rules = rulesForTeam(SESSION.team);
-  let html = '<div class="rb-card rb-rescind-center" id="rb-rescind-center" tabindex="-1" style="padding:18px 20px;margin-bottom:14px;scroll-margin-top:80px;">';
+  let html = '<div class="rb-card rb-rescind-center" id="rb-rescind-center" data-owner="' + escapeHtml(SESSION?.discordId+':'+SESSION?.team+':'+conditionalClassKey()) + '" tabindex="-1" style="padding:18px 20px;margin-bottom:14px;scroll-margin-top:80px;">';
   html += '<div class="rb-h" style="font-size:18px;margin-bottom:6px;">Rescind Center</div>';
   html += '<div style="font-size:13px;color:var(--slate);margin-bottom:12px;">Build automatic rescind rules or mass rescind matching active offers right now.</div>';
   if (rules.length){
@@ -3624,7 +3625,7 @@ function normalizeRescindRuleDraft(draft){
   };
 }
 
-function addConditionalRule(){
+async function addConditionalRule(){
   if (!SESSION) return;
   const draft = readRescindRuleForm('rb-cond', true);
   draft.triggerIds=Array.from(document.querySelectorAll('[data-conditional-players="trigger"]:checked')).map(el=>el.value);
@@ -3637,7 +3638,7 @@ function addConditionalRule(){
   }
   const normalized = normalizeRescindRuleDraft(draft);
   const rule = {
-    id: uid('cr'),
+    id: (UI.conditionalRetry?.key===JSON.stringify(draft) ? UI.conditionalRetry.id : crypto.randomUUID()),
     triggerIds: draft.triggerIds,
     targetIds: draft.targetIds,
     team: SESSION.team,
@@ -3654,11 +3655,8 @@ function addConditionalRule(){
     createdAt: Date.now()
   };
   rule.name = conditionalRuleSummary(rule);
-  normalizeConditionalRules().push(rule);
-  const results = applyConditionalRescinds();
-  UI.conditionalError = null;
-  UI.conditionalStatus = 'Rule added' + (results.length ? ' and applied immediately.' : '.');
-  saveDB(); render();
+  UI.conditionalRetry={key:JSON.stringify(draft),id:rule.id};
+  await saveConditionalAction({action:'add',rule});
 }
 
 function massRescindMatches(rule){
@@ -3757,14 +3755,48 @@ function backToMassRescindChecklist(){
   render();
 }
 
-function deleteConditionalRule(ruleId){
-  if (!SESSION) return;
-  DB.conditionalRescinds = normalizeConditionalRules().filter(function(rule){
-    return !(rule && rule.id === ruleId && teamKey(rule.team) === teamKey(SESSION.team));
-  });
-  UI.conditionalError = null;
-  UI.conditionalStatus = 'Rule deleted.';
-  saveDB(); render();
+async function deleteConditionalRule(ruleId){
+  if(!SESSION || UI.submitting)return;
+  await saveConditionalAction({action:'delete',id:ruleId});
+}
+function conditionalClassKey(){
+  const rows=DB.fullRoster || [],first=rows[0] || {},last=rows.at(-1) || {};
+  return JSON.stringify([DB.recruitingStage,rows.length,first.metadataSeason || first.season || '',first.name,last.name]);
+}
+async function saveConditionalAction(action){
+  if(!SESSION || UI.submitting)return;
+  UI.submitting=true;UI.conditionalError=null;UI.conditionalStatus='Saving…';render();
+  try{
+    const response=await fetch('/api/conditional-rescinds',{method:'POST',credentials:'include',headers:{'content-type':'application/json'},body:JSON.stringify({...action,classKey:conditionalClassKey()})});
+    const data=await response.json().catch(()=>{throw Error('The save was not confirmed. Your draft is kept; retry safely.');});
+    if(!response.ok || !data.ok)throw Error(data.error || 'Rule save was not confirmed.');
+    mergeLeagueState(data.state);
+    UI.conditionalStatus=action.action==='delete'?'Rule deletion confirmed.':'Rule saved on server.'+(data.rescinded?' '+data.rescinded+' offers rescinded.':'');
+    if(action.action==='add'){UI.clearConditionalDraft=true;UI.conditionalRetry=null;}
+  }catch(error){UI.conditionalStatus=null;UI.conditionalError=error.message;}
+  finally{UI.submitting=false;render();}
+}
+
+function captureRescindDraft(){
+ const root=document.getElementById('rb-rescind-center');if(!root)return;
+ if(root.dataset.owner!==SESSION?.discordId+':'+SESSION?.team+':'+conditionalClassKey())return;
+ const values={};
+ root.querySelectorAll('input,select').forEach(el=>{
+  const key=el.id || (el.dataset.positionPrefix?'pos:'+el.dataset.positionPrefix+':'+el.value:el.dataset.conditionalPlayers?'player:'+el.dataset.conditionalPlayers+':'+el.value:'');
+  if(key)values[key]={value:el.value,checked:el.checked};
+ });
+ if(UI.clearConditionalDraft){for(const key of Object.keys(values))if(key.startsWith('rb-cond') || key.startsWith('pos:rb-cond') || key.startsWith('player:'))delete values[key];UI.clearConditionalDraft=false;}
+ UI.rescindDraft={owner:root.dataset.owner,values};
+}
+function restoreRescindDraft(){
+ const root=document.getElementById('rb-rescind-center'),draft=UI.rescindDraft;
+ if(!root || !draft || draft.owner!==root.dataset.owner)return;
+ root.querySelectorAll('input,select').forEach(el=>{
+  const key=el.id || (el.dataset.positionPrefix?'pos:'+el.dataset.positionPrefix+':'+el.value:el.dataset.conditionalPlayers?'player:'+el.dataset.conditionalPlayers+':'+el.value:'');
+  const saved=draft.values[key];if(saved){if(el.type==='checkbox')el.checked=saved.checked;else el.value=saved.value;}
+ });
+ const mode=document.getElementById('rb-cond-overall-mode'),value=document.getElementById('rb-cond-overall-value');if(mode && value)value.disabled=NZCFLAutoCommits.relativeOverall(mode.value);
+ root.querySelectorAll('#rb-add-conditional,[data-delete-conditional]').forEach(el=>el.disabled=!!UI.submitting);
 }
 
 function getOfferRowsForTeam(team){
@@ -5370,6 +5402,7 @@ async function removeKennyTestOffer(){
   finally{UI.submitting=false;render();}
 }
 function bindEvents(){
+  restoreRescindDraft();
   bindScholarshipTemplates();
   const bulkOffer=document.getElementById('rb-offer-all-shown');if(bulkOffer)bulkOffer.onclick=requestBulkOffers;
   const cancelBulk=document.getElementById('rb-cancel-bulk-offers');if(cancelBulk)cancelBulk.onclick=function(){if(!UI.submitting){UI.pendingBulkOffers=null;render();}};

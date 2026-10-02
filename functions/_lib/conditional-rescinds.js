@@ -1,12 +1,7 @@
+import '../../cpr-rules.js';
 import '../../auto-commits.js';
 function teamKey(value) {
   return String(value || '').toLowerCase().replace(/[^a-z0-9]/g, '');
-}
-
-function offerType(offer) {
-  const text = String((offer && offer.text) || '').toLowerCase();
-  if (/\bwalk\s*-?\s*on\b|\bwo\b/.test(text)) return 'walkon';
-  return 'scholarship';
 }
 
 function overallValue(prospect) {
@@ -60,7 +55,7 @@ function ruleMatchesProspect(rule, prospect, offer) {
   }
 
   const scholarship = String(rule.scholarship || '').trim().toLowerCase();
-  if (scholarship && (!offer || offerType(offer) !== scholarship)) return false;
+  if (scholarship && globalThis.NZCFLAutoCommits.conditionalKind(prospect,offer) !== scholarship) return false;
 
   return true;
 }
@@ -80,7 +75,7 @@ export function applyConditionalRescinds(state, options = {}) {
   const results = [];
 
   normalizedRules(state).forEach((rule) => {
-    if (!rule || !rule.enabled || !rule.team) return;
+    if (!rule || !rule.enabled || !rule.team || options.onlyRuleId && rule.id!==options.onlyRuleId) return;
     const threshold = Math.max(1, Number(rule.count) || 0);
     const team = rule.team;
     const matchingCommits = Object.keys(prospects).filter((pid) => {

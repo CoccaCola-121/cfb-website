@@ -33,6 +33,10 @@ export async function onRequestPut({ request, env, waitUntil }) {
   incoming.removedPlayers=previous?.removedPlayers || {};
   if(env.LEAGUE_DB && !Object.prototype.hasOwnProperty.call(body,'expectedUpdatedAt'))return json({ok:false,error:'Refresh the page before saving; this tab uses an older version.'},{status:409});
   if (Object.prototype.hasOwnProperty.call(body,'expectedUpdatedAt') && (previous && previous.updatedAt || null) !== body.expectedUpdatedAt) return json({ok:false,error:'The league changed before saving. Your draft is intact; try Save again.'},{status:409});
+  // Rule configuration is changed through its own retry-safe endpoint, not stale board copies.
+  const config=rules=>(rules || []).map(({lastTriggeredAt,lastMatchedCommitCount,lastRescindedCount,...rule})=>rule);
+  const classReset=accessLevel(env,user)==='commissioner' && (previous?.recruitingStage!==incoming.recruitingStage || JSON.stringify(previous?.fullRoster)!==JSON.stringify(incoming.fullRoster) || Object.keys(previous?.offersByProspect || {}).length>0 && Object.keys(incoming.offersByProspect || {}).length===0);
+  if(!classReset && JSON.stringify(config(previous?.conditionalRescinds))!==JSON.stringify(config(incoming.conditionalRescinds)))return json({ok:false,error:'Conditional rules now save separately. Refresh this page to use the updated Rescind Center.'},{status:409});
   // Preserve new settings when an older open browser tab submits its existing payload.
   for (const field of ['scholarshipCapacity','bucksRemaining']) {
     if (!Object.prototype.hasOwnProperty.call(incoming,field) && previous && Object.prototype.hasOwnProperty.call(previous,field)) incoming[field]=previous[field];

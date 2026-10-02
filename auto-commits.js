@@ -14,6 +14,7 @@
     if(root.NZCFLCprRules.scholarshipOffer(o)) return 'scholarship';
     return 'walkon';
   }
+  function conditionalKind(p,o){return p?.offerMode==='pitch'?'scholarship':o?offerKind({},p,o):p?.commitType || null;}
   function scholarshipOnly(state,p){return state.recruitingStage==='transfer' || state.recruitingStage==='cpr' && root.NZCFLCprRules.scholarshipRecruit(p,state.offersByProspect?.[p.id] || []);}
   function invalidOffer(state,p,o){return !!p && scholarshipOnly(state,p) && offerKind(state,p,o)==='walkon';}
 
@@ -109,7 +110,7 @@
         if(rule.stars!=='' && rule.stars!=null && stars(p)!==Number(rule.stars))return false;
         if(Number(rule.rankValue)>0 && (rule.rankMode==='better'?p.rank>Number(rule.rankValue):p.rank<=Number(rule.rankValue)))return false;
         if(Number(rule.overallValue)>0 && (rating(p)===null || (rule.overallMode==='below'?rating(p)>=Number(rule.overallValue):rule.overallMode==='atMost'?rating(p)>Number(rule.overallValue):rating(p)<Number(rule.overallValue))))return false;
-        return !rule.scholarship || o && offerKind(work,p,o)===rule.scholarship;
+        return !rule.scholarship || conditionalKind(p,o)===rule.scholarship;
       }
       for(const rule of work.conditionalRescinds || []){
         if(!rule.enabled || !rule.team)continue;
@@ -159,5 +160,5 @@
     if (!values.length || values.some(v=>v==null || !Number.isFinite(v))) return null;
     return {...rule,overallMode:rule.overallMode==='belowCommit'?'below':'atMost',overallValue:Math.min(...values)};
   }
-  root.NZCFLAutoCommits={invalidOffer,relativeOverall,rescindTargetRule,key,rating,offerKind,commitKind,counts,remaining,parseCapacitySheet,validate,fingerprint,preview,apply};
+  root.NZCFLAutoCommits={conditionalKind,invalidOffer,relativeOverall,rescindTargetRule,key,rating,offerKind,commitKind,counts,remaining,parseCapacitySheet,validate,fingerprint,preview,apply};
 })(globalThis);
