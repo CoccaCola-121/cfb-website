@@ -4815,7 +4815,6 @@ function renderClassSetup(){
   }
   html += '<div class="rb-card" style="padding:20px 24px;max-width:640px;margin-top:14px;">';
   html += '<div class="rb-h" style="font-size:16px;margin-bottom:12px;">Commit Tracking</div>';
-  if(canUseDangerZone())html+='<details style="margin-bottom:18px;"><summary>Cycle archive</summary><p>Keep the latest 20 seasons. Archiving again updates this cycle. Resets archive the current cycle first.</p><button class="rb-btn" id="rb-archive-cycle">Archive current cycle</button><p role="status">'+escapeHtml(UI.archiveStatus || '')+'</p><a href="/archives.html">Browse archives</a></details>';
   if (stage === 'hs') {
   if (DB.commitSheetUrl && !UI.commitEditing){
     html += '<div style="border:1px solid var(--hairline);border-radius:8px;background:var(--panel-alt);padding:10px 12px;display:flex;justify-content:space-between;gap:10px;align-items:center;flex-wrap:wrap;">';
@@ -4893,9 +4892,12 @@ function renderClassSetup(){
   if (UI.brandingError) html += '<div style="font-size:12px;color:var(--alert);margin-top:8px;">' + escapeHtml(UI.brandingError) + '</div>';
   html += '</div>';
   html += '<div class="rb-card" style="padding:20px 24px;max-width:640px;margin-top:14px;">';
-  html += '<div class="rb-h" style="font-size:16px;margin-bottom:8px;">Promise Archive</div>';
-  html += '<div class="rb-mono" style="font-size:12px;color:var(--slate);margin-bottom:12px;">Exports committed winners and their promises only.</div>';
+  html += '<div class="rb-h" style="font-size:16px;margin-bottom:8px;">Archive Center</div>';
+  html += '<div class="rb-mono" style="font-size:12px;color:var(--slate);margin-bottom:12px;">Browse past cycles or export committed players and promises. Latest 20 seasons retained.</div>';
+  html += '<div style="display:flex;gap:10px;flex-wrap:wrap;"><a class="rb-btn" href="/archives.html">Browse archives</a>';
+  if(canUseDangerZone())html+='<button class="rb-btn" id="rb-archive-cycle">Archive current cycle</button>';
   html += '<button class="rb-btn rb-btn-gold" id="rb-export-promise-archive">Export promises CSV</button>';
+  html+='</div><p role="status">'+escapeHtml(UI.archiveStatus || '')+'</p>';
   html += '</div>';
   if (canUseDangerZone()){
     html += '<div class="rb-card" style="padding:20px 24px;max-width:640px;margin-top:14px;border-color:#6F1D1B;">';

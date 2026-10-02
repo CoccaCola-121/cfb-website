@@ -791,7 +791,7 @@ html { scrollbar-gutter: stable; }
 .rb-board-offer-logos { display:flex; flex-wrap:wrap; align-items:center; gap:12px; padding:12px 14px; margin-top:12px; border:1px solid var(--hairline); border-radius:6px; background:var(--panel-alt); }
 .rb-board-offer-logo { display:flex; align-items:center; justify-content:center; flex:0 0 36px; }
 .rb-board-offer-rescinded > span { border-color:var(--alert) !important; }
-.rb-board-offer-rescinded img { opacity:.4; }
+.rb-board-offer-rescinded img { opacity:.85; }
 
 .rb-rescinded-badge { display:inline-flex; padding:4px 7px; border:1px solid var(--alert); border-radius:4px; color:var(--alert); background:rgba(111,29,27,.12); font-size:10px; font-weight:600; white-space:nowrap; }
 .rb-offer-rescinded { border-style:dashed; }
@@ -881,7 +881,7 @@ html { scrollbar-gutter: stable; }
 
 .rb-offer-invalid { border-color:var(--alert) !important; }
 .rb-offer-invalid .rb-offer-team-title img { filter:grayscale(1);opacity:.4; }
-.rb-board-offer-rescinded img { filter:grayscale(1); }
+.rb-board-offer-rescinded img { filter:grayscale(1) brightness(1.65); }
 
 /* Match the CPR submit control, retaining the white jump button. */
 .rb-my-offers-subtitle { font-size:13px;color:var(--slate); }
