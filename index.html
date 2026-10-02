@@ -177,6 +177,7 @@ function resetBoardFilters(){
   UI.boardCommitFilter = 'all';
   UI.boardOfferFilter = 'all';
   UI.hideMyOffers = false;
+  UI.coachAddedOnly = false;
   UI.hideCommittedBoards = false;
 }
 
@@ -695,6 +696,7 @@ function visibleBoardProspectIds(t){
     const p = DB.prospects[pid];
     const filter = UI.boardCommitFilter || (UI.hideCommittedBoards ? 'uncommitted' : 'all');
     if (!p) return false;
+    if (recruitingStage()==='cpr' && UI.view!=='watchlist' && UI.coachAddedOnly && !p.coachCreated) return false;
     const offered = (DB.offersByProspect[pid] || []).some(function(o){ return activeValidOffer(pid,o); });
     if (UI.boardOfferFilter === 'offered' && !offered) return false;
     if (UI.boardOfferFilter === 'unoffered' && offered) return false;
@@ -4553,6 +4555,7 @@ function renderThreadProspectList(t, options){
   html += '</div>';
   if (recruitingStage() !== 'hs') html += '</div>';
   html += '</div>';
+  if (recruitingStage()==='cpr' && !isWatchlist) html += '<div style="display:flex;align-items:center;flex-wrap:wrap;margin:0 0 14px;padding:0 2px;"><label class="rb-toggle"><span>Coach-added only</span><input type="checkbox" id="rb-coach-added-only" ' + (UI.coachAddedOnly ? 'checked' : '') + ' /><span class="rb-switch-track"><span class="rb-switch-thumb"></span></span></label></div>';
   if (isWatchlist || UI.view === 'feed' || UI.view === 'thread') {
     const clear=isWatchlist;
     html += '<div class="rb-watchlist-bulk-row"><button type="button" class="rb-watchlist-bulk-button" id="rb-watchlist-bulk-action" data-watchlist-bulk="' + (clear?'clear':'add-many') + '"' + (!UI.watchlistLoaded || UI.watchlistBulkSaving || (clear && !UI.watchlistIds.length) ? ' disabled' : '') + '><svg viewBox="0 0 20 24" aria-hidden="true"><path d="M3 1.5v21h2V14c4-2.4 6 2.5 12-1.4V2.9C11 6.8 9 .2 5 2.3v-.8H3z"/></svg>' + (clear?'Clear watchlist':'Add all to watchlist') + '</button>' + (!clear && recruitingStage()==='cpr' ? '<button type="button" class="rb-watchlist-bulk-button" id="rb-offer-all-shown"'+(offersLocked() || UI.submitting || !UI.strongStorage?' disabled':'')+'>Offer all shown</button>' : '') + '</div>';
@@ -5441,6 +5444,8 @@ function bindEvents(){
   const cprExport=document.getElementById('rb-cpr-export');
   if (cprExport) cprExport.onchange=function(){loadCprMetadata(cprExport.files[0]);};
   document.querySelectorAll('[data-board-offer-filter]').forEach(function(button){ button.onclick = function(){ UI.boardOfferFilter = button.getAttribute('data-board-offer-filter'); render(); }; });
+  const coachAddedOnly=document.getElementById('rb-coach-added-only');
+  if(coachAddedOnly)coachAddedOnly.onchange=function(){UI.coachAddedOnly=coachAddedOnly.checked;render();};
   const hideMyOffers = document.getElementById('rb-hide-my-offers');
   if (hideMyOffers) hideMyOffers.onchange = function(){ UI.hideMyOffers = hideMyOffers.checked; render(); };
   const saveSettings = document.getElementById('rb-save-settings');
