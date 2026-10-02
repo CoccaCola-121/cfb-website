@@ -696,6 +696,9 @@ function visibleBoardProspectIds(t){
     const p = DB.prospects[pid];
     const filter = UI.boardCommitFilter || (UI.hideCommittedBoards ? 'uncommitted' : 'all');
     if (!p) return false;
+    // Retire empty coach-added threads from the board without deleting offer history.
+    const threadOffers=DB.offersByProspect[pid] || [];
+    if(p.coachCreated && !p.commitTeam && threadOffers.length && threadOffers.every(o=>o.rescinded))return false;
     if (recruitingStage()==='cpr' && UI.view!=='watchlist' && UI.coachAddedOnly && !p.coachCreated) return false;
     const offered = (DB.offersByProspect[pid] || []).some(function(o){ return activeValidOffer(pid,o); });
     if (UI.boardOfferFilter === 'offered' && !offered) return false;
