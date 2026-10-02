@@ -2492,31 +2492,24 @@ function applyConditionalRescinds(){
   return results;
 }
 
-function rescindOffer(prospectId, team){
-  const offer = findOfferForTeam(prospectId, team);
-  if (!offer) return;
-  offer.rescinded = true;
-  offer.rescindedAt = Date.now();
-  saveDB(); render();
+async function saveRescinds(offers, mass=false){
+  if(!SESSION || UI.submitting)return;
+  UI.submitting=true;UI.rescindError=null;UI.massRescindError=null;render();
+  try{
+    const response=await fetch('/api/offers/rescind',{method:'POST',credentials:'include',headers:{'content-type':'application/json'},body:JSON.stringify({offers,classKey:conditionalClassKey()})});
+    const data=await response.json().catch(()=>{throw Error('Rescind was not confirmed. Please retry.');});
+    if(!response.ok || !data.ok)throw Error(data.error || 'Rescind was not confirmed.');
+    mergeLeagueState(data.state);
+    if(mass){UI.massRescindStatus='Rescinds saved on server.';UI.pendingMassRescind=null;UI.pendingMassRescindFinal=null;}
+  }catch(error){if(mass)UI.massRescindError=error.message;else UI.rescindError=error.message;}
+  finally{UI.submitting=false;render();}
 }
-
+function rescindOffer(prospectId, team){
+  const offer=findOfferForTeam(prospectId,team);
+  if(offer)return saveRescinds([{prospectId,offerId:offer.id}]);
+}
 function rescindOfferById(prospectId, offerId){
-  if (!SESSION) return;
-  const prospect = DB.prospects[prospectId];
-  if (prospect && prospect.commitTeam){
-    UI.rescindError = 'Cannot rescind: #' + prospect.rank + ' ' + prospect.name + ' has already committed to ' + prospect.commitTeam + '.';
-    render(); return;
-  }
-  const offers = DB.offersByProspect[prospectId] || [];
-  const offer = offers.find(function(o){ return o.id === offerId && o.team === SESSION.team && !o.rescinded; });
-  if (!offer){
-    UI.rescindError = 'That offer is no longer active.';
-    render(); return;
-  }
-  offer.rescinded = true;
-  offer.rescindedAt = Date.now();
-  UI.rescindError = null;
-  saveDB(); render();
+  return saveRescinds([{prospectId,offerId}]);
 }
 
 function requestSingleRescind(prospectId, offerId){
@@ -3693,26 +3686,12 @@ function previewMassRescind(){
 }
 
 function confirmMassRescind(){
-  if (!SESSION || !UI.pendingMassRescindFinal) return;
-  const rule = UI.pendingMassRescindFinal.rule;
-  const matches = massRescindMatches(rule);
-  const checked = {};
-  (UI.pendingMassRescindFinal.selectedKeys || []).forEach(function(key){
-    checked[key] = true;
-  });
-  let count = 0;
-  matches.forEach(function(row){
-    if (!checked[row.prospectId + ':' + row.offer.id]) return;
-    row.offer.rescinded = true;
-    row.offer.rescindedAt = Date.now();
-    row.offer.rescindReason = 'Mass rescind: ' + rescindFilterSummary(rule);
-    count++;
-  });
-  UI.massRescindStatus = 'Rescinded ' + count + ' offer' + (count === 1 ? '' : 's') + '.';
-  UI.massRescindError = null;
-  UI.pendingMassRescind = null;
-  UI.pendingMassRescindFinal = null;
-  saveDB(); render();
+  if(!SESSION || !UI.pendingMassRescindFinal || UI.submitting)return;
+  const pending=UI.pendingMassRescindFinal;
+  const checked=new Set(pending.selectedKeys || []);
+  const offers=massRescindMatches(pending.rule).filter(row=>checked.has(row.prospectId+':'+row.offer.id)).map(row=>({prospectId:row.prospectId,offerId:row.offer.id}));
+  if(!offers.length){UI.massRescindError='No selected active offers remain.';render();return;}
+  return saveRescinds(offers,true);
 }
 
 function cancelMassRescind(){

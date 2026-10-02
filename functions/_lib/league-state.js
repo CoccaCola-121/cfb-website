@@ -1,3 +1,4 @@
+import {applyConditionalRescinds} from './conditional-rescinds.js';
 import {applyRemovedPlayers} from './removed-players.js';
 import {readTransactionalState,initializeTransactionalState,writeTransactionalState} from './transactional-state.js';
 import '../../cpr-rules.js';
@@ -61,6 +62,7 @@ export async function readLeagueState(env) {
 export async function writeLeagueState(env, state, previous = state) {
   applyRemovedPlayers(state);
   globalThis.NZCFLWalkonLimit.apply(state);
+  applyConditionalRescinds(state);
   const clean = sanitizeState(globalThis.NZCFLTransferRules.cleanCommitOverrides(state || {}));
   if(env.LEAGUE_DB)return writeTransactionalState(env.LEAGUE_DB,clean,previous);
   await env.AUTH_KV.put(STATE_KEY, JSON.stringify(clean));
