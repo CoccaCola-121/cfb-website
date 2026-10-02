@@ -173,6 +173,13 @@ export function applyDiscordCommits(state, commits) {
       prospect = matches.length === 1 && (!commit.pitch || matches[0].offerMode==='pitch') ? matches[0] : null;
     } else if (prospect && commit.name && prospect.name.toLowerCase() !== commit.name.toLowerCase()) prospect = null;
     if(prospect && commit.position && String(prospect.position || '').toUpperCase()!==commit.position)prospect=null;
+    // Discord CPR sequence numbers are not the uploaded roster's rank/ID.
+    // Resolve only an unambiguous name + position; never trust a colliding number.
+    if(!prospect && commit.stage==='cpr' && !commit.pitch && commit.position){
+      const normalize=value=>String(value || '').trim().replace(/\s+/g,' ').toLowerCase();
+      const matches=Object.values(prospects).filter(p=>normalize(p.name)===normalize(commit.name) && normalize(p.position)===normalize(commit.position));
+      if(matches.length===1)prospect=matches[0];
+    }
     if (prospect && seen.has(prospect.id)) return;
     if (prospect) seen.add(prospect.id);
     if (!prospect) {
