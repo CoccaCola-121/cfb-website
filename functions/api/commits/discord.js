@@ -53,7 +53,12 @@ async function parseCommitLine(env, line) {
     return { name: transfer[2].trim(), transferFrom: transfer[1].trim(), stage: 'transfer', team, sourceLine: String(line).trim() };
   }
   const match = text.match(/#\s*(\d+)\s+(.+?)\s+(?:\([^)]+\)\s+)?commits\s+to\s+(.+)$/i);
-  if (!match) return null;
+  if (!match) {
+    const pitch=text.match(/^(.+?)\s+commits\s+to\s+(.+)$/i);
+    if(!pitch)return null;
+    const team=await resolveTeam(env,pitch[2]);
+    return team?{name:pitch[1].trim(),team,stage:'cpr',pitch:true,sourceLine:String(line).trim()}:null;
+  }
   const rank = Number(match[1]);
   const team = await resolveTeam(env, match[3]);
   if (!rank || !team) return null;
@@ -159,11 +164,11 @@ export function applyDiscordCommits(state, commits) {
   commits.forEach((commit) => {
     if (commit.stage && commit.stage !== state.recruitingStage) return;
     let prospect = prospects[commit.prospectId];
-    if (state.recruitingStage === 'transfer') {
+    if (state.recruitingStage === 'transfer' || commit.pitch && state.recruitingStage === 'cpr') {
       const start = Math.min(...(state.threads || []).map(t => Number(t.createdAt)).filter(Number.isFinite));
       if (!Number.isFinite(Date.parse(commit.timestamp)) || Date.parse(commit.timestamp) < start) return;
       const matches = Object.values(prospects).filter(p => p.name && p.name.toLowerCase() === String(commit.name || '').toLowerCase());
-      prospect = matches.length === 1 ? matches[0] : null;
+      prospect = matches.length === 1 && (!commit.pitch || matches[0].offerMode==='pitch') ? matches[0] : null;
     } else if (prospect && commit.name && prospect.name.toLowerCase() !== commit.name.toLowerCase()) prospect = null;
     if (prospect && seen.has(prospect.id)) return;
     if (prospect) seen.add(prospect.id);
@@ -239,11 +244,17 @@ export async function onRequestPost({ request, env, waitUntil }) {
   try {
     const messages = await fetchDiscordMessages(env);
     const commits = await parseDiscordCommits(env, messages);
-    const seasonEnd = applyDiscordSeasonEnd(state, parseDiscordSeasonEnd(messages));
-    const result = applyDiscordCommits(state, commits);
-    state.discordCommitChannelId = env.DISCORD_COMMIT_CHANNEL_ID || '';
-    await writeLeagueState(env, state);
-    queueLeagueBackup(env, state, waitUntil, { source: 'manual-commit-push' });
+    let result,seasonEnd,saved;
+    for(let attempt=0;attempt<16;attempt++){
+      const current=await readLeagueState(env);
+      if(!current?.prospects)throw Error('No class is loaded.');
+      seasonEnd=applyDiscordSeasonEnd(current,parseDiscordSeasonEnd(messages));
+      result=applyDiscordCommits(current,commits);
+      current.discordCommitChannelId=env.DISCORD_COMMIT_CHANNEL_ID || '';
+      try{saved=await writeLeagueState(env,current);break;}
+      catch(error){if(error.status!==409 || attempt===15)throw error;await new Promise(resolve=>setTimeout(resolve,40+Math.random()*180));}
+    }
+    queueLeagueBackup(env,saved,waitUntil,{source:'manual-commit-push'});
     return json({
       ok: true,
       messagesRead: messages.length,
