@@ -887,3 +887,9 @@ html { scrollbar-gutter: stable; }
 .rb-my-offers-subtitle { font-size:13px;color:var(--slate); }
 .rb-jump-rescind { background:#F2F2F0;color:#202224;border-color:#F2F2F0; }
 .rb-jump-rescind:hover { background:#fff;border-color:#fff; }
+
+/* Native card links support right-click and middle-click without hiding card actions. */
+[data-prospect-card]{position:relative;}
+.rb-player-card-link{position:absolute;inset:0;z-index:1;border-radius:inherit;}
+.rb-player-card-link:focus-visible{outline:2px solid var(--chalk);outline-offset:3px;}
+[data-prospect-card] button,[data-prospect-card] [data-watchlist-flag],[data-prospect-card] [data-open-team-commits],[data-prospect-card] .rb-list-identity a{position:relative;z-index:2;}

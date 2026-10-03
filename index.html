@@ -5614,6 +5614,7 @@ function bindEvents(){
     link.style.textDecoration='none';link.style.fontWeight='700';link.innerHTML=el.innerHTML;el.replaceWith(link);
   });
   document.querySelectorAll('[data-prospect-card][data-open-prospect]').forEach(function(card){
+    const overlay=document.createElement('a');overlay.className='rb-player-card-link';overlay.href='/prospect/'+encodeURIComponent(card.getAttribute('data-open-prospect'));overlay.setAttribute('aria-label','Open '+(DB.prospects[card.getAttribute('data-open-prospect')]?.name || 'player'));card.prepend(overlay);
     const name=card.querySelector('.rb-list-identity > span[title]');
     if(name){const link=document.createElement('a');link.href='/prospect/'+encodeURIComponent(card.getAttribute('data-open-prospect'));link.style.cssText=name.style.cssText+';text-decoration:none';link.innerHTML=name.innerHTML;name.replaceWith(link);}
   });

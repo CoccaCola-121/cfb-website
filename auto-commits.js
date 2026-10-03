@@ -38,6 +38,17 @@
     if(!Number.isInteger(bucks) || bucks<0 || bucks>3) return null;
     return Math.max(0,row.open+bucks-(totals.scholarship[t] || 0)+(source.includedCommits?.[t] || 0));
   }
+  function applyScholarshipCap(state,now=Date.now()){
+    const totals=counts(state);let changed=0;
+    for(const [id,offers] of Object.entries(state.offersByProspect || {})){
+      const p=state.prospects?.[id];if(!p || p.commitTeam)continue;
+      for(const offer of offers){
+        if(offer.rescinded || offerKind(state,p,offer)!=='scholarship' || remaining(state,offer.team,'scholarship',totals)!==0)continue;
+        offer.rescinded=true;offer.rescindedAt=now;offer.rescindReason='Automatic rescind: scholarship cap reached.';changed++;
+      }
+    }
+    return changed;
+  }
   function parseCapacitySheet(csv){
     const rows=root.NZCFLScholarshipHistory.parseCsv(csv),header=rows.shift() || [];
     if(!/^Total Scholarships Remaining/i.test(String(header[4] || '').trim())) throw Error('Column E must be Total Scholarships Remaining (includes Seniors).');
@@ -160,5 +171,5 @@
     if (!values.length || values.some(v=>v==null || !Number.isFinite(v))) return null;
     return {...rule,overallMode:rule.overallMode==='belowCommit'?'below':'atMost',overallValue:Math.min(...values)};
   }
-  root.NZCFLAutoCommits={conditionalKind,invalidOffer,relativeOverall,rescindTargetRule,key,rating,offerKind,commitKind,counts,remaining,parseCapacitySheet,validate,fingerprint,preview,apply};
+  root.NZCFLAutoCommits={applyScholarshipCap,conditionalKind,invalidOffer,relativeOverall,rescindTargetRule,key,rating,offerKind,commitKind,counts,remaining,parseCapacitySheet,validate,fingerprint,preview,apply};
 })(globalThis);
