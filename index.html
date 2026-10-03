@@ -3525,7 +3525,7 @@ function readPositionChecklist(prefix){
 
 function conditionalRuleSummary(rule){
   const parts = [];
-  parts.push(Number(rule.count || 1) + ' commit' + (Number(rule.count || 1) === 1 ? '' : 's'));
+  parts.push(Number(rule.count || 1) + ' total commit' + (Number(rule.count || 1) === 1 ? '' : 's'));
   const positions = Array.isArray(rule.positions) ? rule.positions : (rule.position ? String(rule.position).split(',') : []);
   const cleanPositions = positions.map(function(pos){ return String(pos || '').trim().toUpperCase(); }).filter(Boolean);
   if (cleanPositions.length) parts.push(cleanPositions.join('/'));
@@ -3547,7 +3547,7 @@ function rescindFilterSummary(rule){
 function renderRescindFilterFields(prefix, includeCount){
   let html = '';
   html += '<div class="rb-mobile-stack rb-rescind-filters" style="display:grid;grid-template-columns:' + (includeCount ? '1fr ' : '') + (recruitingStage() === 'hs' ? '1fr ' : '') + '1fr;gap:10px;margin-bottom:10px;">';
-  if (includeCount) html += '<label><span class="rb-mono" style="font-size:11px;color:var(--slate);">Commits needed</span><input class="rb-input" id="' + prefix + '-count" type="number" min="1" value="1" /></label>';
+  if (includeCount) html += '<label><span class="rb-mono" style="font-size:11px;color:var(--slate);">Total commits needed</span><input class="rb-input" id="' + prefix + '-count" type="number" min="1" value="1" /></label>';
   if (recruitingStage() === 'hs') html += '<label><span class="rb-mono" style="font-size:11px;color:var(--slate);">Stars</span><select class="rb-input" id="' + prefix + '-stars"><option value="">Any stars</option><option value="5">5 stars</option><option value="4">4 stars</option><option value="3">3 stars</option><option value="2">2 stars</option><option value="1">1 star</option><option value="0">0 stars</option></select></label>';
   html += '<label><span class="rb-mono" style="font-size:11px;color:var(--slate);">Offer type</span><select class="rb-input" id="' + prefix + '-scholarship"><option value="">Any type</option><option value="scholarship">Scholarship</option><option value="walkon">Walk-on</option></select></label>';
   html += '</div>';
@@ -3589,7 +3589,7 @@ function renderConditionalRescinds(){
   html += renderRescindFilterFields('rb-cond', true);
   html += renderConditionalPlayers('trigger','Trigger players — current offers');
   html += renderConditionalPlayers('target','Offers to rescind — custom list');
-  html += '<div style="margin-top:10px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;"><button class="rb-btn rb-btn-gold" id="rb-add-conditional">Save auto rule</button><span class="rb-mono" style="font-size:11px;color:var(--slate);">' + 'Relative overall uses the lowest-rated matching commit.' + '</span></div>';
+  html += '<div style="margin-top:10px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;"><button class="rb-btn rb-btn-gold" id="rb-add-conditional">Save auto rule</button><span class="rb-mono" style="font-size:11px;color:var(--slate);">' + 'Existing commits count. A rule takes effect immediately if its total is already met.' + '</span></div>';
   if (UI.conditionalError) html += '<div style="font-size:12px;color:var(--alert);margin-top:8px;">' + escapeHtml(UI.conditionalError) + '</div>';
   if (UI.conditionalStatus) html += '<div style="font-size:12px;color:var(--gold);margin-top:8px;">' + escapeHtml(UI.conditionalStatus) + '</div>';
   html += '</div>';
@@ -4815,6 +4815,7 @@ function renderClassSetup(){
   }
   html += '<div class="rb-card" style="padding:20px 24px;max-width:640px;margin-top:14px;">';
   html += '<div class="rb-h" style="font-size:16px;margin-bottom:12px;">Commit Tracking</div>';
+  if(canUseDangerZone() && Object.values(DB.offersByProspect || {}).some(rows=>rows.some(o=>o.team==='UCONN' && o.rescinded && o.conditionalRescindRuleId==='fe166785-3a55-4b6e-bae6-046d967a08ab' && o.rescindedAt===1791049834582)))html+='<button class="rb-btn" id="rb-undo-uconn-rule">Undo UConn’s mistaken four-commit rule</button>'; 
   if (stage === 'hs') {
   if (DB.commitSheetUrl && !UI.commitEditing){
     html += '<div style="border:1px solid var(--hairline);border-radius:8px;background:var(--panel-alt);padding:10px 12px;display:flex;justify-content:space-between;gap:10px;align-items:center;flex-wrap:wrap;">';
@@ -5418,6 +5419,12 @@ async function removeKennyTestOffer(){
   finally{UI.submitting=false;render();}
 }
 function bindEvents(){
+  const undoUconn=document.getElementById('rb-undo-uconn-rule');if(undoUconn)undoUconn.onclick=async function(){
+   undoUconn.disabled=true;
+   try{const response=await fetch('/api/admin/undo-uconn-rule',{method:'POST',credentials:'include'}),data=await response.json();if(!response.ok || !data.ok)throw Error(data.error || 'Undo failed.');mergeLeagueState(data.state);UI.commitStatus='Restored '+data.count+' UConn offers.';}
+   catch(e){UI.commitError=e.message;}finally{render();}
+  };
+
   const archiveButton=document.getElementById('rb-archive-cycle');if(archiveButton)archiveButton.onclick=async function(){archiveButton.disabled=true;await archiveCurrentCycle();};
   restoreRescindDraft();
   bindScholarshipTemplates();
