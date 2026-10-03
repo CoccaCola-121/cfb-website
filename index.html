@@ -4815,7 +4815,6 @@ function renderClassSetup(){
   }
   html += '<div class="rb-card" style="padding:20px 24px;max-width:640px;margin-top:14px;">';
   html += '<div class="rb-h" style="font-size:16px;margin-bottom:12px;">Commit Tracking</div>';
-  if(canUseDangerZone() && Object.values(DB.offersByProspect || {}).some(rows=>rows.some(o=>o.team==='UCONN' && o.rescinded && o.conditionalRescindRuleId==='fe166785-3a55-4b6e-bae6-046d967a08ab' && o.rescindedAt===1791049834582)))html+='<button class="rb-btn" id="rb-undo-uconn-rule">Undo UConn’s mistaken four-commit rule</button>'; 
   if (stage === 'hs') {
   if (DB.commitSheetUrl && !UI.commitEditing){
     html += '<div style="border:1px solid var(--hairline);border-radius:8px;background:var(--panel-alt);padding:10px 12px;display:flex;justify-content:space-between;gap:10px;align-items:center;flex-wrap:wrap;">';
@@ -5419,11 +5418,7 @@ async function removeKennyTestOffer(){
   finally{UI.submitting=false;render();}
 }
 function bindEvents(){
-  const undoUconn=document.getElementById('rb-undo-uconn-rule');if(undoUconn)undoUconn.onclick=async function(){
-   undoUconn.disabled=true;
-   try{const response=await fetch('/api/admin/undo-uconn-rule',{method:'POST',credentials:'include'}),data=await response.json();if(!response.ok || !data.ok)throw Error(data.error || 'Undo failed.');mergeLeagueState(data.state);UI.commitStatus='Restored '+data.count+' UConn offers.';}
-   catch(e){UI.commitError=e.message;}finally{render();}
-  };
+
 
   const archiveButton=document.getElementById('rb-archive-cycle');if(archiveButton)archiveButton.onclick=async function(){archiveButton.disabled=true;await archiveCurrentCycle();};
   restoreRescindDraft();
