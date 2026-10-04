@@ -3565,7 +3565,9 @@ function rulesForTeam(team){
 }
 
 function renderConditionalPlayers(kind,label){
-  const rows=getOfferRowsForTeam(SESSION.team).filter(row=>!row.offer.rescinded && !row.prospect.commitTeam).sort((a,b)=>a.prospect.name.localeCompare(b.prospect.name));
+  const selectedRule=UI.editingConditional && rulesForTeam(SESSION.team).find(r=>r.id===UI.editingConditional.id);
+  const selectedIds=selectedRule?.[kind==='trigger'?'triggerIds':'targetIds'] || [];
+  const rows=getOfferRowsForTeam(SESSION.team).filter(row=>selectedIds.includes(row.prospectId) || !row.offer.rescinded && !row.prospect.commitTeam).sort((a,b)=>a.prospect.name.localeCompare(b.prospect.name));
   return '<details style="margin-top:12px;"><summary style="cursor:pointer;">'+label+'</summary><p style="font-size:12px;color:var(--slate);">Optional: selected players replace the filters for this list.</p><div style="max-height:220px;overflow:auto;display:grid;gap:8px;padding:8px;">'+rows.map(row=>'<label style="display:flex;gap:8px;align-items:center;"><input type="checkbox" data-conditional-players="'+kind+'" value="'+escapeHtml(row.prospectId)+'">'+escapeHtml(row.prospect.name+' · '+row.prospect.position+' · '+(row.prospect.rating || ''))+'</label>').join('')+'</div></details>';
 }
 function renderConditionalRescinds(){
@@ -3578,6 +3580,7 @@ function renderConditionalRescinds(){
     rules.forEach(function(rule){
       html += '<div class="rb-card" style="padding:10px 12px;background:var(--panel-alt);display:flex;justify-content:space-between;align-items:center;gap:12px;">';
       html += '<span style="min-width:0;"><strong>After ' + escapeHtml(conditionalRuleSummary(rule)) + '</strong><span class="rb-mono" style="display:block;color:var(--slate);font-size:12px;margin-top:3px;">Rescind the selected offers, or matching filters when no custom list is selected.</span></span>';
+      html += '<button class="rb-btn" data-edit-conditional="'+escapeHtml(rule.id)+'">Edit</button>';
       html += '<button class="rb-btn rb-btn-danger" data-delete-conditional="' + escapeHtml(rule.id) + '">Delete</button>';
       html += '</div>';
     });
@@ -3589,7 +3592,7 @@ function renderConditionalRescinds(){
   html += renderRescindFilterFields('rb-cond', true);
   html += renderConditionalPlayers('trigger','Trigger players — current offers');
   html += renderConditionalPlayers('target','Offers to rescind — custom list');
-  html += '<div style="margin-top:10px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;"><button class="rb-btn rb-btn-gold" id="rb-add-conditional">Save auto rule</button><span class="rb-mono" style="font-size:11px;color:var(--slate);">' + 'Existing commits count. A rule takes effect immediately if its total is already met.' + '</span></div>';
+  html += '<div style="margin-top:10px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;"><button class="rb-btn rb-btn-gold" id="rb-add-conditional">' + (UI.editingConditional?'Save rule changes':'Save auto rule') + '</button><button class="rb-btn" id="rb-cancel-rule-edit" '+(UI.editingConditional?'':'hidden')+'>Cancel edit</button><span class="rb-mono" style="font-size:11px;color:var(--slate);">' + 'Existing commits count. A rule takes effect immediately if its total is already met.' + '</span></div>';
   if (UI.conditionalError) html += '<div style="font-size:12px;color:var(--alert);margin-top:8px;">' + escapeHtml(UI.conditionalError) + '</div>';
   if (UI.conditionalStatus) html += '<div style="font-size:12px;color:var(--gold);margin-top:8px;">' + escapeHtml(UI.conditionalStatus) + '</div>';
   html += '</div>';
@@ -3663,7 +3666,7 @@ async function addConditionalRule(){
   }
   const normalized = normalizeRescindRuleDraft(draft);
   const rule = {
-    id: (UI.conditionalRetry?.key===JSON.stringify(draft) ? UI.conditionalRetry.id : crypto.randomUUID()),
+    id: UI.editingConditional?.id || (UI.conditionalRetry?.key===JSON.stringify(draft) ? UI.conditionalRetry.id : crypto.randomUUID()),
     triggerIds: draft.triggerIds,
     targetIds: draft.targetIds,
     team: SESSION.team,
@@ -3681,7 +3684,7 @@ async function addConditionalRule(){
   };
   rule.name = conditionalRuleSummary(rule);
   UI.conditionalRetry={key:JSON.stringify(draft),id:rule.id};
-  await saveConditionalAction({action:'add',rule});
+  await saveConditionalAction({action:UI.editingConditional?'edit':'add',rule,expectedRuleVersion:UI.editingConditional?.version});
 }
 
 function massRescindMatches(rule){
@@ -3783,7 +3786,7 @@ async function saveConditionalAction(action){
     if(!response.ok || !data.ok)throw Error(data.error || 'Rule save was not confirmed.');
     mergeLeagueState(data.state);
     UI.conditionalStatus=action.action==='delete'?'Rule deletion confirmed.':'Rule saved on server.'+(data.rescinded?' '+data.rescinded+' offers rescinded.':'');
-    if(action.action==='add'){UI.clearConditionalDraft=true;UI.conditionalRetry=null;}
+    if(action.action!=='delete'){UI.clearConditionalDraft=true;UI.conditionalRetry=null;UI.editingConditional=null;}
   }catch(error){UI.conditionalStatus=null;UI.conditionalError=error.message;}
   finally{UI.submitting=false;render();}
 }
@@ -4027,10 +4030,11 @@ function renderMyOffers(){
   if (!SESSION){
     return '<div class="rb-card" style="padding:32px;text-align:center;color:var(--slate);">Log in to view your offers.</div>';
   }
-  const rows = getOfferRowsForTeam(SESSION.team);
+  const rows = getOfferRowsForTeam(SESSION.team).filter(row=>!UI.myOffersActiveOnly || !row.offer.rescinded && !row.prospect.commitTeam);
   const autoPreview=currentOfferAutoPreview();
   const filterKey = positionFilterKey('offers', SESSION.team);
   let html = '<div class="rb-cpr-board-heading rb-my-offers-heading"><div><div class="rb-h" style="font-size:20px;margin-bottom:4px;">My Offers</div><div class="rb-my-offers-subtitle">'+rows.length+' offer'+(rows.length===1?'':'s')+' from '+escapeHtml(SESSION.team)+'.</div></div><div class="rb-card rb-cpr-submit-wrap"><button type="button" class="rb-btn rb-jump-rescind" id="rb-jump-rescind">Jump to Rescind Center</button></div></div>';
+  html += '<label class="rb-toggle" style="margin-bottom:16px;"><span>Active only (uncommitted, not rescinded)</span><input type="checkbox" id="rb-my-offers-active" '+(UI.myOffersActiveOnly?'checked':'')+'><span class="rb-switch-track"><span class="rb-switch-thumb"></span></span></label>';
   html += renderScholarshipTemplateEditor();
   html += renderVisitLedger();
   html += '<div class="rb-card" style="padding:18px 20px;margin-bottom:14px;">';
@@ -5418,6 +5422,18 @@ async function removeKennyTestOffer(){
   finally{UI.submitting=false;render();}
 }
 function bindEvents(){
+  const activeOffers=document.getElementById('rb-my-offers-active');if(activeOffers)activeOffers.onchange=()=>{UI.myOffersActiveOnly=activeOffers.checked;render();};
+  document.querySelectorAll('[data-edit-conditional]').forEach(button=>button.onclick=()=>{
+   if(UI.submitting)return;
+   const rule=rulesForTeam(SESSION.team).find(r=>r.id===button.dataset.editConditional);if(!rule)return;
+   UI.editingConditional={id:rule.id,version:rule.updatedAt || rule.createdAt};UI.conditionalError=null;UI.conditionalStatus='Editing rule. Existing rescinds will not be undone.';render();
+   for(const [key,value] of Object.entries({count:rule.count,stars:rule.stars,'overall-mode':rule.overallMode,'overall-value':rule.overallValue,scholarship:rule.scholarship})){const el=document.getElementById('rb-cond-'+key);if(el)el.value=value ?? '';}
+   document.querySelectorAll('[data-position-prefix="rb-cond"]').forEach(el=>el.checked=(rule.positions || []).includes(el.value));
+   document.querySelectorAll('[data-conditional-players]').forEach(el=>el.checked=(rule[el.dataset.conditionalPlayers==='trigger'?'triggerIds':'targetIds'] || []).includes(el.value));
+   captureRescindDraft();restoreRescindDraft();document.getElementById('rb-cond-count')?.focus();
+  });
+  const cancelRule=document.getElementById('rb-cancel-rule-edit');if(cancelRule)cancelRule.onclick=()=>{if(UI.submitting)return;UI.editingConditional=null;UI.clearConditionalDraft=true;UI.conditionalStatus=null;render();};
+
 
 
   const archiveButton=document.getElementById('rb-archive-cycle');if(archiveButton)archiveButton.onclick=async function(){archiveButton.disabled=true;await archiveCurrentCycle();};
