@@ -901,9 +901,20 @@ html { scrollbar-gutter: stable; }
 @media(max-width:760px){.rb-my-offer-summary-grid .rb-my-offer-actions.rb-has-commit-status{display:flex !important;grid-column:1 / -1;justify-content:flex-start !important;}}
 
 .rb-rescinded-badge{color:var(--alert);border-color:var(--alert);background:rgba(210,86,76,.09);font-size:11px;}
-.rb-rule-history{border:1px solid var(--hairline);border-radius:8px;padding:12px;min-width:0;}
-.rb-rule-history>summary{cursor:pointer;font-size:13px;overflow-wrap:anywhere;line-height:1.7;}
-.rb-rule-applied{color:#a4e4b5;border-color:#477d55;font-size:11px;margin-right:6px;}
-.rb-rule-history-note,.rb-rule-history li{font-size:12px;color:var(--slate);overflow-wrap:anywhere;}
-.rb-rule-history li{margin:8px 0;}
-.rb-rule-history .rb-card{flex-wrap:wrap;}
+/* Applied conditional rules: compact summary, readable activity, separate actions. */
+.rb-rule-history{border:1px solid var(--hairline);border-radius:8px;padding:0;min-width:0;background:var(--panel);}
+.rb-rule-history>summary{display:grid;grid-template-columns:auto minmax(0,1fr) auto auto;align-items:center;gap:12px;padding:14px 16px;cursor:pointer;font-size:13px;line-height:1.5;list-style:none;}
+.rb-rule-history>summary::-webkit-details-marker{display:none;}
+.rb-rule-history>summary::after{content:'⌄';color:var(--slate);transition:transform .15s;}
+.rb-rule-history[open]>summary::after{transform:rotate(180deg);}
+.rb-rule-applied{display:inline-flex;width:auto;justify-self:start;margin:0;padding:3px 8px;color:#a4e4b5;border-color:#477d55;background:rgba(88,191,114,.08);font-size:11px;line-height:1.4;}
+.rb-rule-title{min-width:0;overflow-wrap:anywhere;font-weight:600;}
+.rb-rule-count{font-size:12px;color:var(--slate);white-space:nowrap;}
+.rb-rule-history-body{padding:0 16px 14px;border-top:1px solid var(--hairline);}
+.rb-rule-history-note{margin:12px 0;font-size:12px;color:var(--slate);}
+.rb-rule-player-history{list-style:none;padding:0;margin:0 0 12px;}
+.rb-rule-player-history li{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;padding:8px 0;font-size:13px;border-bottom:1px solid var(--hairline);}
+.rb-rule-player-history time{font-size:12px;color:var(--slate);white-space:nowrap;}
+.rb-rule-history-body>.rb-card{border:0;background:transparent !important;padding:0 !important;margin:0;justify-content:flex-end !important;flex-wrap:wrap;}
+.rb-rule-history-body>.rb-card .rb-btn{font-size:12px;padding:7px 12px;}
+@media(max-width:600px){.rb-rule-history>summary{grid-template-columns:auto 1fr auto;gap:8px 10px;padding:12px;}.rb-rule-title{grid-row:2;grid-column:1 / -1;}.rb-rule-count{justify-self:end;}.rb-rule-history-body{padding:0 12px 12px;}}

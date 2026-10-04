@@ -3580,13 +3580,13 @@ function renderConditionalRescinds(){
     rules.forEach(function(rule){
       const history=Object.entries(DB.offersByProspect || {}).flatMap(([pid,offers])=>offers.filter(o=>teamKey(o.team)===teamKey(rule.team) && (o.conditionalRescindRuleId===rule.id || !o.conditionalRescindRuleId && o.rescindReason==='Conditional rescind: '+rule.name)).map(o=>({name:DB.prospects[pid]?.name || pid,at:o.rescindedAt}))).sort((a,b)=>(b.at || 0)-(a.at || 0));
       const applied=history.length>0 || !!rule.lastTriggeredAt;
-      if(applied)html+='<details class="rb-rule-history"><summary><span class="rb-tag rb-rule-applied">Applied</span> '+escapeHtml(conditionalRuleSummary(rule))+' · '+(history.length || rule.lastRescindedCount || 0)+' rescinded</summary><p class="rb-rule-history-note">This rule remains active. Editing it does not restore past offers.</p><ul>'+history.map(row=>'<li>'+escapeHtml(row.name)+(row.at?' <span class="rb-mono">· '+escapeHtml(new Date(row.at).toLocaleString())+'</span>':'')+'</li>').join('')+'</ul>';
+      if(applied)html+='<details class="rb-rule-history"><summary><span class="rb-tag rb-rule-applied">Applied</span><span class="rb-rule-title">'+escapeHtml(conditionalRuleSummary(rule))+'</span><span class="rb-rule-count">'+(history.length || rule.lastRescindedCount || 0)+' rescinded</span></summary><div class="rb-rule-history-body"><p class="rb-rule-history-note">Still active · Editing won’t restore rescinded offers.</p><ul class="rb-rule-player-history">'+history.map(row=>'<li><span>'+escapeHtml(row.name)+'</span>'+(row.at?'<time datetime="'+new Date(row.at).toISOString()+'">'+escapeHtml(new Date(row.at).toLocaleString([], {month:'short',day:'numeric',hour:'numeric',minute:'2-digit'}))+'</time>':'')+'</li>').join('')+'</ul>';
       html += '<div class="rb-card" style="padding:10px 12px;background:var(--panel-alt);display:flex;justify-content:space-between;align-items:center;gap:12px;">';
-      html += '<span style="min-width:0;"><strong>After ' + escapeHtml(conditionalRuleSummary(rule)) + '</strong><span class="rb-mono" style="display:block;color:var(--slate);font-size:12px;margin-top:3px;">Rescind the selected offers, or matching filters when no custom list is selected.</span></span>';
+      if(!applied)html += '<span style="min-width:0;"><strong>After ' + escapeHtml(conditionalRuleSummary(rule)) + '</strong><span class="rb-mono" style="display:block;color:var(--slate);font-size:12px;margin-top:3px;">Rescind the selected offers, or matching filters when no custom list is selected.</span></span>';
       html += '<button class="rb-btn" data-edit-conditional="'+escapeHtml(rule.id)+'">Edit</button>';
       html += '<button class="rb-btn rb-btn-danger" data-delete-conditional="' + escapeHtml(rule.id) + '">Delete</button>';
       html += '</div>';
-      if(applied)html+='</details>';
+      if(applied)html+='</div></details>';
     });
     html += '</div>';
   }
