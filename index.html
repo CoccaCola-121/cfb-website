@@ -3578,11 +3578,15 @@ function renderConditionalRescinds(){
   if (rules.length){
     html += '<div style="display:flex;flex-direction:column;gap:8px;margin-bottom:14px;">';
     rules.forEach(function(rule){
+      const history=Object.entries(DB.offersByProspect || {}).flatMap(([pid,offers])=>offers.filter(o=>teamKey(o.team)===teamKey(rule.team) && (o.conditionalRescindRuleId===rule.id || !o.conditionalRescindRuleId && o.rescindReason==='Conditional rescind: '+rule.name)).map(o=>({name:DB.prospects[pid]?.name || pid,at:o.rescindedAt}))).sort((a,b)=>(b.at || 0)-(a.at || 0));
+      const applied=history.length>0 || !!rule.lastTriggeredAt;
+      if(applied)html+='<details class="rb-rule-history"><summary><span class="rb-tag rb-rule-applied">Applied</span> '+escapeHtml(conditionalRuleSummary(rule))+' · '+(history.length || rule.lastRescindedCount || 0)+' rescinded</summary><p class="rb-rule-history-note">This rule remains active. Editing it does not restore past offers.</p><ul>'+history.map(row=>'<li>'+escapeHtml(row.name)+(row.at?' <span class="rb-mono">· '+escapeHtml(new Date(row.at).toLocaleString())+'</span>':'')+'</li>').join('')+'</ul>';
       html += '<div class="rb-card" style="padding:10px 12px;background:var(--panel-alt);display:flex;justify-content:space-between;align-items:center;gap:12px;">';
       html += '<span style="min-width:0;"><strong>After ' + escapeHtml(conditionalRuleSummary(rule)) + '</strong><span class="rb-mono" style="display:block;color:var(--slate);font-size:12px;margin-top:3px;">Rescind the selected offers, or matching filters when no custom list is selected.</span></span>';
       html += '<button class="rb-btn" data-edit-conditional="'+escapeHtml(rule.id)+'">Edit</button>';
       html += '<button class="rb-btn rb-btn-danger" data-delete-conditional="' + escapeHtml(rule.id) + '">Delete</button>';
       html += '</div>';
+      if(applied)html+='</details>';
     });
     html += '</div>';
   }
@@ -4068,10 +4072,10 @@ function renderMyOffers(){
         '<span class="rb-mono" style="color:var(--slate);font-size:13px;flex:0 0 auto;">' + escapeHtml(p.position || '') + (p.rating ? '<span class="rb-recruit-rating"> &middot; ' + escapeHtml(p.rating) + '</span>' : '') + '</span>' +
         (p.hometown ? '<span class="rb-mono rb-desktop-only" style="color:var(--slate);font-size:13px;flex:0 0 auto;">&middot;</span><span class="rb-mono rb-desktop-only" title="' + escapeHtml(p.hometown) + '" style="color:var(--slate);font-size:13px;overflow:hidden;text-overflow:ellipsis;">' + escapeHtml(shortText(p.hometown, 24)) + '</span>' : '') +
       '</span>';
-      html += '<span class="rb-own-offer-type-row">' + ownOfferTypeBadge(o,p) + (!o.rescinded && !p.commitTeam ? '<span data-auto-offer="'+escapeHtml(row.prospectId+':'+o.id)+'">'+(autoPreview.offers.has(row.prospectId+':'+o.id)?'<span class="rb-tag" style="font-size:11px;color:#91d6a4;border-color:#477d55;background:rgba(88,191,114,.1);">Auto if closed now</span>':'')+'</span>' : '') + '</span>';
+      html += '<span class="rb-own-offer-type-row">' + ownOfferTypeBadge(o,p) + (o.rescinded?'<span class="rb-tag rb-rescinded-badge">Rescinded</span>':'') + (!o.rescinded && !p.commitTeam ? '<span data-auto-offer="'+escapeHtml(row.prospectId+':'+o.id)+'">'+(autoPreview.offers.has(row.prospectId+':'+o.id)?'<span class="rb-tag" style="font-size:11px;color:#91d6a4;border-color:#477d55;background:rgba(88,191,114,.1);">Auto if closed now</span>':'')+'</span>' : '') + '</span>';
       html += '<span class="rb-my-offer-visits" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">' + visitBadges(o.visits, true) + '</span>';
       html += '</span>';
-      html += '<span class="rb-my-offer-actions'+(p.commitTeam?' rb-has-commit-status':'')+'" style="display:flex;align-items:center;justify-content:flex-end;gap:8px;white-space:nowrap;">' + (p.commitTeam ? '<span class="rb-offer-commit-status '+(teamKey(p.commitTeam)===teamKey(SESSION.team)?'rb-offer-commit-own':'rb-offer-commit-away')+'">'+(teamKey(p.commitTeam)===teamKey(SESSION.team)?'✓ Committed to you':'Committed to '+escapeHtml(p.commitTeam))+'</span>' : '') + (o.rescinded ? '<span class="rb-mono" style="color:var(--alert);font-size:12px;">rescinded</span>' : (p.commitTeam ? '' : (recruitingStage() === 'hs' ? '<button class="rb-btn" data-edit-offer="' + escapeHtml(row.prospectId) + ':' + escapeHtml(o.id) + '">Edit</button>' : '') + '<button class="rb-btn" data-rescind-offer="' + escapeHtml(row.prospectId) + ':' + escapeHtml(o.id) + '">Rescind</button>')) + '</span>';
+      html += '<span class="rb-my-offer-actions'+(p.commitTeam?' rb-has-commit-status':'')+'" style="display:flex;align-items:center;justify-content:flex-end;gap:8px;white-space:nowrap;">' + (p.commitTeam ? '<span class="rb-offer-commit-status '+(teamKey(p.commitTeam)===teamKey(SESSION.team)?'rb-offer-commit-own':'rb-offer-commit-away')+'">'+(teamKey(p.commitTeam)===teamKey(SESSION.team)?'✓ Committed to you':'Committed to '+escapeHtml(p.commitTeam))+'</span>' : '') + (o.rescinded ? '' : (p.commitTeam ? '' : (recruitingStage() === 'hs' ? '<button class="rb-btn" data-edit-offer="' + escapeHtml(row.prospectId) + ':' + escapeHtml(o.id) + '">Edit</button>' : '') + '<button class="rb-btn" data-rescind-offer="' + escapeHtml(row.prospectId) + ':' + escapeHtml(o.id) + '">Rescind</button>')) + '</span>';
       html += '<span class="rb-mobile-only rb-offer-expand" aria-hidden="true">' + renderArrow() + '</span>';
       html += '</summary>';
       html += '<div style="margin-top:10px;">' + renderOfferBlock(o, { prospect: p, expanded: true, fullText: true, hideHeader: true, hideUpgrade: true }) + '</div>';
@@ -4187,7 +4191,7 @@ function renderTeamOffers(){
       '<span class="rb-mono" style="color:var(--slate);font-size:13px;flex:0 0 auto;">' + escapeHtml(p.position || '') + (p.rating ? '<span class="rb-recruit-rating"> &middot; ' + escapeHtml(p.rating) + '</span>' : '') + '</span>' +
       (p.hometown ? '<span class="rb-mono rb-desktop-only" style="color:var(--slate);font-size:13px;flex:0 0 auto;">&middot;</span><span class="rb-mono rb-desktop-only" title="' + escapeHtml(p.hometown) + '" style="color:var(--slate);font-size:13px;overflow:hidden;text-overflow:ellipsis;">' + escapeHtml(shortText(p.hometown, 24)) + '</span>' : '') +
     '</span>';
-    html += '<span style="display:flex;align-items:center;justify-content:flex-end;gap:8px;white-space:nowrap;">' + (o.rescinded ? '<span class="rb-mono" style="color:var(--alert);font-size:12px;">rescinded</span>' : visitBadges(o.visits, true)) + '</span>';
+    html += '<span style="display:flex;align-items:center;justify-content:flex-end;gap:8px;white-space:nowrap;">' + (o.rescinded ? '' : visitBadges(o.visits, true)) + '</span>';
     html += '</summary>';
     html += '<div style="margin-top:8px;">' + renderOfferBlock(o, { prospect: p, expanded: true }) + '</div>';
     html += '</details></div>';

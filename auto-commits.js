@@ -95,9 +95,9 @@
       if(!o.rescinded && remaining(work,o.team,'scholarship')===null) missing.add(o.team);
     }
     if(missing.size){result.errors.push('Missing scholarship counts or Bucks allowances: '+[...missing].sort().join(', ')+'.');return result;}
-    function rescind(p,o,reason){
+    function rescind(p,o,reason,ruleId){
       if(o.rescinded)return;o.rescinded=true;o.rescindedAt=now;o.rescindReason=reason;
-      result.rescinds.push({prospectId:p.id,offerId:o.id,team:o.team,reason});
+      result.rescinds.push({prospectId:p.id,offerId:o.id,team:o.team,reason,...(ruleId?{conditionalRescindRuleId:ruleId}:{})});
     }
     function applyLimits(){
       const totals=counts(work);
@@ -130,7 +130,7 @@
         if(won.length<Math.max(1,Number(rule.count)||0))continue;
         const targetRule=rescindTargetRule(rule,won);
         if(!targetRule)continue;
-        for(const p of players)if(!work.prospects[p.id].commitTeam)for(const o of work.offersByProspect?.[p.id] || [])if(!o.rescinded && key(o.team)===t && matches(targetRule,p,o))rescind(p,o,'Conditional rescind: '+(rule.name || 'rule met'));
+        for(const p of players)if(!work.prospects[p.id].commitTeam)for(const o of work.offersByProspect?.[p.id] || [])if(!o.rescinded && key(o.team)===t && matches(targetRule,p,o))rescind(p,o,'Conditional rescind: '+(rule.name || 'rule met'),rule.id);
       }
     }
     function candidates(p){
@@ -159,7 +159,7 @@
       const p=state.prospects[row.prospectId];p.commitTeam=row.team;p.commitType=kind;
       state.manualCommitOverrides[row.prospectId]={team:row.team,name:p.name,stage:state.recruitingStage,updatedAt:now,commitType:kind,source:'auto'};
     }
-    for(const row of result.rescinds){const o=(state.offersByProspect[row.prospectId] || []).find(o=>o.id===row.offerId);if(o){o.rescinded=true;o.rescindedAt=now;o.rescindReason=row.reason;}}
+    for(const row of result.rescinds){const o=(state.offersByProspect[row.prospectId] || []).find(o=>o.id===row.offerId);if(o){o.rescinded=true;o.rescindedAt=now;o.rescindReason=row.reason;if(row.conditionalRescindRuleId)o.conditionalRescindRuleId=row.conditionalRescindRuleId;}}
     if(result.commits.length)state.commitUpdatedAt=now;
     return result;
   }
