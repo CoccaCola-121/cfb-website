@@ -893,3 +893,9 @@ html { scrollbar-gutter: stable; }
 .rb-player-card-link{position:absolute;inset:0;z-index:1;border-radius:inherit;}
 .rb-player-card-link:focus-visible{outline:2px solid var(--chalk);outline-offset:3px;}
 [data-prospect-card] button,[data-prospect-card] [data-watchlist-flag],[data-prospect-card] [data-open-team-commits],[data-prospect-card] .rb-list-identity a{position:relative;z-index:2;}
+
+.rb-offer-commit-status{display:inline-block;padding:6px 10px;border:1px solid var(--hairline);border-radius:6px;font-size:12px;line-height:1.4;white-space:normal;overflow-wrap:anywhere;}
+.rb-offer-commit-own{color:#a4e4b5;border-color:#477d55;background:rgba(88,191,114,.12);font-weight:600;}
+.rb-offer-commit-away{color:var(--slate);background:var(--panel-alt);}
+.rb-my-offer-actions.rb-has-commit-status{flex-wrap:wrap;min-width:0;}
+@media(max-width:760px){.rb-my-offer-summary-grid .rb-my-offer-actions.rb-has-commit-status{display:flex !important;grid-column:1 / -1;justify-content:flex-start !important;}}
