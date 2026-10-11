@@ -1,5 +1,8 @@
 // Shared by the browser and league-state endpoint so the same pitch rule applies.
 (function(root){
+  // Keep bare-domain detection conservative: a missing space after a period
+  // should not turn pitch prose into a link. Other domains can use https://.
+  const bareLinkEndings=new Set('com org net edu gov mil int io co us uk ca au nz eu app dev gg tv me ly ai info biz'.split(' '));
   function linkTokens(text){
     const result=[],re=/\[([^\]\n]+)\]\((https?:\/\/(?:[^\s()<>]|\([^\s()<>]*\))+)\)/gi;
     let match;
@@ -11,12 +14,16 @@
     const bare=/\b(?:https?:\/\/[^\s<>]+|(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)+[a-z]{2,63}(?::\d+)?(?:[/?#][^\s<>]*)?)/gi;
     while((match=bare.exec(raw))){
       if(result.some(t=>match.index<t.end && bare.lastIndex>t.start))continue;
-      if(match.index && /[\w@/.-]/.test(raw[match.index-1]))continue;
+      if(match.index && /[\p{L}\p{N}\p{M}_@/.-]/u.test(raw[match.index-1]))continue;
+      const explicitUrl=/^https?:\/\//i.test(match[0]);
+      // Do not link only the valid-looking prefix of an invalid domain/token.
+      if(!explicitUrl && /^(?:[\p{L}\p{N}\p{M}_@-]|\.[\p{L}\p{N}_-])/u.test(raw.slice(bare.lastIndex)))continue;
       let label=match[0].replace(/[.,!?;:'"*]+$/g,'');
       while(label.endsWith(')') && (label.match(/\)/g)||[]).length>(label.match(/\(/g)||[]).length)label=label.slice(0,-1);
       label=label.replace(/[\]}]+$/g,'');
-      try{const url=new URL(/^https?:\/\//i.test(label)?label:'https://'+label);
+      try{const url=new URL(explicitUrl?label:'https://'+label);
         if(!['http:','https:'].includes(url.protocol))continue;
+        if(!explicitUrl && !bareLinkEndings.has(url.hostname.split('.').pop()) && url.hostname!=='youtu.be')continue;
         result.push({start:match.index,end:match.index+label.length,label,url:url.href,bare:true});
       }catch{}
     }
