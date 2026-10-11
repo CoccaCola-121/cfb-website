@@ -33,7 +33,7 @@
     if(kind==='walkon') return Math.max(0,15-(totals.walkon[t] || 0));
     const source=state.scholarshipCapacity;
     const row=source?.teams?.[t];
-    if(!row || source.stage!==state.recruitingStage || !Number.isInteger(row.open)) return null;
+    if(!row || source.stage!==state.recruitingStage || !Number.isInteger(row.open) || state.recruitingStage==='hs' && source.sourceColumn!=='D') return null;
     const bucks=state.bucksRemaining?.[t] ?? 3;
     if(!Number.isInteger(bucks) || bucks<0 || bucks>3) return null;
     return Math.max(0,row.open+bucks-(totals.scholarship[t] || 0)+(source.includedCommits?.[t] || 0));
@@ -49,18 +49,21 @@
     }
     return changed;
   }
-  function parseCapacitySheet(csv){
+  function parseCapacitySheet(csv,stage='cpr'){
+    if(!['hs','cpr','transfer'].includes(stage))throw Error('Choose a valid recruiting stage.');
     const rows=root.NZCFLScholarshipHistory.parseCsv(csv),header=rows.shift() || [];
-    if(!/^Total Scholarships Remaining/i.test(String(header[4] || '').trim())) throw Error('Column E must be Total Scholarships Remaining (includes Seniors).');
+    const index=stage==='hs'?3:4,column=stage==='hs'?'D':'E';
+    const expected=stage==='hs'?/^Scholarships Available(?:\s*\(upcoming class\))?$/i:/^Total Scholarships Remaining/i;
+    if(!expected.test(String(header[index] || '').trim())) throw Error('Column '+column+' must be '+(stage==='hs'?'Scholarships Available (upcoming class).':'Total Scholarships Remaining (includes Seniors).'));
     const teams={};
     for(const row of rows){
       const name=String(row[0] || '').trim();if(!name || !String(row[1] || '').trim())continue;
-      const raw=String(row[4] || '').trim();
-      if(!/^-?\d+$/.test(raw)) throw Error('Invalid scholarship count for '+name+' in column E.');
+      const raw=String(row[index] || '').trim();
+      if(!/^-?\d+$/.test(raw)) throw Error('Invalid scholarship count for '+name+' in column '+column+'.');
       const t=key(name);if(teams[t])throw Error('Duplicate scholarship team: '+name+'.');
       teams[t]={team:name,open:Number(raw)};
     }
-    if(!Object.keys(teams).length) throw Error('No scholarship counts found in column E.');
+    if(!Object.keys(teams).length) throw Error('No scholarship counts found in column '+column+'.');
     return teams;
   }
   function fingerprint(state){
@@ -70,6 +73,7 @@
     for(const [team,value] of Object.entries(state.bucksRemaining || {})) if(!Number.isInteger(value)||value<0||value>3)return 'Bucks spots for '+team+' must be a whole number from 0 to 3.';
     const cap=state.scholarshipCapacity;if(!cap)return '';
     if(!['hs','cpr','transfer'].includes(cap.stage))return 'Scholarship capacity must belong to a recruiting stage.';
+    if(state.recruitingStage==='hs' && cap.stage==='hs' && cap.sourceColumn!=='D')return 'Refresh and read high-school scholarship counts from column D before saving.';
     for(const row of Object.values(cap.teams || {}))if(!Number.isInteger(row.open))return 'Scholarship counts must be whole numbers.';
     for(const value of Object.values(cap.includedCommits || {}))if(!Number.isInteger(value)||value<0)return 'Included scholarship commitments must be nonnegative whole numbers.';
     return '';

@@ -36,5 +36,25 @@
   function allowed(before,after,team,p){
     return ['header','upgrade'].some(action=>{try{return amend(before,action,team,p)===after;}catch{return false;}});
   }
-  root.NZCFLOfferAmendments={header,amend,allowed};
+  // Commissioner-approved exception for Montana's accidentally empty HS offer.
+  // Existing pitches and all other offers retain their normal editing rules.
+  function canAddMissingPitch(offer,p,stage){
+    if(stage!=='hs' || offer?.id!=='o_4hmajnpk' || offer.team!=='Montana' ||
+      offer.createdAt!==1791745926950 || p?.id!=='r197' || p.name!=='Sam Faraimo' ||
+      offer.rescinded || p.commitTeam || offer.pitchCompletedAt)return false;
+    const h=header(offer.text);
+    return h.offerLine>=0 && h.end===h.lines.length;
+  }
+  function addMissingPitch(offer,p,stage,body){
+    if(!canAddMissingPitch(offer,p,stage))throw Error('This offer is not approved for a missing-pitch correction.');
+    if(typeof body!=='string' || !body.trim() || body.length>100000)throw Error('Paste the missing pitch.');
+    const h=header(body);
+    if(h.offerLine>=0)throw Error('The offer header is already saved. Paste only the missing text below it.');
+    if(h.end===h.lines.length)throw Error('Add the pitch below the offer type.');
+    const old=header(offer.text);
+    if(h.type && old.type && h.type!==old.type)throw Error('Use the upgrade button to change the offer type.');
+    if(/\b(?:coach|campus|school)\s+visit\b/i.test(body))throw Error('Add visits using Edit visits after saving your pitch.');
+    return offer.text+'\n\n'+body.trim();
+  }
+  root.NZCFLOfferAmendments={header,amend,allowed,canAddMissingPitch,addMissingPitch};
 })(globalThis);

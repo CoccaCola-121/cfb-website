@@ -113,7 +113,7 @@ let UI = { view: 'feed', threadId: null, showSubmitModal: false, submitting: fal
            threadSlug: '', teamCommitsTeam: '', teamCommitsSlug: '', teamOffersTeam: '', teamOffersSlug: '', teamCommitsReturn: null,
            brandingStatus: null, brandingError: null, conditionalError: null, conditionalStatus: null,
            massRescindError: null, massRescindStatus: null, pendingMassRescind: null,
-           pendingMassRescindFinal: null, pendingSingleRescind: null, pendingUpgrade: null, headerEdit: null,
+           pendingMassRescindFinal: null, pendingSingleRescind: null, pendingUpgrade: null, headerEdit: null, missingPitchEdit: null,
            backupStatus: null, backupError: null, backingUp: false,
            teamAdminModal: null, brandingFileName: '', adminActionStatus: null, adminActionError: null,
            commitOverrideRank: '', commitOverrideTeam: '', commitOverrideStatus: null, commitOverrideError: null,
@@ -1004,7 +1004,7 @@ async function syncLeagueState(renderAfter, options){
     const data = await res.json();
     UI.strongStorage=data.storage==='d1';
     const changed = mergeLeagueState(data.state);
-    if (changed && renderAfter && !UI.showSubmitModal && !UI.editOfferTarget && !UI.headerEdit) render();
+    if (changed && renderAfter && !UI.showSubmitModal && !UI.editOfferTarget && !UI.headerEdit && !UI.missingPitchEdit) render();
     return changed;
   } catch (e) {
     return false;
@@ -2318,14 +2318,13 @@ function titleCaseTeamName(name){
 
 function normalizeCampusVisitLabel(label){
   let raw = String(label || '').trim().replace(/\s+/g, ' ');
+  raw = raw.replace(/^:\s*/, '');
   raw = raw.replace(/^week\b/i, 'Week');
   raw = raw.replace(/\bvs\.?/i, 'vs.');
   raw = raw.replace(/\s+vs\.\s+/i, ' vs. ');
-  const match = raw.match(/^Week\s+(\d{1,2})\s+vs\.\s+(.+)$/i);
-  if (!match || !match[2].trim()) return { ok: false, value: raw };
-  const opponent = match[2].trim();
-  if (/^[A-Z]{3,4}$/.test(opponent)) return { ok: false, value: raw, reason: 'abbr' };
-  return { ok: true, value: 'Week ' + parseInt(match[1], 10) + ' vs. ' + titleCaseTeamName(opponent) };
+  const match = raw.match(/^(?:Week\s*)?(\d{1,2})(?:\s+vs\.\s+(.+))?$/i);
+  if (!match) return { ok: false, value: raw };
+  return { ok: true, value: 'Week ' + parseInt(match[1], 10) + (match[2] ? ' vs. ' + titleCaseTeamName(match[2]) : '') };
 }
 
 function syncCampusVisitText(text, visits){
@@ -2582,7 +2581,7 @@ function addOfferDirect(prospectId, team, coach, text, promises, visits){
   visits = recruitingStage() === 'hs' ? detectVisits(text, visits) : {};
   if (visits.campus){
     const normalizedCampus = normalizeCampusVisitLabel(visits.campusLabel);
-    if (!normalizedCampus.ok) return { ok: false, error: 'Offer denied: campus visit must use Week X vs. Team Name, no 3-4 letter all-caps abbreviations.' };
+    if (!normalizedCampus.ok) return { ok: false, error: 'Enter the campus visit week, e.g. Week 4. Opponent is optional.' };
     visits.campusLabel = normalizedCampus.value;
   }
   const existingOffer = findOfferForTeam(prospectId, team);
@@ -2800,7 +2799,7 @@ function saveOfferEdit(form, confirmedVisits){
   if (newVisits.campus){
     const normalizedCampus = normalizeCampusVisitLabel((form && form.campusLabel) || oldVisits.campusLabel);
     if (!normalizedCampus.ok){
-      UI.editError = normalizedCampus.reason === 'abbr' ? 'Use the full team name, not a 3-4 letter all-caps abbreviation.' : 'Campus visit must use: Week X vs. Team Name';
+      UI.editError = 'Enter the campus visit week, e.g. Week 4. Opponent is optional.';
       render(); return;
     }
     newVisits.campusLabel = normalizedCampus.value;
@@ -3251,6 +3250,7 @@ function render(){
   if (UI.pendingRemovePlayer) html += renderRemovePlayerConfirm();
   if(UI.removeKennyTest && canUseDangerZone())html+='<div style="position:fixed;inset:0;background:rgba(0,0,0,.72);display:flex;align-items:center;justify-content:center;z-index:65;"><div class="rb-card" role="dialog" aria-modal="true" aria-labelledby="rb-test-title" style="padding:24px;width:460px;max-width:90vw;box-sizing:border-box;"><h2 class="rb-h" id="rb-test-title">Remove test offer?</h2><p>Remove Michigan State’s test offer for Kenny Phillips so you can submit a new one?</p><div style="display:flex;justify-content:flex-end;gap:8px;"><button class="rb-btn" id="rb-cancel-kenny-test">Cancel</button><button class="rb-btn rb-btn-danger" id="rb-confirm-kenny-test">Remove offer</button></div></div></div>';
   if (UI.headerEdit) html += renderHeaderEditModal();
+  if (UI.missingPitchEdit) html += renderMissingPitchModal();
   if (UI.teamAdminModal) html += renderTeamAdminModal();
   if (UI.confirmReset) html += renderResetConfirmModal();
   html += renderBackTopControl();
@@ -4364,7 +4364,7 @@ function createCprPlayer(input){
   DB.threads.push(makeThread(row.name,[id],null));
   return id;
 }
-function renderAfterWatchlist(){if(!UI.showSubmitModal && !UI.editOfferTarget && !UI.headerEdit)render();}
+function renderAfterWatchlist(){if(!UI.showSubmitModal && !UI.editOfferTarget && !UI.headerEdit && !UI.missingPitchEdit)render();}
 async function loadWatchlist(){
   if (!SESSION?.team || !apiAvailable()) return;
   const team = teamKey(SESSION.team), stage = recruitingStage();
@@ -4677,12 +4677,12 @@ async function readScholarshipCapacity(){
   const draft=settingsDraft,roster=DB.fullRoster,stage=recruitingStage();
   UI.capacityLoading=true;UI.capacityStatus='Reading starting scholarship counts…';render();
   try{
-    const response=await fetch('/api/admin/scholarship-capacity?sheetId='+encodeURIComponent(match[1])+'&gid='+(gid?gid[1]:'1039825625'),{credentials:'include'});
+    const response=await fetch('/api/admin/scholarship-capacity?sheetId='+encodeURIComponent(match[1])+'&gid='+(gid?gid[1]:'1039825625')+'&stage='+encodeURIComponent(stage),{credentials:'include'});
     const data=await response.json();if(!response.ok || !data.ok)throw Error(data.error || 'Could not read scholarship counts.');
     if(settingsDraft!==draft || DB.fullRoster!==roster || recruitingStage()!==stage)return;
     const teams={};
     Object.values(data.teams).forEach(row=>{const team=canonicalTeamName(row.team);teams[NZCFLAutoCommits.key(team)]={team,open:row.open};});
-    DB.scholarshipCapacity={source:data.source,updatedAt:Date.now(),stage,teams};
+    DB.scholarshipCapacity={source:data.source,sourceColumn:data.sourceColumn,updatedAt:Date.now(),stage,teams};
     UI.capacityStatus=Object.keys(teams).length+' starting balances read. Save changes to publish.';
     UI.autoCategory=null;
   }catch(e){if(settingsDraft===draft)UI.capacityStatus=e.message;}
@@ -4742,7 +4742,7 @@ function renderAutoCommitSettings(){
   const hasCommits=Object.values(totals.scholarship).some(n=>n>0);
   let html='<section class="rb-card rb-auto-settings"><div class="rb-h">Auto-commits</div>';
   html+='<details class="rb-auto-capacity"'+(!cap?' open':'')+'><summary>Scholarship balances'+(cap?' · '+Object.keys(cap.teams).length+' balances saved':'')+'</summary>';
-  html+='<p class="rb-auto-note">Starting balances from column E; website commits are deducted automatically.</p>';
+  html+='<p class="rb-auto-note">'+(recruitingStage()==='hs'?'Upcoming-class balances from column D':'Current-year balances from column E')+'; website commits are deducted automatically.</p>';
   html+='<div class="rb-auto-source"><input class="rb-input" id="rb-capacity-source" aria-label="Scholarship counts sheet" value="'+escapeHtml(cap?.source || DEFAULT_CAPACITY_SHEET)+'" /><button class="rb-btn" id="rb-capacity-read"'+(UI.capacityLoading || hasCommits?' disabled':'')+'>'+(UI.capacityLoading?'Reading…':'Read starting counts')+'</button></div>';
   if(hasCommits)html+='<p class="rb-auto-note">Starting counts are frozen while scholarship commitments exist.</p>';
   if(cap)html+='<p class="rb-auto-note">Updated '+escapeHtml(new Date(cap.updatedAt).toLocaleDateString())+'</p>';
@@ -4984,6 +4984,7 @@ function renderOfferAmendments(o,p,hideUpgrade){
   const h=NZCFLOfferAmendments.header(o.text);
   const attrs=' data-amend-prospect="'+escapeHtml(p.id)+'" data-amend-offer="'+escapeHtml(o.id)+'"';
   let buttons='';
+  if(NZCFLOfferAmendments.canAddMissingPitch(o,p,recruitingStage()))buttons+='<button class="rb-btn rb-btn-gold" data-add-missing-pitch="1"'+attrs+'>Add missing pitch</button>';
   if(h.offerLine<0 || h.typeLine<0)buttons+='<button class="rb-btn" data-amend-action="header"'+attrs+'>Add offer header</button>';
   if(h.offerLine>=0 && h.typeLine>h.offerLine)buttons+='<button class="rb-btn" data-edit-offer-header="1"'+attrs+'>Edit offer header</button>';
   if(!NZCFLCprRules.scholarshipOffer(o) && !hideUpgrade)buttons+='<button class="rb-btn rb-btn-gold" data-amend-action="upgrade"'+attrs+'>Upgrade to scholarship</button>';
@@ -5049,6 +5050,35 @@ async function saveHeaderEdit(){
   mergeLeagueState(data.state);UI.headerEdit=null;UI.lastSummary={errorText:'Offer header updated. The body was not changed.',dismissAt:Date.now()+6000};
  }catch(error){edit.error=error.message || 'Could not save header.';}
  finally{UI.submitting=false;render();}
+}
+function openMissingPitch(pid,oid){
+  const p=DB.prospects[pid],o=findOfferById(pid,oid);
+  if(!SESSION || !o || teamKey(o.team)!==teamKey(SESSION.team) || offersLocked() || !NZCFLOfferAmendments.canAddMissingPitch(o,p,recruitingStage()))return;
+  UI.missingPitchEdit={prospectId:pid,offerId:oid,expectedText:o.text,text:'',error:''};render();
+}
+function renderMissingPitchModal(){
+  const edit=UI.missingPitchEdit,p=DB.prospects[edit.prospectId];
+  return '<div style="position:fixed;inset:0;background:rgba(0,0,0,.72);display:flex;align-items:center;justify-content:center;z-index:65;"><div class="rb-card" role="dialog" aria-modal="true" aria-labelledby="rb-missing-pitch-title" style="padding:24px;width:560px;max-width:92vw;max-height:90dvh;overflow:auto;box-sizing:border-box;">'+
+    '<h2 class="rb-h" id="rb-missing-pitch-title">Add missing pitch</h2><p>'+escapeHtml(p?.name || '')+'</p><p style="font-size:13px;color:var(--slate);">One-time approved correction. Paste the missing body, including Scholarship if intended. Your saved header stays in place. Add visits separately using Edit visits.</p>'+
+    '<div class="rb-mono" style="font-size:12px;white-space:pre-wrap;">'+escapeHtml(edit.expectedText)+'</div><textarea id="rb-missing-pitch-text" class="rb-textarea" rows="10" maxlength="100000" aria-label="Missing pitch" placeholder="Scholarship&#10;&#10;Your pitch…">'+escapeHtml(edit.text)+'</textarea><p style="font-size:12px;color:var(--slate);">Saving is recorded in edit history and ends this correction.</p>'+
+    (edit.error?'<p role="alert" style="color:var(--alert);">'+escapeHtml(edit.error)+'</p>':'')+'<div style="display:flex;justify-content:flex-end;gap:8px;margin-top:14px;"><button class="rb-btn" id="rb-cancel-missing-pitch"'+(UI.submitting?' disabled':'')+'>Cancel</button><button class="rb-btn rb-btn-gold" id="rb-save-missing-pitch"'+(UI.submitting?' disabled':'')+'>'+(UI.submitting?'Saving…':'Save pitch')+'</button></div></div></div>';
+}
+async function saveMissingPitch(){
+  const edit=UI.missingPitchEdit;if(!edit || UI.submitting)return;
+  edit.text=document.getElementById('rb-missing-pitch-text').value;
+  const offer=findOfferById(edit.prospectId,edit.offerId);
+  try{
+    if(!offer || offer.text!==edit.expectedText)throw Error('This offer changed. Reopen the correction before saving.');
+    NZCFLOfferAmendments.addMissingPitch(offer,DB.prospects[edit.prospectId],recruitingStage(),edit.text);
+  }catch(error){edit.error=error.message;render();return;}
+  UI.submitting=true;edit.error='';render();
+  try{
+    const response=await fetch('/api/offers/amend',{method:'POST',credentials:'include',headers:{'content-type':'application/json'},body:JSON.stringify({prospectId:edit.prospectId,offerId:edit.offerId,action:'add-pitch',expectedText:edit.expectedText,pitch:edit.text,promises:extractPromises(edit.text)})});
+    const data=await response.json().catch(()=>{throw Error('Save was not confirmed. Your pitch is still here; please retry.');});
+    if(!response.ok || !data.ok)throw Error(data.error || 'Could not save the pitch.');
+    mergeLeagueState(data.state);UI.missingPitchEdit=null;UI.lastSummary={errorText:'Missing pitch added.',dismissAt:Date.now()+6000};
+  }catch(error){edit.error=error.message;}
+  finally{UI.submitting=false;render();}
 }
 function renderOfferBlock(o, opts){
   opts = opts || {};
@@ -5169,7 +5199,7 @@ function renderEditOfferModal(){
     '<div class="rb-card" style="padding:24px;width:560px;max-width:90vw;" onclick="event.stopPropagation()">' +
       '<div class="rb-h" style="font-size:16px;margin-bottom:4px;">Edit visits</div>' +
       '<div class="rb-mono" style="font-size:12px;color:var(--slate);margin-bottom:12px;">' + (recruitNumber(prospect) ? recruitNumber(prospect) + ' ' : '') + renderRecruitName(prospect.name || 'Unknown prospect') + '</div>' +
-      '<div style="font-size:12px;color:var(--slate);margin-bottom:10px;">Campus format: <span class="rb-mono">Week X vs. Team Name</span>; no 3-4 letter all-caps abbreviations.</div>' +
+      '<div style="font-size:12px;color:var(--slate);margin-bottom:10px;">Enter the campus visit week, e.g. <span class="rb-mono">Week 4</span>. Opponent is optional; abbreviations are accepted.</div>' +
       '<div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-top:12px;">' +
         '<label style="display:inline-flex;align-items:center;gap:8px;color:' + (locks.coach ? 'var(--slate)' : 'var(--chalk)') + ';font-size:13px;">' +
           '<input type="checkbox" id="rb-edit-coach-visit" ' + (visits.coach ? 'checked' : '') + (locks.coach ? ' disabled' : '') + ' style="accent-color:var(--gold);" /> Coach Visit' +
@@ -5178,7 +5208,7 @@ function renderEditOfferModal(){
           '<input type="checkbox" id="rb-edit-campus-visit" ' + (visits.campus ? 'checked' : '') + (locks.campus ? ' disabled' : '') + ' style="accent-color:var(--gold);" /> Campus Visit' +
         '</label>' +
       '</div>' +
-      '<input class="rb-input" id="rb-edit-campus-label" placeholder="Week 1 vs. Boston College" value="' + escapeHtml(visits.campusLabel || '') + '"' + (!visits.campus && locks.campus ? ' disabled' : '') + ' style="margin-top:10px;" />' +
+      '<input class="rb-input" id="rb-edit-campus-label" placeholder="Week 4 (or Week 4 vs. USC)" value="' + escapeHtml(visits.campusLabel || '') + '"' + (!visits.campus && locks.campus ? ' disabled' : '') + ' style="margin-top:10px;" />' +
       (UI.editError ? '<div style="font-size:12px;color:var(--alert);margin-top:8px;">' + escapeHtml(UI.editError) + '</div>' : '') +
       '<div style="display:flex;justify-content:flex-end;gap:8px;margin-top:14px;">' +
         '<button class="rb-btn" data-close-edit-modal="1">Cancel</button>' +
@@ -5480,6 +5510,10 @@ function bindEvents(){
   const cancelHeader=document.getElementById('rb-cancel-header-edit');if(cancelHeader)cancelHeader.onclick=function(){UI.headerEdit=null;render();};
   const headerLine=document.getElementById('rb-header-line');if(headerLine)headerLine.oninput=function(){if(UI.headerEdit)UI.headerEdit.line=headerLine.value;};
   const saveHeader=document.getElementById('rb-save-header-edit');if(saveHeader)saveHeader.onclick=saveHeaderEdit;
+  document.querySelectorAll('[data-add-missing-pitch]').forEach(button=>{button.onclick=function(e){e.preventDefault();e.stopPropagation();openMissingPitch(button.getAttribute('data-amend-prospect'),button.getAttribute('data-amend-offer'));};});
+  const missingPitchText=document.getElementById('rb-missing-pitch-text');if(missingPitchText)missingPitchText.oninput=()=>{if(UI.missingPitchEdit)UI.missingPitchEdit.text=missingPitchText.value;};
+  const cancelMissingPitch=document.getElementById('rb-cancel-missing-pitch');if(cancelMissingPitch)cancelMissingPitch.onclick=()=>{if(!UI.submitting){UI.missingPitchEdit=null;render();}};
+  const saveMissingPitchButton=document.getElementById('rb-save-missing-pitch');if(saveMissingPitchButton)saveMissingPitchButton.onclick=saveMissingPitch;
   const conditionalOverall=document.getElementById('rb-cond-overall-mode');
   if(conditionalOverall) conditionalOverall.onchange=function(){
     const input=document.getElementById('rb-cond-overall-value');

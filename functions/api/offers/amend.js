@@ -38,7 +38,12 @@ export async function onRequestPost({request,env,waitUntil}){
   if(offer.rescinded || p.commitTeam || globalThis.NZCFLOfferWindow.locked(state))return json({ok:false,error:'This offer can no longer be changed.'},{status:409});
   if(offer.text!==body.expectedText)return json({ok:false,error:'This offer changed. Refresh it before trying again.'},{status:409});
   let changes;
-  if(body.action==='edit-header'){
+  if(body.action==='add-pitch'){
+    offer.text=globalThis.NZCFLOfferAmendments.addMissingPitch(offer,p,state.recruitingStage,body.pitch);
+    offer.pitchCompletedAt=Date.now();
+    offer.promises=(Array.isArray(body.promises)?body.promises:[]).slice(0,3).map(p=>({text:String(p?.text || '').slice(0,5000),title:String(p?.title || '').slice(0,80),category:String(p?.category || '').slice(0,80)}));
+    changes=['Added missing pitch with commissioner approval.'];
+  }else if(body.action==='edit-header'){
     const edit=editOfferHeader(offer.text,body.headerLine);
     if(edit.text===offer.text)return json({ok:false,error:'No header changes to save.'},{status:400});
     offer.text=edit.text;
