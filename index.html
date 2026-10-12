@@ -86,6 +86,7 @@
 <script src="/offer-window.js" onerror="this.onerror=null;this.src='offer-window.js'"></script>
 <script src="/transfer-rules.js" onerror="this.onerror=null;this.src='transfer-rules.js'"></script>
 <script src="/promise-lists.js" onerror="this.onerror=null;this.src='promise-lists.js'"></script>
+<script src="/hs-pitch-library.js" onerror="this.onerror=null;this.src='hs-pitch-library.js'"></script>
 <script>
 (function(){
 
@@ -2878,12 +2879,12 @@ function parseOfferSheet(rawText){
 }
 
 // Bound both the request and response-body read: either can stall independently.
-async function offerRequest(url, options={}, timeoutMs=15000){
+async function offerRequest(url, options={}, timeoutMs=15000, timeoutMessage='The server did not confirm your offer in time. Your draft is saved; check My Offers before retrying.'){
   const controller=new AbortController();
   let timer;
   const timeout=new Promise((resolve,reject)=>{
     timer=setTimeout(()=>{
-      const error=Error('The server did not confirm your offer in time. Your draft is saved; check My Offers before retrying.');
+      const error=Error(timeoutMessage);
       error.retryable=true;
       reject(error);
       controller.abort();
@@ -4116,6 +4117,107 @@ function bindScholarshipTemplates(){
  });
 }
 
+let hsPitchState={owner:'',loaded:false,loading:false,saving:false,version:0,library:null,draft:null,error:'',status:''};
+function currentHSPitches(){
+ if(hsPitchState.owner!==templateOwner())hsPitchState={owner:templateOwner(),loaded:false,loading:false,saving:false,version:0,library:null,draft:null,error:'',status:''};
+ return hsPitchState;
+}
+function refreshHSPitchView(){
+ if(recruitingStage()==='hs' && (UI.view==='myoffers' || UI.showSubmitModal)){captureOfferDraft();render();}
+}
+async function loadHSPitches(force=false){
+ const state=currentHSPitches();
+ if(state.loading || state.saving || state.loaded && !force)return;
+ state.loading=true;state.error='';state.status='';
+ try{
+  const {response,data}=await offerRequest('/api/hs-pitch-library',{credentials:'include',cache:'no-store'},15000,'Loading your saved pitches took too long. Try again.');
+  if(!response.ok || !data.ok)throw Error(data.error || 'Could not load your pitches.');
+  if(state!==currentHSPitches())return;
+  state.library=NZCFLHSPitchLibrary.clean(data.library);state.draft=NZCFLHSPitchLibrary.clean(data.library);state.version=data.version;state.loaded=true;
+ }catch(error){state.error=error.message;}
+ finally{state.loading=false;if(state===currentHSPitches())refreshHSPitchView();}
+}
+async function saveHSPitches(){
+ const state=currentHSPitches();if(!state.draft || state.saving || state.loading)return;
+ state.saving=true;state.error='';state.status='';
+ const submitted=JSON.stringify(state.draft);refreshHSPitchView();
+ try{
+  const {response,data}=await offerRequest('/api/hs-pitch-library',{method:'POST',credentials:'include',headers:{'content-type':'application/json'},body:JSON.stringify({library:JSON.parse(submitted),version:state.version})},15000,'Could not confirm your pitches were saved. Keep your edits and retry; reload if another save already went through.');
+  if(!response.ok || !data.ok)throw Error(data.error || 'Could not save your pitches.');
+  if(state!==currentHSPitches())return;
+  state.library=data.library;if(JSON.stringify(state.draft)===submitted)state.draft=NZCFLHSPitchLibrary.clean(data.library);
+  state.version=data.version;state.status='Pitches saved. Use them when submitting a High School offer.';
+ }catch(error){state.error=error.message;}
+ finally{state.saving=false;if(state===currentHSPitches())refreshHSPitchView();}
+}
+function ensureHSPitchesLoaded(){
+ const state=currentHSPitches();
+ if(!state.loaded && !state.loading && !state.error)loadHSPitches();
+ return state;
+}
+function renderHSPitchEditor(){
+ if(recruitingStage()!=='hs' || !SESSION?.team)return '';
+ const state=ensureHSPitchesLoaded(),draft=state.draft;
+ const count=draft?Object.values(draft.paragraphs).filter(x=>x.trim()).length:0;
+ const disabled=state.saving || state.loading?' disabled':'';
+ return '<details class="rb-card" id="rb-hs-pitch-editor" style="padding:16px;margin-bottom:14px;"'+(UI.hsPitchEditorOpen?' open':'')+'><summary class="rb-h" style="cursor:pointer;">High School pitch library <span style="font:normal 12px var(--font-body, sans-serif);color:var(--slate);">'+count+' / 9 values</span></summary>'+
+ '<p>Save a paragraph for each value. When offering a player, build an editable draft from their top three values.</p><p style="color:var(--slate);font-size:13px;">Private to your coach account and team. Headers are added automatically. Include your usual promises, then personalize them in the offer draft.</p>'+
+ (draft?'<label style="display:block;margin:14px 0;">Import pitch CSV <input type="file" id="rb-hs-pitch-csv" accept=".csv,text/csv"'+disabled+' style="display:block;margin-top:6px;max-width:100%;"></label><p style="font-size:12px;color:var(--slate);">Column A: value name. Column B: paragraph. Import fills this editor; save when ready.</p>'+NZCFLHSPitchLibrary.fields.map(f=>'<details style="border-top:1px solid var(--hairline);padding:10px 0;" data-hs-pitch-section="'+f.key+'"'+(UI.hsPitchSections?.[f.key]?' open':'')+'><summary style="cursor:pointer;">'+escapeHtml(f.label)+'</summary><label style="display:block;margin-top:8px;"><span class="rb-mono" style="font-size:11px;color:var(--slate);">'+escapeHtml(f.label)+' paragraph</span><textarea class="rb-textarea" rows="6" maxlength="12000" data-hs-pitch-body="'+f.key+'"'+disabled+'>'+escapeHtml(draft.paragraphs[f.key])+'</textarea></label></details>').join(''):'<p>'+(state.loading?'Loading your pitches…':'Your pitches could not be loaded.')+'</p>')+
+ (state.error?'<p role="alert" style="color:var(--alert);">'+escapeHtml(state.error)+'</p>':'')+(state.status?'<p role="status">'+escapeHtml(state.status)+'</p>':'')+
+ '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px;"><button class="rb-btn rb-btn-gold" id="rb-save-hs-pitches"'+(!draft || state.saving || state.loading?' disabled':'')+'>'+(state.saving?'Saving…':'Save pitches')+'</button><button class="rb-btn" id="rb-reload-hs-pitches"'+disabled+'>Reload saved pitches</button></div></details>';
+}
+function renderHSPitchBuilder(target){
+ if(recruitingStage()!=='hs' || !SESSION?.team)return '';
+ const state=ensureHSPitchesLoaded();
+ const selected=target || DB.prospects[UI.hsBuildProspect];
+ const values=NZCFLHSPitchLibrary.topValues(selected);
+ const options=!target?'<label>Player<select class="rb-input" id="rb-hs-build-player" style="display:block;width:100%;"><option value="">Choose a player</option>'+Object.values(DB.prospects).filter(p=>!p.commitTeam).sort((a,b)=>a.rank-b.rank).map(p=>'<option value="'+escapeHtml(p.id)+'"'+(p.id===UI.hsBuildProspect?' selected':'')+'>#'+escapeHtml(p.rank)+' '+escapeHtml(p.name+' · '+p.position)+'</option>').join('')+'</select></label>':'';
+ return '<details style="border:1px solid var(--hairline);border-radius:8px;padding:12px;margin-bottom:12px;" id="rb-hs-pitch-builder"'+(UI.hsBuilderOpen?' open':'')+'><summary style="cursor:pointer;">Build from my saved pitches</summary><div style="display:grid;gap:10px;margin-top:12px;">'+options+
+ '<label>Offer type<select class="rb-input" id="rb-hs-build-type" style="display:block;width:100%;"><option value="scholarship"'+(UI.hsBuildType!=='walkon'?' selected':'')+'>Scholarship</option><option value="walkon"'+(UI.hsBuildType==='walkon'?' selected':'')+'>Walk-On</option></select></label>'+
+ '<p style="font-size:12px;margin:0;color:var(--slate);">'+(selected?'Top values: '+escapeHtml(values.map(f=>f.label).join(' · ') || 'Not available'):'Choose a player to see their top values.')+'</p>'+
+ '<p style="font-size:12px;margin:0;">Edit your draft below before posting, including player-specific promises and visits. Manage or import your saved paragraphs in My Offers.</p>'+
+ (state.error?'<p role="alert" style="color:var(--alert);">'+escapeHtml(state.error)+' <button class="rb-btn" id="rb-retry-hs-pitches">Retry</button></p>':'')+
+ '<button class="rb-btn" id="rb-build-hs-pitch"'+(!state.loaded || state.loading || UI.submitting || offersLocked()?' disabled':'')+'>'+(state.loading?'Loading pitches…':'Build offer draft')+'</button></div></details>';
+}
+function buildHSPitchDraft(){
+ if(recruitingStage()!=='hs' || UI.submitting || offersLocked())return;
+ const field=document.getElementById('rb-sheet-text'),error=document.getElementById('rb-submit-error');
+ try{
+  const state=currentHSPitches();if(!state.loaded)throw Error('Load your saved pitches first.');
+  const p=DB.prospects[UI.submitTargetId || UI.hsBuildProspect];
+  if(p?.commitTeam)throw Error('This player has already committed.');
+  const built=NZCFLHSPitchLibrary.build(SESSION.team,p,state.library,UI.hsBuildType || 'scholarship');
+  if(field.value.trim() && !window.confirm('Replace the current draft with your saved pitches?'))return;
+  field.value=built.text;captureOfferDraft();error.textContent='';field.focus();
+ }catch(e){if(error)error.textContent=e.message;}
+}
+function bindHSPitches(){
+ const editor=document.getElementById('rb-hs-pitch-editor');if(editor)editor.ontoggle=()=>{UI.hsPitchEditorOpen=editor.open;};
+ document.querySelectorAll('[data-hs-pitch-section]').forEach(el=>el.ontoggle=()=>{UI.hsPitchSections ||= {};UI.hsPitchSections[el.dataset.hsPitchSection]=el.open;});
+ document.querySelectorAll('[data-hs-pitch-body]').forEach(el=>el.oninput=()=>{currentHSPitches().draft.paragraphs[el.dataset.hsPitchBody]=el.value;});
+ const save=document.getElementById('rb-save-hs-pitches');if(save)save.onclick=saveHSPitches;
+ const retry=document.getElementById('rb-retry-hs-pitches');if(retry)retry.onclick=()=>loadHSPitches();
+ const reload=document.getElementById('rb-reload-hs-pitches');if(reload)reload.onclick=()=>{
+  const state=currentHSPitches();if(state.draft && JSON.stringify(state.draft)!==JSON.stringify(state.library) && !window.confirm('Discard unsaved pitch edits and reload?'))return;
+  loadHSPitches(true);
+ };
+ const file=document.getElementById('rb-hs-pitch-csv');if(file)file.onchange=async()=>{
+  const selected=file.files[0],state=currentHSPitches();if(!selected)return;
+  try{
+   if(selected.size>250000)throw Error('Choose a pitch CSV under 250 KB.');
+   const imported=NZCFLHSPitchLibrary.importRows(parseCsvRows(await selected.text()),state.draft);
+   if(state!==currentHSPitches())return;
+   if(Object.values(state.draft.paragraphs).some(p=>p.trim()) && !window.confirm('Replace matching value paragraphs with the CSV?'))return;
+   state.draft=imported.library;state.error='';state.status='Imported '+imported.count+' paragraphs. Review them, then save your pitches.';
+  }catch(e){state.error=e.message;}
+  finally{file.value='';if(state===currentHSPitches())refreshHSPitchView();}
+ };
+ const builder=document.getElementById('rb-hs-pitch-builder');if(builder)builder.ontoggle=()=>{UI.hsBuilderOpen=builder.open;};
+ const player=document.getElementById('rb-hs-build-player');if(player)player.onchange=()=>{captureOfferDraft();UI.hsBuildProspect=player.value;render();};
+ const type=document.getElementById('rb-hs-build-type');if(type)type.onchange=()=>{UI.hsBuildType=type.value;};
+ const build=document.getElementById('rb-build-hs-pitch');if(build)build.onclick=buildHSPitchDraft;
+}
+
 function renderMyOffers(){
   if (!SESSION){
     return '<div class="rb-card" style="padding:32px;text-align:center;color:var(--slate);">Log in to view your offers.</div>';
@@ -4126,6 +4228,7 @@ function renderMyOffers(){
   let html = '<div class="rb-cpr-board-heading rb-my-offers-heading"><div><div class="rb-h" style="font-size:20px;margin-bottom:4px;">My Offers</div><div class="rb-my-offers-subtitle">'+rows.length+' offer'+(rows.length===1?'':'s')+' from '+escapeHtml(SESSION.team)+'.</div></div><div class="rb-card rb-cpr-submit-wrap"><button type="button" class="rb-btn rb-jump-rescind" id="rb-jump-rescind">Jump to Rescind Center</button></div></div>';
   html += '<label class="rb-toggle" style="margin-bottom:16px;"><span>Active only (uncommitted, not rescinded)</span><input type="checkbox" id="rb-my-offers-active" '+(UI.myOffersActiveOnly?'checked':'')+'><span class="rb-switch-track"><span class="rb-switch-thumb"></span></span></label>';
   html += renderScholarshipTemplateEditor();
+  html += renderHSPitchEditor();
   html += renderVisitLedger();
   html += '<div class="rb-card" style="padding:18px 20px;margin-bottom:14px;">';
   html += renderPositionCounts(rows, function(row){ return row.prospect && row.prospect.position; }, filterKey);
@@ -5268,6 +5371,7 @@ function renderSubmitModal(){
       '</div>' +
       (recruitingStage() === 'cpr' && !target ? '<div class="rb-cpr-offer-identity"><label>Player name (if not clear in offer)<input class="rb-input" id="rb-cpr-offer-name" value="' + escapeHtml(draft.name || '') + '" /></label><label>Position<select class="rb-input" id="rb-cpr-offer-position"><option value="">Detect from offer</option>' + Object.keys(NZCFLCprRules.thresholds).map(pos=>'<option' + (draft.position === pos ? ' selected' : '') + '>' + pos + '</option>').join('') + '</select></label></div>' : '') +
       '<p id="rb-submit-error" role="alert" style="color:var(--alert);font-size:12px;"></p>' +
+      renderHSPitchBuilder(target) +
       '<textarea class="rb-textarea rb-scrollbar" id="rb-sheet-text" rows="10" placeholder="' + escapeHtml(placeholder) + '" ' + (locked ? 'disabled' : '') + '>' + escapeHtml(draft.text || '') + '</textarea>' +
       (pitchOffer || recruitingStage() === 'cpr' ? '<div id="rb-pitch-count" role="status" class="rb-transfer-limit">0 / 800 pitch words · include your own header</div>' : '') +
       '<div style="display:flex;justify-content:flex-end;gap:8px;margin-top:14px;">' +
@@ -5567,6 +5671,7 @@ function bindEvents(){
   const archiveButton=document.getElementById('rb-archive-cycle');if(archiveButton)archiveButton.onclick=async function(){archiveButton.disabled=true;await archiveCurrentCycle();};
   restoreRescindDraft();
   bindScholarshipTemplates();
+  bindHSPitches();
   const bulkOffer=document.getElementById('rb-offer-all-shown');if(bulkOffer)bulkOffer.onclick=requestBulkOffers;
   const cancelBulk=document.getElementById('rb-cancel-bulk-offers');if(cancelBulk)cancelBulk.onclick=function(){if(!UI.submitting){UI.pendingBulkOffers=null;render();}};
   const confirmBulk=document.getElementById('rb-confirm-bulk-offers');if(confirmBulk)confirmBulk.onclick=submitBulkOffers;
