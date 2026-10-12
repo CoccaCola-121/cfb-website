@@ -1022,7 +1022,7 @@ function queueRemoteSave(){
   remoteSaveTimer = setTimeout(saveDBRemote, 350);
 }
 
-async function saveDBRemote(){
+async function saveDBRemote(strict=false){
   if(remoteSaveTimer){clearTimeout(remoteSaveTimer);remoteSaveTimer=null;}
   if (settingsDraft && !settingsSaving) return;
   if (!apiAvailable()) return;
@@ -1030,16 +1030,18 @@ async function saveDBRemote(){
   const localStamp = Date.now();
   lastRemoteSaveAt = localStamp;
   try {
-    const response=await fetch('/api/league/state', {
+    const options={
       method: 'PUT',
       credentials: 'include',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ state: payload, expectedUpdatedAt:DB.updatedAt || null })
-    });
-    const saved=await response.json();
+    };
+    const result=strict?await offerRequest('/api/league/state',options):null;
+    const response=result?result.response:await fetch('/api/league/state',options);
+    const saved=result?result.data:await response.json();
     if(!response.ok || !saved.ok)throw Error(saved.error || 'Changes were not saved.');
     DB.updatedAt=saved.state.updatedAt;
-  } catch (e) { UI.lastSummary={errorText:e.message || 'Changes were not saved. Please retry.'}; render(); }
+  } catch (e) { if(strict)throw e; UI.lastSummary={errorText:e.message || 'Changes were not saved. Please retry.'}; render(); }
 }
 
 async function saveDBNow(){
@@ -2872,12 +2874,38 @@ function parseOfferSheet(rawText){
   };
 }
 
+// Bound both the request and response-body read: either can stall independently.
+async function offerRequest(url, options={}, timeoutMs=15000){
+  const controller=new AbortController();
+  let timer;
+  const timeout=new Promise((resolve,reject)=>{
+    timer=setTimeout(()=>{
+      const error=Error('The server did not confirm your offer in time. Your draft is saved; check My Offers before retrying.');
+      error.retryable=true;
+      reject(error);
+      controller.abort();
+    },timeoutMs);
+  });
+  try {
+    return await Promise.race([
+      (async()=>{const response=await fetch(url,{...options,signal:controller.signal});const data=await response.json();return {response,data};})(),
+      timeout
+    ]);
+  }finally{clearTimeout(timer);}
+}
+
+function finishOfferSubmission(quickId){
+  UI.submitting=false;
+  if(quickId){render();return;}
+  const button=document.getElementById('rb-submit-sheet-btn');
+  if(button){button.disabled=offersLocked();button.textContent=button.disabled?'Offers locked':'Post offer';}
+}
+
 async function readCprBoard(){
   for (let attempt=0; attempt<3; attempt++){
     try {
-      const response=await fetch('/api/league/state',{credentials:'include',cache:'no-store'});
+      const {response,data}=await offerRequest('/api/league/state',{credentials:'include',cache:'no-store'});
       if (!response.ok) throw Error('Board unavailable');
-      const data=await response.json();
       if (!data || !data.state) throw Error('Board unavailable');
       return data;
     } catch(error){
@@ -2947,12 +2975,14 @@ async function submitCompactCpr(rawText,quickId,quickType){
   const body={requestId:crypto.randomUUID(),prospectId:quickId || UI.submitTargetId,text:rawText,quick:!!quickId,quickType:quickId ? (quickType || 'walkon') : undefined,name:name?.value || '',position:position?.value || '',promises:extractPromises(rawText)};
   if(quickId && quickType==='scholarship' && UI.quickTemplate?.useTemplate){body.template=UI.quickTemplate.template;body.promiseChoices=UI.quickTemplate.promiseChoices;}
   UI.submitting=true;
+  const submitButton=document.getElementById('rb-submit-sheet-btn');
+  if(submitButton){submitButton.disabled=true;submitButton.textContent='Posting...';}
   try{
     let data;
     for(let attempt=0;attempt<3;attempt++){
       try{
-        const response=await fetch('/api/offers/submit',{method:'POST',credentials:'include',headers:{'content-type':'application/json'},body:JSON.stringify(body)});
-        data=await response.json();
+        const result=await offerRequest('/api/offers/submit',{method:'POST',credentials:'include',headers:{'content-type':'application/json'},body:JSON.stringify(body)});
+        const response=result.response;data=result.data;
         if(!response.ok || !data.ok){const error=Error(data.error || 'Could not save offer.');error.retryable=response.status>=500 || response.status===429;throw error;}
         break;
       }catch(error){if(error.retryable===false || error.retryable==null && error.message && !/fetch|network|json|token/i.test(error.message) || attempt===2)throw error;await new Promise(resolve=>setTimeout(resolve,500*(attempt+1)));}
@@ -2964,7 +2994,7 @@ async function submitCompactCpr(rawText,quickId,quickType){
     UI.showSubmitModal=false;UI.submitTargetId=null;UI.lastSummary={matched:1,unmatched:0,total:1,dismissAt:Date.now()+6000};
     UI.submitting=false;render();
   }catch(error){if(quickId)UI.lastSummary={errorText:error.message};else {const node=document.getElementById('rb-submit-error');if(node)node.textContent=error.message;}}
-  finally{UI.submitting=false;if(quickId)render();}
+  finally{finishOfferSubmission(quickId);}
 }
 
 async function submitCprOffer(rawText, quickId, quickType){
@@ -2979,6 +3009,8 @@ async function submitCprOffer(rawText, quickId, quickType){
   const targetId=quickId || UI.submitTargetId;
   const requestOfferId=uid('o');
   UI.submitting=true;
+  const submitButton=document.getElementById('rb-submit-sheet-btn');
+  if(submitButton){submitButton.disabled=true;submitButton.textContent='Posting...';}
   try {
     for(let attempt=0;attempt<4;attempt++){
       let snapshot;
@@ -3009,8 +3041,8 @@ async function submitCprOffer(rawText, quickId, quickType){
           lastOfferWriteAt=Date.now();
           let response,saved;
           try {
-            response=await fetch('/api/league/state',{method:'PUT',credentials:'include',headers:{'content-type':'application/json'},body:JSON.stringify({state:leagueStatePayload(),expectedUpdatedAt:current.updatedAt || null})});
-            saved=await response.json();
+            const result=await offerRequest('/api/league/state',{method:'PUT',credentials:'include',headers:{'content-type':'application/json'},body:JSON.stringify({state:leagueStatePayload(),expectedUpdatedAt:current.updatedAt || null})});
+            response=result.response;saved=result.data;
           }catch(e){const error=Error('The server could not confirm your offer. Your draft is saved; check My Offers before retrying.');error.retryable=true;throw error;}
           if(!response.ok || !saved.ok){const error=Error(saved.error || 'Could not save your offer. Your draft is saved.');error.retryable=[409,429,500,502,503,504].includes(response.status);throw error;}
           mergeLeagueState(saved.state);
@@ -3029,10 +3061,11 @@ async function submitCprOffer(rawText, quickId, quickType){
   }catch(e){
     if(quickId){UI.lastSummary={errorText:e.message};}
     else {const error=document.getElementById('rb-submit-error');if(error)error.textContent=e.message;}
-  }finally{UI.submitting=false;if(quickId)render();}
+  }finally{finishOfferSubmission(quickId);}
 }
 
 async function submitOfferSheet(rawText){
+  if(UI.submitting)return;
   const draftKey=offerDraftKey();
   captureOfferDraft();
   if (recruitingStage() === 'cpr') return submitCprOffer(rawText);
@@ -3050,6 +3083,7 @@ async function submitOfferSheet(rawText){
     if (status) { status.textContent = pitchError; status.style.color = 'var(--alert)'; }
     return;
   }
+  const snapshot=copySettings(DB);
   UI.submitting = true; render();
   try {
     const parsed = parseOfferSheet(rawText);
@@ -3067,16 +3101,22 @@ async function submitOfferSheet(rawText){
         unmatched++;
       }
     }
+    if(limitError)throw Error(limitError);
+    // Do not clear the draft or dismiss the form until persistence is confirmed.
+    setStored(DB_KEY, JSON.stringify(DB), true);
+    await saveDBRemote(true);
+    if(matched || unmatched)clearOfferDraft(draftKey);
+    UI.showSubmitModal=false;UI.submitTargetId=null;
     UI.lastSummary = limitError ? { errorText: limitError } : { matched: matched, unmatched: unmatched, total: parsed ? 1 : 0, dismissAt: Date.now() + 6000 };
   } catch (e) {
-    UI.lastSummary = { error: true };
+    Object.keys(DB).forEach(key=>delete DB[key]);Object.assign(DB,snapshot);
+    setStored(DB_KEY, JSON.stringify(DB), true);
+    const error=document.getElementById('rb-submit-error');
+    if(error)error.textContent=e.message || 'Could not save your offer. Your draft is saved; check My Offers before retrying.';
+  } finally {
+    finishOfferSubmission();
+    if(!UI.showSubmitModal)render();
   }
-  UI.submitting = false;
-  UI.showSubmitModal = false;
-  UI.submitTargetId = null;
-  await saveDBNow();
-  if (UI.lastSummary && (UI.lastSummary.matched || UI.lastSummary.unmatched)) clearOfferDraft(draftKey);
-  render();
 }
 
 function assignUnmatched(id, rankValue){
@@ -4998,6 +5038,8 @@ async function amendOwnOffer(pid,oid,action,confirmed){
   const message='Add an offer header for '+p.name+'? The pitch will stay unchanged.';
   if(!confirmed && !window.confirm(message))return;
   UI.submitting=true;
+  const submitButton=document.getElementById('rb-submit-sheet-btn');
+  if(submitButton){submitButton.disabled=true;submitButton.textContent='Posting...';}
   try {
     const response=await fetch('/api/offers/amend',{method:'POST',credentials:'include',headers:{'content-type':'application/json'},body:JSON.stringify({prospectId:pid,offerId:oid,action,expectedText:o.text})});
     const data=await response.json().catch(function(){throw Error('The server is temporarily unavailable. Your changes were not confirmed; please retry.');});
@@ -5436,6 +5478,8 @@ async function removePlayerThread(pid){
   if(!canUseDangerZone() || !p || UI.submitting)return;
   UI.pendingRemovePlayer=null;
   UI.submitting=true;
+  const submitButton=document.getElementById('rb-submit-sheet-btn');
+  if(submitButton){submitButton.disabled=true;submitButton.textContent='Posting...';}
   try{
     const response=await fetch('/api/players/remove',{method:'POST',credentials:'include',headers:{'content-type':'application/json'},body:JSON.stringify({prospectId:pid,expectedUpdatedAt:DB.updatedAt})});
     const data=await response.json().catch(()=>{throw Error('The server is unavailable. Removal was not confirmed.');});
