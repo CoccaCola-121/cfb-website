@@ -1,4 +1,5 @@
 import {teamKey} from './teams-util.js';
+import '../../offer-amendments.js';
 const same=(a,b)=>JSON.stringify(a)===JSON.stringify(b);
 const visitBody=text=>String(text || '').replace(/(?:Campus|School)\s+Visit[^\n]*?(?=\s+(?:Campus|Prestige|Education|Playing Time|Tradition|Coach|Pro Potential):|\n|$)/ig,'').replace(/Coach\s+Visit(?:\s*\(\s*\d+\s*\/\s*10\s*\))?/ig,'').replace(/\s+/g,' ').trim();
 export function coachStateError(previous,incoming,user){
@@ -26,7 +27,8 @@ export function coachStateError(previous,incoming,user){
    if(previous.recruitingStage!=='hs' && !same(old.visits,next.visits))return 'Visits are only available in high school recruiting.';
    if((old.text!==next.text || !same(old.visits,next.visits)) && globalThis.NZCFLOfferWindow.locked(previous))return 'Offers are locked.';
    next.editHistory=old.editHistory || [];
-   if(!same(old.visits,next.visits))next.editHistory=[...next.editHistory,{id:'eh_'+crypto.randomUUID(),editedAt:Date.now(),editor:user.team,changes:['Visits updated: '+JSON.stringify(next.visits)]}].slice(-20);
+   const visitChanges=globalThis.NZCFLOfferAmendments.visitChanges(old.visits || {},next.visits || {});
+   if(visitChanges.length)next.editHistory=[...next.editHistory,{id:'eh_'+crypto.randomUUID(),editedAt:Date.now(),editor:user.team,changes:visitChanges}].slice(-20);
    if(old.visits?.coach && !next.visits?.coach || old.visits?.campus && !next.visits?.campus)return 'Visits cannot be removed.';
   }
   if(after.filter(own).length>1)return 'Only one offer per team and player is allowed.';

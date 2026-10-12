@@ -2336,8 +2336,7 @@ function syncCampusVisitText(text, visits){
   if (campusRe.test(out)){
     out = phrase ? out.replace(campusRe, phrase) : out.replace(campusRe, '').replace(/[ \t]{2,}/g, ' ');
   } else if (phrase) {
-    const heading = out.search(/\b(?:Campus|Prestige|Education|Playing Time|Tradition|Coach|Pro Potential):/);
-    out = heading >= 0 ? out.slice(0, heading).trimEnd() + '\n' + phrase + '\n' + out.slice(heading) : out.trimEnd() + '\n' + phrase;
+    out = NZCFLOfferAmendments.insertVisit(out,phrase);
   }
   return out.trim();
 }
@@ -2349,8 +2348,7 @@ function syncCoachVisitText(text, visits){
   if (coachRe.test(out)){
     out = visits.coach ? out.replace(coachRe, 'Coach Visit') : out.replace(coachRe, '').replace(/[ \t]{2,}/g, ' ');
   } else if (visits.coach) {
-    const heading = out.search(/\b(?:Campus|Prestige|Education|Playing Time|Tradition|Coach|Pro Potential):/);
-    out = heading >= 0 ? out.slice(0, heading).trimEnd() + '\nCoach Visit\n' + out.slice(heading) : out.trimEnd() + '\nCoach Visit';
+    out = NZCFLOfferAmendments.insertVisit(out,'Coach Visit');
   }
   return out.trim();
 }
@@ -5065,6 +5063,7 @@ function renderOfferAmendments(o,p,hideUpgrade){
   const h=NZCFLOfferAmendments.header(o.text);
   const attrs=' data-amend-prospect="'+escapeHtml(p.id)+'" data-amend-offer="'+escapeHtml(o.id)+'"';
   let buttons='';
+  if(SESSION.discordId==='959185641613164604' && NZCFLOfferAmendments.canFixVisitPlacement(o,p,recruitingStage()))buttons+='<button class="rb-btn" data-amend-action="fix-visit-placement"'+attrs+'>Move campus visit above pitch</button>';
   if(NZCFLOfferAmendments.canAddMissingPitch(o,p,recruitingStage()))buttons+='<button class="rb-btn rb-btn-gold" data-add-missing-pitch="1"'+attrs+'>Add missing pitch</button>';
   if(h.offerLine<0 || h.typeLine<0)buttons+='<button class="rb-btn" data-amend-action="header"'+attrs+'>Add offer header</button>';
   if(h.offerLine>=0 && h.typeLine>h.offerLine)buttons+='<button class="rb-btn" data-edit-offer-header="1"'+attrs+'>Edit offer header</button>';
@@ -5075,6 +5074,7 @@ async function amendOwnOfferConfirmedUpgrade(pid,oid){ return amendOwnOffer(pid,
 async function amendOwnOffer(pid,oid,action,confirmed){
   const p=DB.prospects[pid],o=findOfferById(pid,oid);
   if (!p || !o || UI.submitting) return;
+  if(action==='fix-visit-placement')confirmed=true;
   if(action==='upgrade' && !confirmed){ UI.pendingUpgrade={prospectId:pid,offerId:oid}; render(); return; }
   const message='Add an offer header for '+p.name+'? The pitch will stay unchanged.';
   if(!confirmed && !window.confirm(message))return;
@@ -5086,7 +5086,7 @@ async function amendOwnOffer(pid,oid,action,confirmed){
     const data=await response.json().catch(function(){throw Error('The server is temporarily unavailable. Your changes were not confirmed; please retry.');});
     if(!response.ok || !data.ok)throw Error(data.error || 'Could not update offer.');
     mergeLeagueState(data.state);
-    UI.lastSummary={errorText:action==='upgrade'?'Offer upgraded to scholarship.':'Offer header added.',dismissAt:Date.now()+6000};
+    UI.lastSummary={errorText:action==='fix-visit-placement'?'Campus visit moved above the pitch.':action==='upgrade'?'Offer upgraded to scholarship.':'Offer header added.',dismissAt:Date.now()+6000};
   }catch(e){UI.lastSummary={errorText:e.message};}
   finally{UI.submitting=false;render();}
 }
@@ -5212,7 +5212,7 @@ function renderOfferBlock(o, opts){
     o.editHistory.slice().reverse().forEach(function(entry){
       html += '<div style="border-top:1px solid var(--hairline);padding-top:6px;font-size:11px;color:var(--slate);line-height:1.45;">';
       html += '<div class="rb-mono" style="color:var(--gold);">' + escapeHtml(new Date(entry.editedAt).toLocaleString()) + '</div>';
-      (entry.changes || []).forEach(function(change){ html += '<div>' + escapeHtml(change) + '</div>'; });
+      (entry.changes || []).forEach(function(change){ html += '<div>' + escapeHtml(NZCFLOfferAmendments.readableEditChange(change)) + '</div>'; });
       html += '</div>';
     });
     html += '</div></details>';

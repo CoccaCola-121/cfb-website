@@ -14,7 +14,7 @@
    const link=node('a','Link to player');link.href='?cycle='+encodeURIComponent($('cycle').value)+'&player='+encodeURIComponent(p.id);const linkRow=node('p');linkRow.append(link);details.append(linkRow);
    for(const o of archive.offers[p.id] || []){
     const offer=node('article');offer.append(node('h3',o.team+(o.rescinded?' · Rescinded':'')),node('p',o.coach || ''),node('pre',o.text || ''));
-    if(o.editHistory?.length){const history=node('details');history.append(node('summary','Edit history'));for(const entry of o.editHistory)history.append(node('p',(entry.editedAt?new Date(entry.editedAt).toLocaleString()+': ':'')+(entry.changes || []).join('; ')));offer.append(history);}
+    if(o.editHistory?.length){const history=node('details');history.append(node('summary','Edit history'));for(const entry of o.editHistory)history.append(node('p',(entry.editedAt?new Date(entry.editedAt).toLocaleString()+': ':'')+(entry.changes || []).map(change=>NZCFLOfferAmendments.readableEditChange(change)).join('; ')));offer.append(history);}
     details.append(offer);
    }
    card.append(details);$('results').append(card);
