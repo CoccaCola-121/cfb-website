@@ -7,6 +7,8 @@ async function context(request,env){
  if(!user?.team)return null;
  if(!env.LEAGUE_DB)throw Error('Pitch storage is unavailable. Try again later.');
  await env.LEAGUE_DB.prepare('CREATE TABLE IF NOT EXISTS hs_pitch_libraries (key TEXT PRIMARY KEY, content TEXT NOT NULL, version INTEGER NOT NULL)').run();
+ // Deliberately independent of the season/active recruiting cycle.
+ // A different coach or team gets a separate private library.
  return {key:user.discordId+':'+teamKey(user.team)};
 }
 export async function onRequestGet({request,env}){

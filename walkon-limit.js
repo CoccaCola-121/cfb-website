@@ -16,6 +16,7 @@
    return result;
  }
  function error(state,p,offer){
+   if((state.recruitingStage || 'hs')==='hs' && Number(p?.rank)>=1 && Number(p.rank)<=500 && isWalkon(state,p,offer))return 'High School recruits ranked 1–500 require a scholarship offer.';
    return enabled(state) && p && isWalkon(state,p,offer) && (counts(state)[key(offer.team)] || 0)>=15 ? 'This team has reached its 15 walk-on commitment limit.' : '';
  }
  function apply(state,now=Date.now()){

@@ -13,7 +13,7 @@ const source = script.slice(0, boot) + `
   globalThis.app = { DB, UI, ownOfferTypeBadge, renderOwnTypeFilter, mergeLeagueState, renderOfferAmendments, captureOfferDraft, readOfferDraft, clearOfferDraft, offerDraftKey, applyConditionalRescinds, readRescindRuleForm, validateRescindRuleDraft, requestQuickWalkon, renderQuickWalkonConfirm, canQuickOfferWalkon, quickOfferWalkon, renderQuickWalkon, renderProspectBoardCard, scheduleSummaryCountdown, dismissSummaryBanner, bindFloatingSubmit, extractPromises, cleanDisplayPromises, readCprBoard, updateBucksEntries, renderBucksSettings, renderCprProfile, cprPreviousSchool, ensureCprScholarshipThreads, renderAutoCommitSettings, stageAutoCommits, readScholarshipCapacity, buildPromiseArchive, parseCsvRows, offerCountForProspect, refreshScholarshipHistory, submitCprOffer, renderSubmitModal, createCprPlayer, loadClassData, resetOfferWindow, setOffersLocked, offersLocked, pendingCommitChanges, restoreSettingsDraft, renderOfferBlock, renderRescindFilterFields, renderVisitLedger, visibleBoardProspectIds, setRecruitingStage, requestReset, approveDangerReset, beginSettingsDraft, hasSettingsChanges, canLeaveSettings, saveSettingsChanges, saveDBNow, leagueStatePayload, mergeSettingsValue, updateCommitsFromSheet, runBackupNow, setTransferFilter, renderTransferFilters, renderClassSetup, requestManualCommitOverride, applyManualCommitOverride, requestClearCommit, clearManualCommitOverride, applyManualCommitOverrides, clearRecruitingBoard, findProspectFromSheetRow, transferCardStyle, parseFullClass, prospectFromRosterRow, confirmTransferImport, releaseSingleStageBoard, addOfferDirect, render, renderNav, navigateTo, applyRoute, setReady(){ dbReady = true; sessionReady = true; }, renderFeed, renderBoardSearchResults, renderTeamsPage,
     renderThreadProspectList, renderProspectDetail, builtInTeamBranding, getTeamBranding, activeTeamBrands,
     mobileRecruitName, renderRecruitName, renderMyOffers, renderCommitsForTeam, renderTeamOffers, renderConditionalRescinds, renderRecruitValues, teamBorderColor, bindEvents, applyDefaultClassData, releaseWave1, releaseWave2,
-    currentHSPitches, renderHSPitchEditor, renderHSPitchBuilder, buildHSPitchDraft, parseOfferSheet,
+    currentHSPitches, findHSPitchPlayer, renderHSPitchEditor, renderHSPitchBuilder, buildHSPitchDraft, parseOfferSheet,
     setSession(value){ SESSION = value; } };
 })();`;
 
@@ -1022,6 +1022,22 @@ test('team save notice clears on navigation and does not return with browser his
 });
 
 
+test('HS name lookup reveals position only after two errors',()=>{
+ const {app,context}=harness();app.DB.recruitingStage='hs';
+ const library=context.NZCFLHSPitchLibrary.clean({});
+ Object.assign(app.currentHSPitches(),{loaded:true,library,draft:library});
+ app.DB.prospects={r1:{id:'r1',rank:1,name:'John Smith',position:'WR'},r2:{id:'r2',rank:2,name:'John Smith',position:'DL'}};
+ app.UI.hsBuildName='John Smith';
+ assert.doesNotMatch(app.renderHSPitchBuilder(null),/id="rb-hs-build-position"/);
+ app.findHSPitchPlayer();assert.equal(app.UI.hsLookupFailures,1);
+ assert.doesNotMatch(app.renderHSPitchBuilder(null),/id="rb-hs-build-position"/);
+ app.findHSPitchPlayer();assert.equal(app.UI.hsLookupFailures,2);
+ assert.match(app.renderHSPitchBuilder(null),/id="rb-hs-build-position"/);
+ app.UI.hsBuildPosition='DL';app.findHSPitchPlayer();assert.equal(app.UI.hsBuildProspect,'r2');
+ assert.doesNotMatch(app.renderHSPitchBuilder(null),/<option value="walkon"/);
+ assert.doesNotMatch(app.renderHSPitchBuilder(null),/<select[^>]*id="rb-hs-build-player"/);
+});
+
 test('HS pitch library builds a saved editable draft without posting or silently replacing text',()=>{
  const {app,context,elements}=harness();
  app.DB.recruitingStage='hs';
@@ -1041,7 +1057,7 @@ test('HS pitch library builds a saved editable draft without posting or silently
  elements['rb-sheet-text'].value='My personalized pitch';
  app.buildHSPitchDraft();
  assert.equal(elements['rb-sheet-text'].value,'My personalized pitch');
- context.window.confirm=()=>true;app.UI.hsBuildType='walkon';app.buildHSPitchDraft();
+ context.window.confirm=()=>true;app.DB.prospects.r1.rank=501;app.UI.hsBuildType='walkon';app.buildHSPitchDraft();
  assert.match(elements['rb-sheet-text'].value,/\nWalk-On\n/);
  assert.match(app.renderSubmitModal(),/Build from my saved pitches/);
  assert.match(app.renderHSPitchEditor(),/Import pitch CSV/);

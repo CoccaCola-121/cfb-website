@@ -7,6 +7,16 @@
   {key:'tradition',label:'Tradition'}
  ];
  const normalize=value=>String(value || '').replace(/[^a-z]/gi,'').toLowerCase();
+ const canWalkon=p=>Number(p?.rank)>500;
+ function findPlayer(prospects,name,position=''){
+  const key=value=>String(value || '').normalize('NFKC').toLowerCase().replace(/[’‘]/g,"'").replace(/\s+/g,' ').trim();
+  if(!key(name))throw Error('Enter the player’s full name.');
+  const matches=Object.values(prospects || {}).filter(p=>key(p.name)===key(name) && (!position.trim() || key(p.position)===key(position)));
+  if(!matches.length)throw Error('No player found. Check the full name'+(position?' and position':'')+' and try again.');
+  if(matches.length>1)throw Error('More than one player has that name'+(position?' and position. Open the correct player’s page to build their offer.':'. Try again or use position when available.'));
+  if(matches[0].commitTeam)throw Error('This player has already committed.');
+  return matches[0];
+ }
  function clean(input){
   const paragraphs={};
   for(const field of fields){
@@ -44,6 +54,7 @@
  function build(team,prospect,input,type){
   if(!team || !prospect?.name || !prospect.rank)throw Error('Choose a High School player first.');
   if(type!=='scholarship' && type!=='walkon')throw Error('Choose Scholarship or Walk-On.');
+  if(type==='walkon' && !canWalkon(prospect))throw Error('High School recruits ranked 1–500 require a scholarship offer.');
   const values=topValues(prospect),library=clean(input);
   if(values.length!==3)throw Error('This player does not have three values yet. Paste an offer or wait for their values.');
   const missing=values.filter(f=>!stripHeading(library.paragraphs[f.key],f));
@@ -53,5 +64,5 @@
   const text=[header,type==='scholarship'?'Scholarship':'Walk-On',...values.map(f=>f.label+':\n'+stripHeading(library.paragraphs[f.key],f))].join('\n\n');
   return {text,values};
  }
- root.NZCFLHSPitchLibrary=Object.freeze({fields,clean,importRows,topValues,build});
+ root.NZCFLHSPitchLibrary=Object.freeze({fields,clean,importRows,topValues,build,findPlayer,canWalkon});
 })(globalThis);

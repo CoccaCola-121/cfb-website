@@ -1,6 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import '../hs-pitch-library.js';
+import '../cpr-rules.js';
+import '../walkon-limit.js';
 import {onRequestGet,onRequestPost} from '../functions/api/hs-pitch-library.js';
 import {signSession} from '../functions/_lib/auth.js';
 const L=globalThis.NZCFLHSPitchLibrary;
@@ -9,12 +11,13 @@ const library={paragraphs:{proPotential:'I promise you will be drafted.',winning
 
 test('HS builder assembles the top three values and an editable offer header',()=>{
  for(const type of ['scholarship','walkon']){
-  const result=L.build('Michigan State',p,library,type);
-  assert.equal(result.text,'Michigan State offers #1 Caspian Maction 54/90 DL from Pennsylvania\n\n'+(type==='scholarship'?'Scholarship':'Walk-On')+'\n\nPro Potential:\n'+library.paragraphs.proPotential+'\n\nWinning:\n'+library.paragraphs.winning+'\n\nCoach:\n'+library.paragraphs.coach);
+  const player={...p,rank:type==='walkon'?501:1};
+  const result=L.build('Michigan State',player,library,type);
+  assert.equal(result.text,'Michigan State offers #'+player.rank+' Caspian Maction 54/90 DL from Pennsylvania\n\n'+(type==='scholarship'?'Scholarship':'Walk-On')+'\n\nPro Potential:\n'+library.paragraphs.proPotential+'\n\nWinning:\n'+library.paragraphs.winning+'\n\nCoach:\n'+library.paragraphs.coach);
  }
  assert.deepEqual(L.topValues({values:{coach:.5,playingTime:.5,location:1,winning:.5}}).map(f=>f.key),['location','winning','playingTime']);
  assert.throws(()=>L.build('Michigan State',{...p,values:{location:null,coach:'',winning:undefined}},library,'scholarship'),/three values/);
- assert.throws(()=>L.build('Michigan State',p,{paragraphs:{}},'walkon'),/Pro Potential, Winning, Coach/);
+ assert.throws(()=>L.build('Michigan State',p,{paragraphs:{}},'scholarship'),/Pro Potential, Winning, Coach/);
  assert.throws(()=>L.build('Michigan State',p,library,'other'),/Scholarship or Walk-On/);
 });
 
@@ -54,6 +57,24 @@ test('pitch storage is private by coach/team, version checked, and unavailable a
  assert.equal((await (await call('b')).json()).library.paragraphs.coach,'');
  assert.equal((await call('a',{library:{paragraphs:{}},version:0})).status,409);
  assert.equal((await call('a',{library,version:-1})).status,400);
+ env.recruitingStage='cpr';
+ assert.equal((await (await call('a')).json()).library.paragraphs.coach,library.paragraphs.coach);
+ env.recruitingStage='hs';
+ assert.equal((await (await call('a')).json()).library.paragraphs.coach,library.paragraphs.coach);
  users.get('a').team='Nebraska';
  assert.equal((await (await call('a')).json()).library.paragraphs.coach,'');
 });
+
+ test('name lookup rejects spelling errors and duplicates and allows position disambiguation',()=>{
+  const players={r1:{id:'r1',name:'John Smith',position:'WR'},r2:{id:'r2',name:'John Smith',position:'DL'}};
+  assert.throws(()=>L.findPlayer(players,'Jon Smith'),/No player/);
+  assert.throws(()=>L.findPlayer(players,'John Smith'),/More than one/);
+  assert.equal(L.findPlayer(players,'  JOHN   SMITH ','wr').id,'r1');
+  assert.throws(()=>L.findPlayer(players,'John Smith','QB'),/No player/);
+  assert.throws(()=>L.build('Michigan State',p,library,'walkon'),/1–500/);
+  assert.throws(()=>L.build('Michigan State',{...p,rank:500},library,'walkon'),/1–500/);
+  for(const rank of [1,500])assert.match(globalThis.NZCFLWalkonLimit.error({recruitingStage:'hs'},{rank},{team:'Army',text:'Walk-On'}),/1–500/);
+  assert.equal(globalThis.NZCFLWalkonLimit.error({recruitingStage:'hs'},{rank:501},{team:'Army',text:'Walk-On'}),'');
+  assert.equal(globalThis.NZCFLWalkonLimit.error({recruitingStage:'hs'},{rank:1},{team:'Army',text:'Scholarship'}),'');
+  assert.equal(globalThis.NZCFLWalkonLimit.error({recruitingStage:'cpr'},{rank:1},{team:'Army',text:'Walk-On'}),'');
+ });

@@ -4161,7 +4161,7 @@ function renderHSPitchEditor(){
  const count=draft?Object.values(draft.paragraphs).filter(x=>x.trim()).length:0;
  const disabled=state.saving || state.loading?' disabled':'';
  return '<details class="rb-card" id="rb-hs-pitch-editor" style="padding:16px;margin-bottom:14px;"'+(UI.hsPitchEditorOpen?' open':'')+'><summary class="rb-h" style="cursor:pointer;">High School pitch library <span style="font:normal 12px var(--font-body, sans-serif);color:var(--slate);">'+count+' / 9 values</span></summary>'+
- '<p>Save a paragraph for each value. When offering a player, build an editable draft from their top three values.</p><p style="color:var(--slate);font-size:13px;">Private to your coach account and team. Headers are added automatically. Include your usual promises, then personalize them in the offer draft.</p>'+
+ '<p>Save a paragraph for each value. When offering a player, build an editable draft from their top three values.</p><p style="color:var(--slate);font-size:13px;">Saved for this coach account and team across recruiting cycles. Changing teams starts a separate library; a new coach cannot see yours. Headers are added automatically. Include your usual promises, then personalize them in the offer draft.</p>'+
  (draft?'<label style="display:block;margin:14px 0;">Import pitch CSV <input type="file" id="rb-hs-pitch-csv" accept=".csv,text/csv"'+disabled+' style="display:block;margin-top:6px;max-width:100%;"></label><p style="font-size:12px;color:var(--slate);">Column A: value name. Column B: paragraph. Import fills this editor; save when ready.</p>'+NZCFLHSPitchLibrary.fields.map(f=>'<details style="border-top:1px solid var(--hairline);padding:10px 0;" data-hs-pitch-section="'+f.key+'"'+(UI.hsPitchSections?.[f.key]?' open':'')+'><summary style="cursor:pointer;">'+escapeHtml(f.label)+'</summary><label style="display:block;margin-top:8px;"><span class="rb-mono" style="font-size:11px;color:var(--slate);">'+escapeHtml(f.label)+' paragraph</span><textarea class="rb-textarea" rows="6" maxlength="12000" data-hs-pitch-body="'+f.key+'"'+disabled+'>'+escapeHtml(draft.paragraphs[f.key])+'</textarea></label></details>').join(''):'<p>'+(state.loading?'Loading your pitches…':'Your pitches could not be loaded.')+'</p>')+
  (state.error?'<p role="alert" style="color:var(--alert);">'+escapeHtml(state.error)+'</p>':'')+(state.status?'<p role="status">'+escapeHtml(state.status)+'</p>':'')+
  '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px;"><button class="rb-btn rb-btn-gold" id="rb-save-hs-pitches"'+(!draft || state.saving || state.loading?' disabled':'')+'>'+(state.saving?'Saving…':'Save pitches')+'</button><button class="rb-btn" id="rb-reload-hs-pitches"'+disabled+'>Reload saved pitches</button></div></details>';
@@ -4171,20 +4171,32 @@ function renderHSPitchBuilder(target){
  const state=ensureHSPitchesLoaded();
  const selected=target || DB.prospects[UI.hsBuildProspect];
  const values=NZCFLHSPitchLibrary.topValues(selected);
- const options=!target?'<label>Player<select class="rb-input" id="rb-hs-build-player" style="display:block;width:100%;"><option value="">Choose a player</option>'+Object.values(DB.prospects).filter(p=>!p.commitTeam).sort((a,b)=>a.rank-b.rank).map(p=>'<option value="'+escapeHtml(p.id)+'"'+(p.id===UI.hsBuildProspect?' selected':'')+'>#'+escapeHtml(p.rank)+' '+escapeHtml(p.name+' · '+p.position)+'</option>').join('')+'</select></label>':'';
+ const walkon=NZCFLHSPitchLibrary.canWalkon(selected);
+ if(!walkon)UI.hsBuildType='scholarship';
+ const options=!target?'<label>Player name<input class="rb-input" id="rb-hs-build-name" placeholder="Enter full name" value="'+escapeHtml(UI.hsBuildName || '')+'" autocomplete="off"></label>'+((UI.hsLookupFailures || 0)>=2?'<label>Position (to distinguish matching names)<input class="rb-input" id="rb-hs-build-position" placeholder="e.g. WR" value="'+escapeHtml(UI.hsBuildPosition || '')+'"></label>':'')+'<button class="rb-btn" id="rb-hs-find-player">Find player</button>'+(UI.hsLookupError?'<p role="alert" style="color:var(--alert);margin:0;">'+escapeHtml(UI.hsLookupError)+'</p>':'')+(selected?'<p style="margin:0;">Found #'+escapeHtml(selected.rank)+' '+escapeHtml(selected.name+' · '+selected.position)+'</p>':''):'';
  return '<details style="border:1px solid var(--hairline);border-radius:8px;padding:12px;margin-bottom:12px;" id="rb-hs-pitch-builder"'+(UI.hsBuilderOpen?' open':'')+'><summary style="cursor:pointer;">Build from my saved pitches</summary><div style="display:grid;gap:10px;margin-top:12px;">'+options+
- '<label>Offer type<select class="rb-input" id="rb-hs-build-type" style="display:block;width:100%;"><option value="scholarship"'+(UI.hsBuildType!=='walkon'?' selected':'')+'>Scholarship</option><option value="walkon"'+(UI.hsBuildType==='walkon'?' selected':'')+'>Walk-On</option></select></label>'+
+ '<label>Offer type<select class="rb-input" id="rb-hs-build-type" style="display:block;width:100%;"><option value="scholarship"'+(UI.hsBuildType!=='walkon'?' selected':'')+'>Scholarship</option>'+(walkon?'<option value="walkon"'+(UI.hsBuildType==='walkon'?' selected':'')+'>Walk-On</option>':'')+'</select></label>'+(!walkon?'<p style="font-size:12px;margin:0;color:var(--slate);">Ranks 1–500 require a scholarship.</p>':'')+
  '<p style="font-size:12px;margin:0;color:var(--slate);">'+(selected?'Top values: '+escapeHtml(values.map(f=>f.label).join(' · ') || 'Not available'):'Choose a player to see their top values.')+'</p>'+
  '<p style="font-size:12px;margin:0;">Edit your draft below before posting, including player-specific promises and visits. Manage or import your saved paragraphs in My Offers.</p>'+
  (state.error?'<p role="alert" style="color:var(--alert);">'+escapeHtml(state.error)+' <button class="rb-btn" id="rb-retry-hs-pitches">Retry</button></p>':'')+
  '<button class="rb-btn" id="rb-build-hs-pitch"'+(!state.loaded || state.loading || UI.submitting || offersLocked()?' disabled':'')+'>'+(state.loading?'Loading pitches…':'Build offer draft')+'</button></div></details>';
 }
+function findHSPitchPlayer(){
+ captureOfferDraft();UI.hsBuilderOpen=true;
+ try{
+  const p=NZCFLHSPitchLibrary.findPlayer(DB.prospects,UI.hsBuildName,((UI.hsLookupFailures || 0)>=2?UI.hsBuildPosition:'') || '');
+  UI.hsBuildProspect=p.id;UI.hsLookupError='';
+  if(!NZCFLHSPitchLibrary.canWalkon(p))UI.hsBuildType='scholarship';
+ }catch(e){UI.hsBuildProspect=null;UI.hsLookupFailures=(UI.hsLookupFailures || 0)+1;UI.hsLookupError=e.message;}
+ render();
+}
 function buildHSPitchDraft(){
  if(recruitingStage()!=='hs' || UI.submitting || offersLocked())return;
+ if(!UI.submitTargetId && !UI.hsBuildProspect){findHSPitchPlayer();return;}
  const field=document.getElementById('rb-sheet-text'),error=document.getElementById('rb-submit-error');
  try{
   const state=currentHSPitches();if(!state.loaded)throw Error('Load your saved pitches first.');
-  const p=DB.prospects[UI.submitTargetId || UI.hsBuildProspect];
+  const p=UI.submitTargetId?DB.prospects[UI.submitTargetId]:NZCFLHSPitchLibrary.findPlayer(DB.prospects,UI.hsBuildName,((UI.hsLookupFailures || 0)>=2?UI.hsBuildPosition:'') || '');
   if(p?.commitTeam)throw Error('This player has already committed.');
   const built=NZCFLHSPitchLibrary.build(SESSION.team,p,state.library,UI.hsBuildType || 'scholarship');
   if(field.value.trim() && !window.confirm('Replace the current draft with your saved pitches?'))return;
@@ -4213,7 +4225,12 @@ function bindHSPitches(){
   finally{file.value='';if(state===currentHSPitches())refreshHSPitchView();}
  };
  const builder=document.getElementById('rb-hs-pitch-builder');if(builder)builder.ontoggle=()=>{UI.hsBuilderOpen=builder.open;};
- const player=document.getElementById('rb-hs-build-player');if(player)player.onchange=()=>{captureOfferDraft();UI.hsBuildProspect=player.value;render();};
+ for(const [id,key] of [['rb-hs-build-name','hsBuildName'],['rb-hs-build-position','hsBuildPosition']]){
+  const input=document.getElementById(id);if(!input)continue;
+  input.oninput=()=>{UI[key]=input.value;UI.hsBuildProspect=null;};
+  input.onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();findHSPitchPlayer();}};
+ }
+ const find=document.getElementById('rb-hs-find-player');if(find)find.onclick=findHSPitchPlayer;
  const type=document.getElementById('rb-hs-build-type');if(type)type.onchange=()=>{UI.hsBuildType=type.value;};
  const build=document.getElementById('rb-build-hs-pitch');if(build)build.onclick=buildHSPitchDraft;
 }
