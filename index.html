@@ -3064,11 +3064,52 @@ async function submitCprOffer(rawText, quickId, quickType){
   }finally{finishOfferSubmission(quickId);}
 }
 
+async function submitHighSchoolOffer(rawText){
+  const key=offerDraftKey();captureOfferDraft();
+  const parsed=parseOfferSheet(rawText);
+  const prospectId=UI.submitTargetId || (parsed?.rank?'r'+parsed.rank:null);
+  const text=parsed?.offerText || rawText;
+  // Reuse the request across automatic and manual retries, including refreshes.
+  const draft=readOfferDraft();
+  const signature=JSON.stringify([prospectId,text]);
+  const requestId=draft.requestSignature===signature && draft.requestId?draft.requestId:crypto.randomUUID();
+  Object.assign(draft,{requestSignature:signature,requestId});
+  try{window.localStorage.setItem(key,JSON.stringify(draft));}catch(e){}
+  UI.submitting=true;
+  const button=document.getElementById('rb-submit-sheet-btn');
+  if(button){button.disabled=true;button.textContent='Posting...';}
+  try{
+    let data;
+    for(let attempt=0;attempt<3;attempt++){
+      try{
+        const result=await offerRequest('/api/offers/high-school',{method:'POST',credentials:'include',headers:{'content-type':'application/json'},body:JSON.stringify({requestId,prospectId,text,promises:extractPromises(text)})});
+        data=result.data;
+        if(!result.response.ok || !data.ok){const error=Error(data.error || 'Could not save your offer.');error.retryable=result.response.status>=500 || result.response.status===429;throw error;}
+        if(!data.offer && !data.unmatched)throw Error('The server could not confirm your offer. Check My Offers before retrying.');
+        break;
+      }catch(error){
+        if(error.retryable===false || attempt===2)throw error;
+        await new Promise(resolve=>setTimeout(resolve,200*(attempt+1)));
+      }
+    }
+    if(data.offer){const offers=DB.offersByProspect[data.prospectId] || [];DB.offersByProspect[data.prospectId]=[...offers.filter(o=>o.id!==data.offer.id),data.offer];}
+    else DB.unmatched=[...DB.unmatched.filter(o=>o.id!==data.unmatched.id),data.unmatched];
+    // A compact acknowledgment is not a full board version. The next poll fetches
+    // the authoritative board instead of accepting a misleading 304.
+    DB.updatedAt=null;
+    setStored(DB_KEY,JSON.stringify(DB),true);
+    clearOfferDraft(key);UI.showSubmitModal=false;UI.submitTargetId=null;
+    UI.lastSummary={matched:data.offer?1:0,unmatched:data.unmatched?1:0,total:1,dismissAt:Date.now()+6000};
+  }catch(error){const node=document.getElementById('rb-submit-error');if(node)node.textContent=error.message;}
+  finally{finishOfferSubmission();if(!UI.showSubmitModal)render();}
+}
+
 async function submitOfferSheet(rawText){
   if(UI.submitting)return;
   const draftKey=offerDraftKey();
   captureOfferDraft();
   if (recruitingStage() === 'cpr') return submitCprOffer(rawText);
+  if (recruitingStage()==='hs' && apiAvailable() && UI.strongStorage && SESSION && rawText.trim())return submitHighSchoolOffer(rawText);
   if (!SESSION || !rawText.trim()) return;
   if (offersLocked()){
     UI.lastSummary = { errorText: 'Offer denied: offers are locked.' };
@@ -5194,7 +5235,9 @@ function captureOfferDraft(){
   if (!text) return;
   const name=document.getElementById('rb-cpr-offer-name');
   const position=document.getElementById('rb-cpr-offer-position');
+  const previous=readOfferDraft();
   const draft={text:text.value,name:name ? name.value : '',position:position ? position.value : ''};
+  if(previous.text===draft.text && previous.requestId){draft.requestId=previous.requestId;draft.requestSignature=previous.requestSignature;}
   const key=offerDraftKey(); offerDrafts[key]=draft;
   try { window.localStorage.setItem(key,JSON.stringify(draft)); } catch(e) {}
 }
