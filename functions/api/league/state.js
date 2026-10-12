@@ -4,6 +4,7 @@ import '../../../offer-amendments.js';
 import '../../../offer-window.js';
 import '../../../cpr-rules.js';
 import '../../../walkon-limit.js';
+import '../../../visit-rules.js';
 import '../../../auto-commits.js';
 import { json, getCurrentUser, canModerate, accessLevel } from '../../_lib/auth.js';
 import { queueLeagueBackup } from '../../_lib/backup.js';
@@ -38,7 +39,7 @@ export async function onRequestPut({ request, env, waitUntil }) {
   const classReset=accessLevel(env,user)==='commissioner' && (previous?.recruitingStage!==incoming.recruitingStage || JSON.stringify(previous?.fullRoster)!==JSON.stringify(incoming.fullRoster) || Object.keys(previous?.offersByProspect || {}).length>0 && Object.keys(incoming.offersByProspect || {}).length===0);
   if(!classReset && JSON.stringify(config(previous?.conditionalRescinds))!==JSON.stringify(config(incoming.conditionalRescinds)))return json({ok:false,error:'Conditional rules now save separately. Refresh this page to use the updated Rescind Center.'},{status:409});
   // Preserve new settings when an older open browser tab submits its existing payload.
-  for (const field of ['scholarshipCapacity','bucksRemaining']) {
+  for (const field of ['scholarshipCapacity','bucksRemaining','currentWeek']) {
     if (!Object.prototype.hasOwnProperty.call(incoming,field) && previous && Object.prototype.hasOwnProperty.call(previous,field)) incoming[field]=previous[field];
   }
   if(!canModerate(env,user)){
@@ -61,6 +62,7 @@ export async function onRequestPut({ request, env, waitUntil }) {
     }
   }
   const capacityError = globalThis.NZCFLAutoCommits.validate(incoming);
+  if(incoming.currentWeek!==undefined && (!Number.isInteger(incoming.currentWeek) || incoming.currentWeek<1 || incoming.currentWeek>99))return json({ok:false,error:'Current week must be a whole number from 1 to 99.'},{status:400});
   if (capacityError) return json({ok:false,error:capacityError},{status:400});
   const scheduleError = globalThis.NZCFLOfferWindow.validate(incoming.offerSchedule);
   if (scheduleError) return json({ok:false,error:scheduleError},{status:400});
@@ -68,6 +70,8 @@ export async function onRequestPut({ request, env, waitUntil }) {
     const prospect = (incoming.prospects || {})[pid];
     for (const offer of (Array.isArray(offers) ? offers : [])) {
       const old = ((previous && previous.offersByProspect || {})[pid] || []).find(item => item.id === offer.id);
+      const visitError=globalThis.NZCFLVisitRules.error(previous || incoming,offer,old);
+      if(visitError)return json({ok:false,error:visitError},{status:400});
       if (!old && !offer.rescinded && previous && globalThis.NZCFLOfferWindow.locked(previous)) return json({ok:false,error:'Offers are locked.'},{status:403});
       if (!old && !offer.rescinded) {
         const capError = globalThis.NZCFLWalkonLimit.error(incoming, prospect, offer);
@@ -84,6 +88,8 @@ export async function onRequestPut({ request, env, waitUntil }) {
   }
   for (const item of (incoming.unmatched || [])) {
     const old = (previous && previous.unmatched || []).find(old => old.id === item.id);
+    const visitError=globalThis.NZCFLVisitRules.error(previous || incoming,item,old);
+    if(visitError)return json({ok:false,error:visitError},{status:400});
     if (!old && previous && globalThis.NZCFLOfferWindow.locked(previous)) return json({ok:false,error:'Offers are locked.'},{status:403});
     if (old && old.offerText === item.offerText) continue;
     const error = globalThis.NZCFLTransferRules.pitchLimitError(item.offerText, null, incoming.recruitingStage);

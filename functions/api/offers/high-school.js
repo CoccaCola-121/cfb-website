@@ -2,6 +2,7 @@ import '../../../auto-commits.js';
 import '../../../offer-window.js';
 import '../../../walkon-limit.js';
 import '../../../transfer-rules.js';
+import '../../../visit-rules.js';
 import {json,getCurrentUser} from '../../_lib/auth.js';
 import {teamKey} from '../../_lib/teams-util.js';
 import {readLeagueState,writeLeagueState} from '../../_lib/league-state.js';
@@ -46,6 +47,8 @@ export async function onRequestPost({request,env,waitUntil}){
    if(p && visits.campus && own.filter(o=>o.visits?.campus).length>=17)return json({ok:false,error:'Campus visit limit already reached (17/17).'},{status:400});
    const promises=(Array.isArray(body.promises)?body.promises:[]).slice(0,3).map((v,i)=>({id:id+'_pr'+i,text:String(v?.text || ''),title:String(v?.title || v?.category || 'other'),category:String(v?.category || v?.title || 'other')}));
    const offer={id,requestId:body.requestId,team:user.team,coach:user.displayName || user.username || '',text:body.text,promises,visits,createdAt:receivedAt};
+   const visitError=globalThis.NZCFLVisitRules.error(state,offer);
+   if(visitError)return json({ok:false,error:visitError},{status:400});
    let unmatched;
    if(p){state.offersByProspect ||= {};state.offersByProspect[pid]=[...(state.offersByProspect[pid] || []),offer];}
    else{unmatched={id,requestId:body.requestId,team:user.team,coach:offer.coach,offerText:body.text,promises,visits,createdAt:receivedAt};state.unmatched=[...(state.unmatched || []),unmatched];}

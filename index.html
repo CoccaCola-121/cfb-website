@@ -86,6 +86,7 @@
 <script src="/offer-window.js" onerror="this.onerror=null;this.src='offer-window.js'"></script>
 <script src="/transfer-rules.js" onerror="this.onerror=null;this.src='transfer-rules.js'"></script>
 <script src="/promise-lists.js" onerror="this.onerror=null;this.src='promise-lists.js'"></script>
+<script src="/visit-rules.js" onerror="this.onerror=null;this.src='visit-rules.js'"></script>
 <script src="/hs-pitch-library.js" onerror="this.onerror=null;this.src='hs-pitch-library.js'"></script>
 <script>
 (function(){
@@ -883,6 +884,8 @@ function queueSettingsAction(kind){
 }
 async function saveSettingsChanges(){
   if (!settingsDraft || settingsSaving || !canViewSettings()) return;
+  const weekInput=document.getElementById('rb-current-week');
+  if(weekInput && !weekInput.checkValidity()){weekInput.reportValidity();return;}
   if (UI.cprMetadataLoading || UI.scholarshipLoading || UI.capacityLoading) { UI.settingsError='Wait for the league export to finish processing.'; render(); return; }
   if (UI.transferLoading || UI.transferDraft) { UI.settingsError = 'Finish reviewing and loading the transfer class before saving.'; render(); return; }
   if (UI.scheduleError) { UI.settingsError = UI.scheduleError; render(); return; }
@@ -974,6 +977,7 @@ function leagueStatePayload(){
     commitSeasonEnded: DB.commitSeasonEnded || null,
     defaultClassLoaded: DB.defaultClassLoaded,
     offersLocked: !!DB.offersLocked,
+    currentWeek: NZCFLVisitRules.current(DB),
     offerSchedule: DB.offerSchedule || null,
     dangerApprovals: DB.dangerApprovals || {},
     conditionalRescinds: DB.conditionalRescinds || [],
@@ -985,7 +989,7 @@ function mergeLeagueState(state){
   if (settingsDraft && !settingsSaving) return false;
   if (!state || typeof state !== 'object') return false;
   const previousVersion=DB.updatedAt;
-  ['removedPlayers','scholarshipCapacity','bucksRemaining','scholarshipHistory','scholarshipSource','fullRoster','recruitingStage','released','wave1Released','wave2Released','prospects','threads','offersByProspect','unmatched','teams','teamBranding','commitSheetUrl','commitUpdatedAt','discordCommitUpdatedAt','discordCommitChannelId','commitSeasonEnded','defaultClassLoaded','offersLocked','offerSchedule','dangerApprovals','conditionalRescinds','manualCommitOverrides'].forEach(function(field){
+  ['removedPlayers','scholarshipCapacity','bucksRemaining','scholarshipHistory','scholarshipSource','fullRoster','recruitingStage','released','wave1Released','wave2Released','prospects','threads','offersByProspect','unmatched','teams','teamBranding','commitSheetUrl','commitUpdatedAt','discordCommitUpdatedAt','discordCommitChannelId','commitSeasonEnded','defaultClassLoaded','offersLocked','currentWeek','offerSchedule','dangerApprovals','conditionalRescinds','manualCommitOverrides'].forEach(function(field){
     if (Object.prototype.hasOwnProperty.call(state, field)) DB[field] = state[field];
   });
   DB.updatedAt=state.updatedAt;
@@ -2812,6 +2816,8 @@ function saveOfferEdit(form, confirmedVisits){
   } else {
     newVisits.campusLabel = '';
   }
+  const weekError=NZCFLVisitRules.error(DB,{visits:newVisits},{visits:oldVisits});
+  if(weekError){UI.editError=weekError;render();return;}
   const errors = visitLimitErrors(offer.team, newVisits, offer);
   if (errors.length){
     UI.editError = errors.join(' ');
@@ -4155,8 +4161,16 @@ function ensureHSPitchesLoaded(){
  if(!state.loaded && !state.loading && !state.error)loadHSPitches();
  return state;
 }
+function fitHSPitchOptions(){
+ document.querySelectorAll('[data-hs-choice-option]').forEach(field=>{
+  if(!field.offsetWidth)return;
+  field.style.height='auto';
+  field.style.height=(field.scrollHeight+2)+'px';
+ });
+}
+window.addEventListener('resize',fitHSPitchOptions);
 function renderHSPitchChoices(key,draft,disabled){
- return (draft.choices?.[key] || []).filter(row=>draft.paragraphs[key].includes(NZCFLHSPitchLibrary.token(row.id))).map((row,i)=>'<div class="rb-card" style="padding:12px;margin-top:10px;"><strong>Dropdown '+(i+1)+' options</strong><p style="font-size:12px;color:var(--slate);">Each box is one option. Use a word, sentence, or full paragraph; line breaks stay inside that option.</p>'+row.options.map((option,n)=>'<div style="margin:10px 0;"><label style="display:block;">Option '+(n+1)+'<textarea class="rb-textarea" rows="4" maxlength="12000" data-hs-choice-option="'+key+':'+row.id+':'+n+'"'+disabled+'>'+escapeHtml(option)+'</textarea></label><button type="button" class="rb-btn" data-hs-delete-option="'+key+':'+row.id+':'+n+'"'+(row.options.length===1?' disabled':disabled)+'>Remove option</button></div>').join('')+'<div style="display:flex;gap:8px;flex-wrap:wrap;"><button type="button" class="rb-btn" data-hs-add-option="'+key+':'+row.id+'"'+disabled+'>Add option</button><button type="button" class="rb-btn" data-hs-remove-choice="'+key+':'+row.id+'"'+disabled+'>Remove dropdown, keep first option</button></div></div>').join('');
+ return (draft.choices?.[key] || []).filter(row=>draft.paragraphs[key].includes(NZCFLHSPitchLibrary.token(row.id))).map((row,i)=>'<div class="rb-card" style="padding:12px;margin-top:10px;"><strong>Dropdown '+(i+1)+' options</strong><p style="font-size:12px;color:var(--slate);">Each box is one option. Use a word, sentence, or full paragraph; line breaks stay inside that option.</p>'+row.options.map((option,n)=>'<div style="margin:10px 0;"><label style="display:block;">Option '+(n+1)+'<textarea class="rb-textarea" rows="1" style="box-sizing:border-box;resize:none;overflow:hidden;field-sizing:content;" maxlength="12000" data-hs-choice-option="'+key+':'+row.id+':'+n+'"'+disabled+'>'+escapeHtml(option)+'</textarea></label><button type="button" class="rb-btn" data-hs-delete-option="'+key+':'+row.id+':'+n+'"'+(row.options.length===1?' disabled':disabled)+'>Remove option</button></div>').join('')+'<div style="display:flex;gap:8px;flex-wrap:wrap;"><button type="button" class="rb-btn" data-hs-add-option="'+key+':'+row.id+'"'+disabled+'>Add option</button><button type="button" class="rb-btn" data-hs-remove-choice="'+key+':'+row.id+'"'+disabled+'>Remove dropdown, keep first option</button></div></div>').join('');
 }
 function hsChoiceSelections(p){
  const state=currentHSPitches(),key=state.owner+':'+state.version+':'+(p?.id || '');
@@ -4184,7 +4198,7 @@ function hsBuilderVisits(p){
 }
 function renderHSVisits(p){
  const v=hsBuilderVisits(p);
- return '<div style="border-top:1px solid var(--hairline);padding-top:12px;"><strong>Visits</strong><div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;"><button type="button" class="rb-btn'+(v.coach?' rb-btn-gold':'')+'" id="rb-hs-coach-visit" aria-pressed="'+v.coach+'">'+(v.coach?'Remove':'Add')+' coach visit</button><button type="button" class="rb-btn'+(v.campus?' rb-btn-gold':'')+'" id="rb-hs-campus-visit" aria-pressed="'+v.campus+'">'+(v.campus?'Remove':'Add')+' campus visit</button></div>'+(v.campus?'<div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:10px;"><label style="flex:1;min-width:100px;">Week<input type="number" min="1" max="99" class="rb-input" id="rb-hs-visit-week" value="'+escapeHtml(v.week)+'"></label><label style="flex:2;min-width:160px;">Opponent (optional)<input class="rb-input" id="rb-hs-visit-opponent" placeholder="e.g. Ohio State" value="'+escapeHtml(v.opponent)+'"></label></div>':'')+'<p style="font-size:12px;color:var(--slate);">Visits are included when you build the offer. To update an existing draft without replacing your pitch, apply visits below.</p><button type="button" class="rb-btn" id="rb-hs-apply-visits">Apply visits to draft</button></div>';
+ return '<div style="border-top:1px solid var(--hairline);padding-top:12px;"><strong>Visits</strong><div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;"><button type="button" class="rb-btn'+(v.coach?' rb-btn-gold':'')+'" id="rb-hs-coach-visit" aria-pressed="'+v.coach+'">'+(v.coach?'Remove':'Add')+' coach visit</button><button type="button" class="rb-btn'+(v.campus?' rb-btn-gold':'')+'" id="rb-hs-campus-visit" aria-pressed="'+v.campus+'">'+(v.campus?'Remove':'Add')+' campus visit</button></div>'+(v.campus?'<div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:10px;"><label style="flex:1;min-width:100px;">Week<input type="number" min="'+NZCFLVisitRules.current(DB)+'" max="99" class="rb-input" id="rb-hs-visit-week" value="'+escapeHtml(v.week)+'"></label><label style="flex:2;min-width:160px;">Opponent (optional)<input class="rb-input" id="rb-hs-visit-opponent" placeholder="e.g. Ohio State" value="'+escapeHtml(v.opponent)+'"></label></div>':'')+'<p style="font-size:12px;color:var(--slate);">Visits are included when you build the offer. To update an existing draft without replacing your pitch, apply visits below.</p><button type="button" class="rb-btn" id="rb-hs-apply-visits">Apply visits to draft</button></div>';
 }
 function applyHSVisits(){
  const field=document.getElementById('rb-sheet-text'),error=document.getElementById('rb-submit-error');
@@ -4193,6 +4207,7 @@ function applyHSVisits(){
   if(!field?.value.trim())throw Error('Build or paste your offer first.');
   const p=hsBuilderProspect(DB.prospects[UI.submitTargetId]),v=hsBuilderVisits(p);
   const lines=NZCFLHSPitchLibrary.visitLines(v);
+  const visitError=NZCFLVisitRules.error(DB,{text:lines.join('\n')});if(visitError)throw Error(visitError);
   const visits={coach:v.coach,campus:v.campus,campusLabel:(lines.find(line=>line.startsWith('Campus Visit ')) || '').replace('Campus Visit ','')};
   field.value=syncCoachVisitText(syncCampusVisitText(field.value,visits),visits);captureOfferDraft();error.textContent='';
  }catch(e){error.textContent=e.message;}
@@ -4258,13 +4273,15 @@ function buildHSPitchDraft(){
   const p=hsBuilderProspect(DB.prospects[UI.submitTargetId]);
   if(p?.commitTeam)throw Error('This player has already committed.');
   const built=NZCFLHSPitchLibrary.build(SESSION.team,p,state.library,UI.hsBuildType || 'scholarship',hsChoiceSelections(p),hsBuilderVisits(p));
+  const visitError=NZCFLVisitRules.error(DB,{text:built.text});if(visitError)throw Error(visitError);
   if(field.value.trim() && !window.confirm('Replace the current draft with your saved pitches?'))return;
   field.value=built.text;captureOfferDraft();error.textContent='';field.focus();
  }catch(e){if(error)error.textContent=e.message;}
 }
 function bindHSPitches(){
- const editor=document.getElementById('rb-hs-pitch-editor');if(editor)editor.ontoggle=()=>{UI.hsPitchEditorOpen=editor.open;};
- document.querySelectorAll('[data-hs-pitch-section]').forEach(el=>el.ontoggle=()=>{UI.hsPitchSections ||= {};UI.hsPitchSections[el.dataset.hsPitchSection]=el.open;});
+ fitHSPitchOptions();
+ const editor=document.getElementById('rb-hs-pitch-editor');if(editor)editor.ontoggle=()=>{UI.hsPitchEditorOpen=editor.open;fitHSPitchOptions();};
+ document.querySelectorAll('[data-hs-pitch-section]').forEach(el=>el.ontoggle=()=>{UI.hsPitchSections ||= {};UI.hsPitchSections[el.dataset.hsPitchSection]=el.open;fitHSPitchOptions();});
  document.querySelectorAll('[data-hs-pitch-body]').forEach(el=>el.oninput=()=>{currentHSPitches().draft.paragraphs[el.dataset.hsPitchBody]=el.value;});
  document.querySelectorAll('[data-hs-add-choice]').forEach(button=>{
   button.onmousedown=e=>e.preventDefault();
@@ -4283,7 +4300,7 @@ function bindHSPitches(){
  });
  document.querySelectorAll('[data-hs-choice-option]').forEach(field=>field.oninput=()=>{
   const [key,id,index]=field.dataset.hsChoiceOption.split(':');
-  currentHSPitches().draft.choices[key].find(c=>c.id===id).options[Number(index)]=field.value;
+  currentHSPitches().draft.choices[key].find(c=>c.id===id).options[Number(index)]=field.value;fitHSPitchOptions();
  });
  document.querySelectorAll('[data-hs-add-option]').forEach(button=>button.onclick=()=>{
   const [key,id]=button.dataset.hsAddOption.split(':');
@@ -5104,6 +5121,7 @@ function renderClassSetup(){
 
   html += '</div>';
 
+  html += '<div class="rb-card" style="padding:20px;margin-bottom:16px;"><label for="rb-current-week" class="rb-h">Current week</label><input class="rb-input" type="number" min="1" max="99" step="1" id="rb-current-week" value="'+NZCFLVisitRules.current(DB)+'" style="max-width:140px;display:block;margin-top:8px;"><p style="font-size:13px;color:var(--slate);">Use the upcoming game week: before week 1, enter 1; before week 12, enter 12. Earlier campus visits cannot be added or edited. Save settings to apply.</p></div>';
   html += '<div class="rb-card" style="padding:24px;max-width:640px;">';
   html += '<div class="rb-h" style="font-size:18px;margin-bottom:10px;">Recruiting stage</div>';
   html += '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px;">';
@@ -5528,7 +5546,7 @@ function renderEditOfferModal(){
           '<input type="checkbox" id="rb-edit-campus-visit" ' + (visits.campus ? 'checked' : '') + (locks.campus ? ' disabled' : '') + ' style="accent-color:var(--gold);" /> Campus Visit' +
         '</label>' +
       '</div>' +
-      '<input class="rb-input" id="rb-edit-campus-label" placeholder="Week 4 (or Week 4 vs. USC)" value="' + escapeHtml(visits.campusLabel || '') + '"' + (!visits.campus && locks.campus ? ' disabled' : '') + ' style="margin-top:10px;" />' +
+      '<input class="rb-input" id="rb-edit-campus-label" placeholder="Week 4 (or Week 4 vs. USC)" value="' + escapeHtml(visits.campusLabel || '') + '"' + ((!visits.campus && locks.campus) || (visits.campus && NZCFLVisitRules.week(visits.campusLabel)<NZCFLVisitRules.current(DB)) ? ' disabled' : '') + ' style="margin-top:10px;" />' +
       (UI.editError ? '<div style="font-size:12px;color:var(--alert);margin-top:8px;">' + escapeHtml(UI.editError) + '</div>' : '') +
       '<div style="display:flex;justify-content:flex-end;gap:8px;margin-top:14px;">' +
         '<button class="rb-btn" data-close-edit-modal="1">Cancel</button>' +
@@ -6542,6 +6560,12 @@ function bindEvents(){
   if (classFile) classFile.onchange = function(){ loadClassFile(classFile.files && classFile.files[0]); };
   const brandingFile = document.getElementById('rb-branding-file');
   if (brandingFile) brandingFile.onchange = function(){ loadTeamBrandingFile(brandingFile.files && brandingFile.files[0]); };
+  const currentWeekInput=document.getElementById('rb-current-week');
+  if(currentWeekInput)currentWeekInput.oninput=function(){
+    const value=Number(currentWeekInput.value);
+    if(!Number.isInteger(value) || value<1 || value>99){currentWeekInput.setCustomValidity('Enter a whole number from 1 to 99.');return;}
+    currentWeekInput.setCustomValidity('');DB.currentWeek=value;refreshSettingsButtons();
+  };
   const offersLockToggle = document.getElementById('rb-offers-lock-toggle');
   if (offersLockToggle) offersLockToggle.onchange = function(){ setOffersLocked(offersLockToggle.checked); };
   document.querySelectorAll('[data-recruiting-stage]').forEach(function(el){

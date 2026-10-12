@@ -7,7 +7,7 @@ export function coachStateError(previous,incoming,user){
  const own=o=>teamKey(o?.team)===teamKey(user.team);
  const mutable=new Set(['offersByProspect','unmatched','conditionalRescinds','updatedAt']);
  for(const key of new Set([...Object.keys(previous),...Object.keys(incoming)])){
-  if(!mutable.has(key) && !same(key==='removedPlayers'?(previous[key] || {}):previous[key],incoming[key]))return 'Coaches cannot change league settings or player records. Refresh the board.';
+  if(!mutable.has(key) && !same(key==='removedPlayers'?(previous[key] || {}):key==='currentWeek'?(previous[key] ?? 1):previous[key],key==='currentWeek'?(incoming[key] ?? 1):incoming[key]))return 'Coaches cannot change league settings or player records. Refresh the board.';
  }
  for(const key of ['unmatched','conditionalRescinds']){
   const before=previous[key] || [],after=incoming[key] || [];

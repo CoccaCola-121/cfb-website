@@ -13,7 +13,7 @@ const source = script.slice(0, boot) + `
   globalThis.app = { DB, UI, ownOfferTypeBadge, renderOwnTypeFilter, mergeLeagueState, renderOfferAmendments, captureOfferDraft, readOfferDraft, clearOfferDraft, offerDraftKey, applyConditionalRescinds, readRescindRuleForm, validateRescindRuleDraft, requestQuickWalkon, renderQuickWalkonConfirm, canQuickOfferWalkon, quickOfferWalkon, renderQuickWalkon, renderProspectBoardCard, scheduleSummaryCountdown, dismissSummaryBanner, bindFloatingSubmit, extractPromises, cleanDisplayPromises, readCprBoard, updateBucksEntries, renderBucksSettings, renderCprProfile, cprPreviousSchool, ensureCprScholarshipThreads, renderAutoCommitSettings, stageAutoCommits, readScholarshipCapacity, buildPromiseArchive, parseCsvRows, offerCountForProspect, refreshScholarshipHistory, submitCprOffer, renderSubmitModal, createCprPlayer, loadClassData, resetOfferWindow, setOffersLocked, offersLocked, pendingCommitChanges, restoreSettingsDraft, renderOfferBlock, renderRescindFilterFields, renderVisitLedger, visibleBoardProspectIds, setRecruitingStage, requestReset, approveDangerReset, beginSettingsDraft, hasSettingsChanges, canLeaveSettings, saveSettingsChanges, saveDBNow, leagueStatePayload, mergeSettingsValue, updateCommitsFromSheet, runBackupNow, setTransferFilter, renderTransferFilters, renderClassSetup, requestManualCommitOverride, applyManualCommitOverride, requestClearCommit, clearManualCommitOverride, applyManualCommitOverrides, clearRecruitingBoard, findProspectFromSheetRow, transferCardStyle, parseFullClass, prospectFromRosterRow, confirmTransferImport, releaseSingleStageBoard, addOfferDirect, render, renderNav, navigateTo, applyRoute, setReady(){ dbReady = true; sessionReady = true; }, renderFeed, renderBoardSearchResults, renderTeamsPage,
     renderThreadProspectList, renderProspectDetail, builtInTeamBranding, getTeamBranding, activeTeamBrands,
     mobileRecruitName, renderRecruitName, renderMyOffers, renderCommitsForTeam, renderTeamOffers, renderConditionalRescinds, renderRecruitValues, teamBorderColor, bindEvents, applyDefaultClassData, releaseWave1, releaseWave2,
-    currentHSPitches, findHSPitchPlayer, renderHSPitchEditor, renderHSPitchBuilder, buildHSPitchDraft, applyHSVisits, hsBuilderVisits, parseOfferSheet, bindHSPitches,
+    currentHSPitches, findHSPitchPlayer, renderHSPitchEditor, renderHSPitchBuilder, buildHSPitchDraft, applyHSVisits, hsBuilderVisits, parseOfferSheet, bindHSPitches, fitHSPitchOptions,
     setSession(value){ SESSION = value; } };
 })();`;
 
@@ -71,6 +71,7 @@ function harness() {
   vm.runInContext(fs.readFileSync(path.join(rootDir, 'transfer-rules.js'), 'utf8'), context);
   vm.runInContext(fs.readFileSync(path.join(rootDir, 'promise-lists.js'), 'utf8'), context);
   vm.runInContext(fs.readFileSync(path.join(rootDir, 'hs-pitch-library.js'), 'utf8'), context);
+  vm.runInContext(fs.readFileSync(path.join(rootDir, 'visit-rules.js'), 'utf8'), context);
   vm.runInContext(source, context);
   const { app } = context;
   app.setSession({ team: 'Michigan State', username: 'Test coach', discordId: 'fixture', accessLevel: 'coach' });
@@ -1021,6 +1022,16 @@ test('team save notice clears on navigation and does not return with browser his
   assert.equal(app.UI.adminActionStatus, null);
 });
 
+
+test('HS option boxes grow and shrink to their contents',()=>{
+ const {app,context}=harness();
+ const field={offsetWidth:300,scrollHeight:42,style:{height:'200px'}};
+ context.document.querySelectorAll=()=>[field];
+ app.fitHSPitchOptions();assert.equal(field.style.height,'44px');
+ field.scrollHeight=320;app.fitHSPitchOptions();assert.equal(field.style.height,'322px');
+ field.scrollHeight=42;app.fitHSPitchOptions();assert.equal(field.style.height,'44px');
+ field.offsetWidth=0;field.scrollHeight=0;app.fitHSPitchOptions();assert.equal(field.style.height,'44px');
+});
 
 test('HS dropdown option editor retains paragraph line breaks and previews full selected text',()=>{
  const {app,context}=harness();app.DB.recruitingStage='hs';
