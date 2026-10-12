@@ -39,6 +39,18 @@ test('selected phrases become saved dropdowns and resolve to exact wording',()=>
  assert.deepEqual(imported.choices.location,[]);assert.equal(imported.choices.playingTime.length,1);
 });
 
+test('a whole multiline paragraph remains one dropdown option through save and build',()=>{
+ const original='We develop pro players.\nOur staff will prepare you.\n\n**I promise you will be drafted.**';
+ const alternate='Your development starts immediately.\n\n**I promise you will be a first-round pick.**';
+ let saved=L.addChoice({paragraphs:{...library.paragraphs,proPotential:original}},'proPotential',0,original.length,'c1');
+ saved.choices.proPotential[0].options.push(alternate);
+ saved=L.clean(JSON.parse(JSON.stringify(saved)));
+ assert.deepEqual(saved.choices.proPotential[0].options,[original,alternate]);
+ const text=L.build('Michigan State',p,saved,'scholarship',{c1:alternate}).text;
+ assert.ok(text.includes('Pro Potential:\n'+alternate+'\n\nWinning:'));
+ assert.ok(!text.includes('Our staff will prepare you.'));
+});
+
 test('HS builder assembles the top three values and an editable offer header',()=>{
  const withVisits=L.build('Michigan State',p,library,'scholarship',{}, {coach:true,campus:true,week:'4',opponent:'Ohio State'}).text;
  assert.match(withVisits,/Scholarship\n\nCoach Visit\n\nCampus Visit Week 4 vs\. Ohio State\n\nPro Potential:/);

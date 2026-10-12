@@ -13,7 +13,7 @@ const source = script.slice(0, boot) + `
   globalThis.app = { DB, UI, ownOfferTypeBadge, renderOwnTypeFilter, mergeLeagueState, renderOfferAmendments, captureOfferDraft, readOfferDraft, clearOfferDraft, offerDraftKey, applyConditionalRescinds, readRescindRuleForm, validateRescindRuleDraft, requestQuickWalkon, renderQuickWalkonConfirm, canQuickOfferWalkon, quickOfferWalkon, renderQuickWalkon, renderProspectBoardCard, scheduleSummaryCountdown, dismissSummaryBanner, bindFloatingSubmit, extractPromises, cleanDisplayPromises, readCprBoard, updateBucksEntries, renderBucksSettings, renderCprProfile, cprPreviousSchool, ensureCprScholarshipThreads, renderAutoCommitSettings, stageAutoCommits, readScholarshipCapacity, buildPromiseArchive, parseCsvRows, offerCountForProspect, refreshScholarshipHistory, submitCprOffer, renderSubmitModal, createCprPlayer, loadClassData, resetOfferWindow, setOffersLocked, offersLocked, pendingCommitChanges, restoreSettingsDraft, renderOfferBlock, renderRescindFilterFields, renderVisitLedger, visibleBoardProspectIds, setRecruitingStage, requestReset, approveDangerReset, beginSettingsDraft, hasSettingsChanges, canLeaveSettings, saveSettingsChanges, saveDBNow, leagueStatePayload, mergeSettingsValue, updateCommitsFromSheet, runBackupNow, setTransferFilter, renderTransferFilters, renderClassSetup, requestManualCommitOverride, applyManualCommitOverride, requestClearCommit, clearManualCommitOverride, applyManualCommitOverrides, clearRecruitingBoard, findProspectFromSheetRow, transferCardStyle, parseFullClass, prospectFromRosterRow, confirmTransferImport, releaseSingleStageBoard, addOfferDirect, render, renderNav, navigateTo, applyRoute, setReady(){ dbReady = true; sessionReady = true; }, renderFeed, renderBoardSearchResults, renderTeamsPage,
     renderThreadProspectList, renderProspectDetail, builtInTeamBranding, getTeamBranding, activeTeamBrands,
     mobileRecruitName, renderRecruitName, renderMyOffers, renderCommitsForTeam, renderTeamOffers, renderConditionalRescinds, renderRecruitValues, teamBorderColor, bindEvents, applyDefaultClassData, releaseWave1, releaseWave2,
-    currentHSPitches, findHSPitchPlayer, renderHSPitchEditor, renderHSPitchBuilder, buildHSPitchDraft, applyHSVisits, hsBuilderVisits, parseOfferSheet,
+    currentHSPitches, findHSPitchPlayer, renderHSPitchEditor, renderHSPitchBuilder, buildHSPitchDraft, applyHSVisits, hsBuilderVisits, parseOfferSheet, bindHSPitches,
     setSession(value){ SESSION = value; } };
 })();`;
 
@@ -1021,6 +1021,27 @@ test('team save notice clears on navigation and does not return with browser his
   assert.equal(app.UI.adminActionStatus, null);
 });
 
+
+test('HS dropdown option editor retains paragraph line breaks and previews full selected text',()=>{
+ const {app,context}=harness();app.DB.recruitingStage='hs';
+ const library=context.NZCFLHSPitchLibrary.clean({paragraphs:{proPotential:'{{Dropdown 1}}'},choices:{proPotential:[{id:'c1',options:['Original paragraph.']}]}});
+ Object.assign(app.currentHSPitches(),{loaded:true,library,draft:library});
+ app.UI.hsChoices={};
+ const field={dataset:{hsChoiceOption:'proPotential:c1:0'},value:'First line.\n\nSecond paragraph.'};
+ const add={dataset:{hsAddOption:'proPotential:c1'}};
+ const select={dataset:{hsWording:'c1',hsWordingField:'proPotential'},value:'0'};
+ const preview={dataset:{hsWordingPreview:'c1'},textContent:''};
+ context.document.querySelectorAll=selector=>({'[data-hs-choice-option]':[field],'[data-hs-add-option]':[add],'[data-hs-wording]':[select],'[data-hs-wording-preview]':[preview]}[selector] || []);
+ app.bindHSPitches();field.oninput();
+ assert.equal(library.choices.proPotential[0].options.length,1);
+ assert.equal(library.choices.proPotential[0].options[0],field.value);
+ select.onchange();assert.equal(app.UI.hsChoices.c1,field.value);assert.equal(preview.textContent,field.value);
+ add.onclick();assert.equal(library.choices.proPotential[0].options.length,2);
+ const html=app.renderHSPitchEditor();
+ assert.match(html,/data-hs-choice-option="proPotential:c1:0"/);
+ assert.match(html,/data-hs-choice-option="proPotential:c1:1"/);
+ assert.match(html,/Add option/);assert.doesNotMatch(html,/one replacement per line/);
+});
 
 test('HS builder detects pasted drafts, shows unsaved dropdowns, and applies visits without replacing prose',()=>{
  const {app,context,elements}=harness();app.DB.recruitingStage='hs';

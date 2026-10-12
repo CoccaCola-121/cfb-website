@@ -4156,7 +4156,7 @@ function ensureHSPitchesLoaded(){
  return state;
 }
 function renderHSPitchChoices(key,draft,disabled){
- return (draft.choices?.[key] || []).filter(row=>draft.paragraphs[key].includes(NZCFLHSPitchLibrary.token(row.id))).map((row,i)=>'<div class="rb-card" style="padding:12px;margin-top:10px;"><label style="display:block;">Dropdown '+(i+1)+' options <span style="color:var(--slate);font-size:12px;">(one replacement per line)</span><textarea class="rb-textarea" rows="3" data-hs-choice-options="'+key+':'+row.id+'"'+disabled+'>'+escapeHtml(row.options.join('\n'))+'</textarea></label><button class="rb-btn" data-hs-remove-choice="'+key+':'+row.id+'"'+disabled+'>Remove dropdown, keep first option</button></div>').join('');
+ return (draft.choices?.[key] || []).filter(row=>draft.paragraphs[key].includes(NZCFLHSPitchLibrary.token(row.id))).map((row,i)=>'<div class="rb-card" style="padding:12px;margin-top:10px;"><strong>Dropdown '+(i+1)+' options</strong><p style="font-size:12px;color:var(--slate);">Each box is one option. Use a word, sentence, or full paragraph; line breaks stay inside that option.</p>'+row.options.map((option,n)=>'<div style="margin:10px 0;"><label style="display:block;">Option '+(n+1)+'<textarea class="rb-textarea" rows="4" maxlength="12000" data-hs-choice-option="'+key+':'+row.id+':'+n+'"'+disabled+'>'+escapeHtml(option)+'</textarea></label><button type="button" class="rb-btn" data-hs-delete-option="'+key+':'+row.id+':'+n+'"'+(row.options.length===1?' disabled':disabled)+'>Remove option</button></div>').join('')+'<div style="display:flex;gap:8px;flex-wrap:wrap;"><button type="button" class="rb-btn" data-hs-add-option="'+key+':'+row.id+'"'+disabled+'>Add option</button><button type="button" class="rb-btn" data-hs-remove-choice="'+key+':'+row.id+'"'+disabled+'>Remove dropdown, keep first option</button></div></div>').join('');
 }
 function hsChoiceSelections(p){
  const state=currentHSPitches(),key=state.owner+':'+state.version+':'+(p?.id || '');
@@ -4205,7 +4205,7 @@ function renderHSWording(p,library){
   return [...text.matchAll(/\{\{Dropdown ([0-9]+)\}\}/g)].map(match=>{
    const row=(library.choices?.[f.key] || []).find(c=>c.id==='c'+match[1]);
    if(!row)return '<p role="alert">This dropdown is missing options. Check your pitch library.</p>';
-   return '<label style="display:block;margin:10px 0;"><strong>'+escapeHtml(f.label)+' wording</strong><div style="font-size:12px;color:var(--slate);margin:4px 0;">…'+escapeHtml(text.slice(Math.max(0,match.index-65),match.index))+' [choice] '+escapeHtml(text.slice(match.index+match[0].length,match.index+match[0].length+65))+'…</div><select class="rb-input" aria-label="'+escapeHtml(f.label+' wording')+'" data-hs-wording="'+row.id+'"><option value="">Choose wording…</option>'+row.options.map(option=>'<option value="'+escapeHtml(option)+'"'+(selected[row.id]===option?' selected':'')+'>'+escapeHtml(option)+'</option>').join('')+'</select></label>';
+   return '<label style="display:block;margin:10px 0;"><strong>'+escapeHtml(f.label)+' wording</strong><div style="font-size:12px;color:var(--slate);margin:4px 0;">…'+escapeHtml(text.slice(Math.max(0,match.index-65),match.index))+' [choice] '+escapeHtml(text.slice(match.index+match[0].length,match.index+match[0].length+65))+'…</div><select class="rb-input" aria-label="'+escapeHtml(f.label+' wording')+'" data-hs-wording="'+row.id+'" data-hs-wording-field="'+f.key+'"><option value="">Choose wording…</option>'+row.options.map((option,index)=>'<option value="'+index+'"'+(selected[row.id]===option?' selected':'')+'>Option '+(index+1)+': '+escapeHtml(option.replace(/\s+/g,' ').slice(0,100))+(option.length>100?'…':'')+'</option>').join('')+'</select></label><div data-hs-wording-preview="'+row.id+'" style="white-space:pre-wrap;overflow-wrap:anywhere;font-size:13px;margin-bottom:12px;">'+escapeHtml(selected[row.id] || '')+'</div>';
   }).join('');
  }).join('');
  return rows?'<section style="border-top:1px solid var(--hairline);padding-top:10px;"><strong>Pitch dropdowns</strong>'+rows+'<p style="font-size:12px;">Choose your wording, then build the draft below. Existing drafts change only when you rebuild them.</p></section>':Object.values(library.choices || {}).some(rows=>rows.length)?'<p style="font-size:12px;color:var(--slate);">No dropdowns are saved for this player’s top three values. Dropdowns on other value paragraphs are not used for this offer.</p>':'';
@@ -4276,14 +4276,23 @@ function bindHSPitches(){
     const ids=Object.values(state.draft.choices || {}).flat().map(row=>Number(row.id.slice(1)));
     const id='c'+(Math.max(0,...ids)+1);
     state.draft=NZCFLHSPitchLibrary.addChoice(state.draft,key,field.selectionStart,field.selectionEnd,id);
-    state.error='';state.status='Dropdown added. Enter its wording options below, one per line, then save pitches.';
+    state.error='';state.status='Dropdown added. Edit the first option or add more options below, then save pitches.';
    }catch(e){state.error=e.message;}
    refreshHSPitchView();
   };
  });
- document.querySelectorAll('[data-hs-choice-options]').forEach(field=>field.oninput=()=>{
-  const [key,id]=field.dataset.hsChoiceOptions.split(':');
-  currentHSPitches().draft.choices[key].find(c=>c.id===id).options=field.value.split(/\r?\n/);
+ document.querySelectorAll('[data-hs-choice-option]').forEach(field=>field.oninput=()=>{
+  const [key,id,index]=field.dataset.hsChoiceOption.split(':');
+  currentHSPitches().draft.choices[key].find(c=>c.id===id).options[Number(index)]=field.value;
+ });
+ document.querySelectorAll('[data-hs-add-option]').forEach(button=>button.onclick=()=>{
+  const [key,id]=button.dataset.hsAddOption.split(':');
+  currentHSPitches().draft.choices[key].find(c=>c.id===id).options.push('');refreshHSPitchView();
+ });
+ document.querySelectorAll('[data-hs-delete-option]').forEach(button=>button.onclick=()=>{
+  const [key,id,index]=button.dataset.hsDeleteOption.split(':');
+  const options=currentHSPitches().draft.choices[key].find(c=>c.id===id).options;
+  if(options.length>1)options.splice(Number(index),1);refreshHSPitchView();
  });
  document.querySelectorAll('[data-hs-remove-choice]').forEach(button=>button.onclick=()=>{
   const [key,id]=button.dataset.hsRemoveChoice.split(':'),state=currentHSPitches();
@@ -4292,7 +4301,11 @@ function bindHSPitches(){
   state.draft.choices[key]=state.draft.choices[key].filter(c=>c.id!==id);refreshHSPitchView();
  });
  document.querySelectorAll('[data-hs-wording]').forEach(field=>field.onchange=()=>{
-  UI.hsChoices[field.dataset.hsWording]=field.value;
+  const state=currentHSPitches(),library=state.draft || state.library;
+  const row=library.choices[field.dataset.hsWordingField].find(c=>c.id===field.dataset.hsWording);
+  const text=field.value===''?'':(row.options[Number(field.value)] || '');
+  UI.hsChoices[field.dataset.hsWording]=text;
+  document.querySelectorAll('[data-hs-wording-preview]').forEach(preview=>{if(preview.dataset.hsWordingPreview===row.id)preview.textContent=text;});
   document.querySelectorAll('[data-hs-wording]').forEach(other=>{if(other.dataset.hsWording===field.dataset.hsWording)other.value=field.value;});
  });
  const saveUse=document.getElementById('rb-hs-save-use');if(saveUse)saveUse.onclick=saveHSPitches;

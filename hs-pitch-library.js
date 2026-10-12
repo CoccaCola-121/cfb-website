@@ -28,7 +28,7 @@
    choices[field.key]=rows.map(row=>{
     if(!/^c[0-9]+$/.test(row?.id || '') || seen.has(row.id))throw Error('Invalid dropdown identifier.');
     seen.add(row.id);
-    if(!Array.isArray(row.options) || row.options.some(v=>typeof v!=='string' || v.length>12000))throw Error('Use one wording option per line.');
+    if(!Array.isArray(row.options) || row.options.some(v=>typeof v!=='string' || v.length>12000))throw Error('Each dropdown option must be text under 12,000 characters.');
     const options=[...new Set(row.options.map(v=>v.trim()).filter(Boolean))];
     if(!options.length)throw Error('Add at least one option to each dropdown.');
     return {id:row.id,options};
