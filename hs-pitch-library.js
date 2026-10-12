@@ -83,7 +83,18 @@
    return v!==null && v!==undefined && String(v).trim()!=='' && Number.isFinite(Number(v));
   }).sort((a,b)=>Number(prospect.values[b.key])-Number(prospect.values[a.key])).slice(0,3);
  }
- function build(team,prospect,input,type,selected={}){
+ function visitLines(visits={}){
+  const lines=[];
+  if(visits.coach)lines.push('Coach Visit');
+  if(visits.campus){
+   const week=String(visits.week || '').trim(),opponent=String(visits.opponent || '').trim();
+   if(!/^[1-9][0-9]?$/.test(week))throw Error('Enter a campus visit week between 1 and 99.');
+   if(opponent.length>120 || /[\r\n]/.test(opponent))throw Error('Enter the opponent on one line.');
+   lines.push('Campus Visit Week '+Number(week)+(opponent?' vs. '+opponent:''));
+  }
+  return lines;
+ }
+ function build(team,prospect,input,type,selected={},visits={}){
   if(!team || !prospect?.name || !prospect.rank)throw Error('Choose a High School player first.');
   if(type!=='scholarship' && type!=='walkon')throw Error('Choose Scholarship or Walk-On.');
   if(type==='walkon' && !canWalkon(prospect))throw Error('High School recruits ranked 1–500 require a scholarship offer.');
@@ -93,8 +104,8 @@
   if(missing.length)throw Error('Save a paragraph for '+missing.map(f=>f.label).join(', ')+' in My Offers first.');
   const home=prospect.homestate || prospect.hometown || '';
   const header=team+' offers #'+prospect.rank+' '+prospect.name+(prospect.rating?' '+prospect.rating:'')+(prospect.position?' '+prospect.position:'')+(home?' from '+home:'');
-  const text=[header,type==='scholarship'?'Scholarship':'Walk-On',...values.map(f=>f.label+':\n'+stripHeading(resolveParagraph(library,f.key,selected),f))].join('\n\n');
+  const text=[header,type==='scholarship'?'Scholarship':'Walk-On',...visitLines(visits),...values.map(f=>f.label+':\n'+stripHeading(resolveParagraph(library,f.key,selected),f))].join('\n\n');
   return {text,values};
  }
- root.NZCFLHSPitchLibrary=Object.freeze({fields,clean,importRows,topValues,build,findPlayer,canWalkon,token,addChoice});
+ root.NZCFLHSPitchLibrary=Object.freeze({fields,clean,importRows,topValues,build,findPlayer,canWalkon,token,addChoice,visitLines});
 })(globalThis);

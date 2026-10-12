@@ -40,6 +40,11 @@ test('selected phrases become saved dropdowns and resolve to exact wording',()=>
 });
 
 test('HS builder assembles the top three values and an editable offer header',()=>{
+ const withVisits=L.build('Michigan State',p,library,'scholarship',{}, {coach:true,campus:true,week:'4',opponent:'Ohio State'}).text;
+ assert.match(withVisits,/Scholarship\n\nCoach Visit\n\nCampus Visit Week 4 vs\. Ohio State\n\nPro Potential:/);
+ assert.deepEqual(L.visitLines({campus:true,week:2}),['Campus Visit Week 2']);
+ assert.throws(()=>L.visitLines({campus:true}),/week/);
+ assert.throws(()=>L.visitLines({campus:true,week:4,opponent:'Team\nInjected text'}),/one line/);
  for(const type of ['scholarship','walkon']){
   const player={...p,rank:type==='walkon'?501:1};
   const result=L.build('Michigan State',player,library,type);

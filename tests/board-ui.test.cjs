@@ -13,7 +13,7 @@ const source = script.slice(0, boot) + `
   globalThis.app = { DB, UI, ownOfferTypeBadge, renderOwnTypeFilter, mergeLeagueState, renderOfferAmendments, captureOfferDraft, readOfferDraft, clearOfferDraft, offerDraftKey, applyConditionalRescinds, readRescindRuleForm, validateRescindRuleDraft, requestQuickWalkon, renderQuickWalkonConfirm, canQuickOfferWalkon, quickOfferWalkon, renderQuickWalkon, renderProspectBoardCard, scheduleSummaryCountdown, dismissSummaryBanner, bindFloatingSubmit, extractPromises, cleanDisplayPromises, readCprBoard, updateBucksEntries, renderBucksSettings, renderCprProfile, cprPreviousSchool, ensureCprScholarshipThreads, renderAutoCommitSettings, stageAutoCommits, readScholarshipCapacity, buildPromiseArchive, parseCsvRows, offerCountForProspect, refreshScholarshipHistory, submitCprOffer, renderSubmitModal, createCprPlayer, loadClassData, resetOfferWindow, setOffersLocked, offersLocked, pendingCommitChanges, restoreSettingsDraft, renderOfferBlock, renderRescindFilterFields, renderVisitLedger, visibleBoardProspectIds, setRecruitingStage, requestReset, approveDangerReset, beginSettingsDraft, hasSettingsChanges, canLeaveSettings, saveSettingsChanges, saveDBNow, leagueStatePayload, mergeSettingsValue, updateCommitsFromSheet, runBackupNow, setTransferFilter, renderTransferFilters, renderClassSetup, requestManualCommitOverride, applyManualCommitOverride, requestClearCommit, clearManualCommitOverride, applyManualCommitOverrides, clearRecruitingBoard, findProspectFromSheetRow, transferCardStyle, parseFullClass, prospectFromRosterRow, confirmTransferImport, releaseSingleStageBoard, addOfferDirect, render, renderNav, navigateTo, applyRoute, setReady(){ dbReady = true; sessionReady = true; }, renderFeed, renderBoardSearchResults, renderTeamsPage,
     renderThreadProspectList, renderProspectDetail, builtInTeamBranding, getTeamBranding, activeTeamBrands,
     mobileRecruitName, renderRecruitName, renderMyOffers, renderCommitsForTeam, renderTeamOffers, renderConditionalRescinds, renderRecruitValues, teamBorderColor, bindEvents, applyDefaultClassData, releaseWave1, releaseWave2,
-    currentHSPitches, findHSPitchPlayer, renderHSPitchEditor, renderHSPitchBuilder, buildHSPitchDraft, parseOfferSheet,
+    currentHSPitches, findHSPitchPlayer, renderHSPitchEditor, renderHSPitchBuilder, buildHSPitchDraft, applyHSVisits, hsBuilderVisits, parseOfferSheet,
     setSession(value){ SESSION = value; } };
 })();`;
 
@@ -1022,6 +1022,27 @@ test('team save notice clears on navigation and does not return with browser his
 });
 
 
+test('HS builder detects pasted drafts, shows unsaved dropdowns, and applies visits without replacing prose',()=>{
+ const {app,context,elements}=harness();app.DB.recruitingStage='hs';
+ Object.assign(app.DB.prospects.r1,{commitTeam:'',values:{proPotential:1,winning:.8,coach:.6}});
+ const library=context.NZCFLHSPitchLibrary.clean({paragraphs:{proPotential:'Drafted.',winning:'Win.',coach:'Coach.'}});
+ const draft=context.NZCFLHSPitchLibrary.clean({paragraphs:{...library.paragraphs,proPotential:'Drafted in the first {{Dropdown 1}}.'},choices:{proPotential:[{id:'c1',options:['round','two rounds']}]}});
+ Object.assign(app.currentHSPitches(),{loaded:true,library,draft});
+ const text='Michigan State offers #1 Jordan Able\n\nScholarship\n\nPro Potential:\nMy personalized promise.\n\nWinning:\nUnchanged winning pitch.';
+ elements['rb-sheet-text']={value:text,focus(){}};elements['rb-submit-error']={textContent:''};app.captureOfferDraft();
+ const html=app.renderHSPitchBuilder(null);
+ assert.match(html,/id="rb-hs-pitch-builder" open/);assert.match(html,/Pitch dropdowns/);assert.match(html,/Save &amp; use changes/);
+ app.buildHSPitchDraft();assert.match(elements['rb-submit-error'].textContent,/Save your pitch library/);
+ app.UI.hsVisits={coach:true,campus:true,week:'4',opponent:'Ohio State'};
+ app.applyHSVisits();
+ assert.match(elements['rb-sheet-text'].value,/Campus Visit Week 4 vs\. Ohio State/);
+ assert.match(elements['rb-sheet-text'].value,/Coach Visit/);
+ assert.ok(elements['rb-sheet-text'].value.endsWith('Pro Potential:\nMy personalized promise.\n\nWinning:\nUnchanged winning pitch.'));
+ app.applyHSVisits();assert.equal(elements['rb-sheet-text'].value.match(/Coach Visit/g).length,1);
+ app.UI.hsVisits.campus=false;app.UI.hsVisits.coach=false;app.applyHSVisits();
+ assert.doesNotMatch(elements['rb-sheet-text'].value,/Coach Visit|Campus Visit/);
+});
+
 test('HS phrase dropdowns appear in context and only chosen wording reaches the draft',()=>{
  const {app,context,elements}=harness();app.DB.recruitingStage='hs';
  Object.assign(app.DB.prospects.r1,{commitTeam:'',values:{proPotential:1,winning:.8,coach:.6}});
@@ -1029,7 +1050,7 @@ test('HS phrase dropdowns appear in context and only chosen wording reaches the 
  Object.assign(app.currentHSPitches(),{loaded:true,library,draft:library});
  app.UI.submitTargetId='r1';
  const html=app.renderHSPitchBuilder(app.DB.prospects.r1);
- assert.match(html,/I promise first <select/);assert.match(html,/&lt;script&gt;/);assert.doesNotMatch(html,/<script>/);
+ assert.match(html,/Pitch dropdowns/);assert.match(html,/&lt;script&gt;/);assert.doesNotMatch(html,/<script>/);
  assert.match(app.renderHSPitchEditor(),/Make selected text a dropdown/);
  elements['rb-sheet-text']={value:'',focus(){}};elements['rb-submit-error']={textContent:''};
  app.buildHSPitchDraft();assert.match(elements['rb-submit-error'].textContent,/Choose wording/);
