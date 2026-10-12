@@ -85,6 +85,7 @@
 <script src="/auto-commits.js" onerror="this.onerror=null;this.src='auto-commits.js'"></script>
 <script src="/offer-window.js" onerror="this.onerror=null;this.src='offer-window.js'"></script>
 <script src="/transfer-rules.js" onerror="this.onerror=null;this.src='transfer-rules.js'"></script>
+<script src="/promise-lists.js" onerror="this.onerror=null;this.src='promise-lists.js'"></script>
 <script>
 (function(){
 
@@ -2616,6 +2617,8 @@ function findPitchTitle(text, promiseStart){
 }
 
 function extractPromises(text){
+  const listed = NZCFLPromiseLists.extract(text);
+  if (listed.length) return listed;
   const promises = [];
   const seen = {};
   text = String(text || '');
@@ -2677,6 +2680,8 @@ function sanitizePromiseText(text){
 }
 
 function cleanDisplayPromises(offer){
+  const listed = NZCFLPromiseLists.extract(offer && offer.text);
+  if (listed.length) return listed;
   const source = offer?.templatePromises ? (offer.promises || []) : offer && offer.text ? extractPromises(offer.text) : ((offer && offer.promises) || []);
   const seen = {};
   const cleaned = [];

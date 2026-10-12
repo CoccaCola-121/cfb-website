@@ -1,3 +1,4 @@
+import '../../promise-lists.js';
 export const BACKUP_STATUS_KEY = 'backup:latest';
 
 function configured(env) {
@@ -41,6 +42,8 @@ function normalizeVisits(visits) {
 }
 
 function promiseRows(offer) {
+  const listed = globalThis.NZCFLPromiseLists.extract(offer && offer.text);
+  if (listed.length) return listed.slice(0,3);
   const promises = Array.isArray(offer && offer.promises) ? offer.promises : [];
   return promises.slice(0, 3).map((promise) => ({
     title: String((promise && (promise.title || promise.category)) || '').trim(),

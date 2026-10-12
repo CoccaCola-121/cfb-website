@@ -68,6 +68,7 @@ function harness() {
   vm.runInContext(fs.readFileSync(path.join(rootDir, 'offer-window.js'), 'utf8'), context);
   vm.runInContext(fs.readFileSync(path.join(rootDir, 'auto-commits.js'), 'utf8'), context);
   vm.runInContext(fs.readFileSync(path.join(rootDir, 'transfer-rules.js'), 'utf8'), context);
+  vm.runInContext(fs.readFileSync(path.join(rootDir, 'promise-lists.js'), 'utf8'), context);
   vm.runInContext(source, context);
   const { app } = context;
   app.setSession({ team: 'Michigan State', username: 'Test coach', discordId: 'fixture', accessLevel: 'coach' });
@@ -1018,6 +1019,23 @@ test('team save notice clears on navigation and does not return with browser his
   assert.equal(app.UI.adminActionStatus, null);
 });
 
+
+test('explicit promise lists replace inline promises in existing offers and promise exports', () => {
+  const {app}=harness();
+  const inline='Coach\nI promise to be your coach for every game you play.\nPrestige/Winning\nI promise you a season of 8 wins or more, and a bowl appearance.';
+  const expected=['No Coaching Changes','At Least One 8+ Win Season','At Least Bowl One Appearance'];
+  const text=inline+'\n\nPromises:\n'+expected.map(p=>'- '+p).join('\n');
+  assert.deepEqual(Array.from(app.extractPromises(text),p=>p.text),expected);
+  const offer={team:'Boise State',text,promises:[{text:'I promise an outdated inline promise.'}]};
+  assert.deepEqual(Array.from(app.cleanDisplayPromises(offer),p=>p.text),expected);
+  app.DB.offersByProspect.r1=[offer];
+  assert.deepEqual(Array.from(app.parseCsvRows(app.buildPromiseArchive())[1].slice(2)),expected);
+  const formatted=text.replace('Promises:','### **Promises:**').replace(/^- /gm,'1. ').replace(/\n/g,'\r\n');
+  assert.deepEqual(Array.from(app.extractPromises(formatted),p=>p.text),expected);
+  assert.equal(app.extractPromises(inline+'\nPromises:\nWe care about your future.').length,2);
+  assert.equal(app.extractPromises(inline+'\nThese promises:\n- Not an explicit heading').length,2);
+  assert.deepEqual(Array.from(app.extractPromises(text+'\nVisits:\n- Week 1'),p=>p.text),expected);
+});
 
 test('starred promises override casual promise wording in the same paragraph, including stored offers', () => {
   const {app}=harness();

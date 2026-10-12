@@ -1,3 +1,4 @@
+import '../../promise-lists.js';
 export const RETAIN_SEASONS=20;
 export async function ensureArchives(db){
  if(!db)throw Error('The league D1 database is required.');
@@ -9,6 +10,9 @@ export function archivePayload(state){
  const prospects={};
  for(const [id,p] of Object.entries(state.prospects || {}))prospects[id]={id,name:p.name,position:p.position,rating:p.rating,commitTeam:p.commitTeam,commitType:p.commitType,homestate:p.homestate,previousTeam:p.previousTeam,grade:p.grade,yearsLeft:p.yearsLeft};
  const offers={};
- for(const [id,rows] of Object.entries(state.offersByProspect || {}))if(prospects[id])offers[id]=rows.map(o=>({team:o.team,coach:o.coach,text:o.text,promises:o.promises,rescinded:!!o.rescinded,createdAt:o.createdAt,editHistory:o.editHistory}));
+ for(const [id,rows] of Object.entries(state.offersByProspect || {}))if(prospects[id])offers[id]=rows.map(o=>{
+   const listed=globalThis.NZCFLPromiseLists.extract(o.text);
+   return {team:o.team,coach:o.coach,text:o.text,promises:listed.length?listed:o.promises,rescinded:!!o.rescinded,createdAt:o.createdAt,editHistory:o.editHistory};
+ });
  return {prospects,offers};
 }
