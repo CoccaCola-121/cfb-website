@@ -1022,6 +1022,24 @@ test('team save notice clears on navigation and does not return with browser his
 });
 
 
+test('HS phrase dropdowns appear in context and only chosen wording reaches the draft',()=>{
+ const {app,context,elements}=harness();app.DB.recruitingStage='hs';
+ Object.assign(app.DB.prospects.r1,{commitTeam:'',values:{proPotential:1,winning:.8,coach:.6}});
+ const library=context.NZCFLHSPitchLibrary.clean({paragraphs:{proPotential:'I promise first {{Dropdown 1}}.',winning:'Winning pitch.',coach:'Coach pitch.'},choices:{proPotential:[{id:'c1',options:['round','two rounds','<script>']} ]}});
+ Object.assign(app.currentHSPitches(),{loaded:true,library,draft:library});
+ app.UI.submitTargetId='r1';
+ const html=app.renderHSPitchBuilder(app.DB.prospects.r1);
+ assert.match(html,/I promise first <select/);assert.match(html,/&lt;script&gt;/);assert.doesNotMatch(html,/<script>/);
+ assert.match(app.renderHSPitchEditor(),/Make selected text a dropdown/);
+ elements['rb-sheet-text']={value:'',focus(){}};elements['rb-submit-error']={textContent:''};
+ app.buildHSPitchDraft();assert.match(elements['rb-submit-error'].textContent,/Choose wording/);
+ app.UI.hsChoices.c1='round';app.buildHSPitchDraft();
+ assert.match(elements['rb-sheet-text'].value,/I promise first round\./);
+ assert.doesNotMatch(elements['rb-sheet-text'].value,/Dropdown|two rounds/);
+ app.renderHSPitchBuilder({...app.DB.prospects.r1,id:'another'});
+ assert.equal(app.UI.hsChoices.c1,undefined);
+});
+
 test('HS name lookup reveals position only after two errors',()=>{
  const {app,context}=harness();app.DB.recruitingStage='hs';
  const library=context.NZCFLHSPitchLibrary.clean({});
