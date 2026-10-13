@@ -4977,7 +4977,8 @@ function renderThreadProspectList(t, options){
   const cardContext = { ended: ended, thread: UI.view === 'thread' ? t : null };
   let html = '<div' + (recruitingStage() === 'cpr' && !isWatchlist ? ' class="rb-cpr-board-heading"' : '') + '><div><div class="rb-h" style="font-size:20px;margin-bottom:4px;">' + escapeHtml(t.title) + '</div>';
   html += '<div class="rb-cpr-board-description" style="font-size:13px;color:var(--slate);' + (recruitingStage() === 'cpr' && !isWatchlist ? '' : 'margin-bottom:18px;') + '">' + (isWatchlist ? 'Flagged players for your team.' : (recruitingStage() === 'transfer' ? 'Transfers in class-sheet order. 800-word pitches; offer headers excluded.' : (recruitingStage() === 'cpr' ? 'Free agents meeting position minimums, plus coach-created threads.' : rankRangeForThread(t) + ' on the board. Offers from every team stay visible here.'))) + '</div></div>';
-  if (recruitingStage() === 'cpr' && !isWatchlist) html += renderCprCreate() + '<label class="rb-toggle"><span>Hide my offers</span><input type="checkbox" id="rb-hide-my-offers" ' + (UI.hideMyOffers ? 'checked' : '') + ' /><span class="rb-switch-track"><span class="rb-switch-thumb"></span></span></label>';
+  if (recruitingStage() === 'cpr' && !isWatchlist) html += renderCprCreate();
+  if (isWatchlist || recruitingStage() === 'cpr') html += '<label class="rb-toggle"'+(isWatchlist?' style="margin-bottom:16px;"':'')+'><span>Hide my offers</span><input type="checkbox" id="rb-hide-my-offers" ' + (UI.hideMyOffers ? 'checked' : '') + ' /><span class="rb-switch-track"><span class="rb-switch-thumb"></span></span></label>';
   html += '</div>';
   html += '<div class="rb-card" style="padding:14px 16px;margin-bottom:14px;">';
   const visibleIds = visibleBoardProspectIds(t);
