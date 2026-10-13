@@ -16,7 +16,7 @@
         seen.add(value.toLowerCase());
         items.push({text:value,title:'Promise',category:'other'});
       }
-      if(items.length)result=items;
+      if(items.length){result=items.slice(0,3);break;}
     }
     return result;
   }

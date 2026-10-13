@@ -10,7 +10,7 @@ const script = page.match(/<script>([\s\S]*?)<\/script>/)[1];
 const boot = script.lastIndexOf('\napplyRoute(routeFromPath(window.location.pathname));');
 assert(boot > 0, 'The app bootstrap must be identifiable without executing network requests.');
 const source = script.slice(0, boot) + `
-  globalThis.app = { DB, UI, syncSubmitModalLock, offerRequest, watchlistNumbers, renderWatchlist, submitHighSchoolOffer, ownOfferTypeBadge, renderOwnTypeFilter, mergeLeagueState, renderOfferAmendments, captureOfferDraft, readOfferDraft, clearOfferDraft, offerDraftKey, applyConditionalRescinds, readRescindRuleForm, validateRescindRuleDraft, requestQuickWalkon, renderQuickWalkonConfirm, canQuickOfferWalkon, quickOfferWalkon, renderQuickWalkon, renderProspectBoardCard, scheduleSummaryCountdown, dismissSummaryBanner, bindFloatingSubmit, extractPromises, cleanDisplayPromises, readCprBoard, updateBucksEntries, renderBucksSettings, renderCprProfile, cprPreviousSchool, ensureCprScholarshipThreads, renderAutoCommitSettings, stageAutoCommits, readScholarshipCapacity, buildPromiseArchive, parseCsvRows, offerCountForProspect, refreshScholarshipHistory, submitCprOffer, renderSubmitModal, createCprPlayer, loadClassData, resetOfferWindow, setOffersLocked, offersLocked, pendingCommitChanges, restoreSettingsDraft, renderOfferBlock, renderRescindFilterFields, renderVisitLedger, visibleBoardProspectIds, setRecruitingStage, requestReset, approveDangerReset, beginSettingsDraft, hasSettingsChanges, canLeaveSettings, saveSettingsChanges, saveDBNow, leagueStatePayload, mergeSettingsValue, updateCommitsFromSheet, runBackupNow, setTransferFilter, renderTransferFilters, renderClassSetup, requestManualCommitOverride, applyManualCommitOverride, requestClearCommit, clearManualCommitOverride, applyManualCommitOverrides, clearRecruitingBoard, findProspectFromSheetRow, transferCardStyle, parseFullClass, prospectFromRosterRow, confirmTransferImport, releaseSingleStageBoard, addOfferDirect, render, renderNav, navigateTo, applyRoute, setReady(){ dbReady = true; sessionReady = true; }, renderFeed, renderBoardSearchResults, renderTeamsPage,
+  globalThis.app = { DB, UI, renderProspectDetail, renderProspectVisits, syncLeagueState, syncSubmitModalLock, offerRequest, watchlistNumbers, renderWatchlist, submitHighSchoolOffer, ownOfferTypeBadge, renderOwnTypeFilter, mergeLeagueState, renderOfferAmendments, captureOfferDraft, readOfferDraft, clearOfferDraft, offerDraftKey, applyConditionalRescinds, readRescindRuleForm, validateRescindRuleDraft, requestQuickWalkon, renderQuickWalkonConfirm, canQuickOfferWalkon, quickOfferWalkon, renderQuickWalkon, renderProspectBoardCard, scheduleSummaryCountdown, dismissSummaryBanner, bindFloatingSubmit, extractPromises, cleanDisplayPromises, readCprBoard, updateBucksEntries, renderBucksSettings, renderCprProfile, cprPreviousSchool, ensureCprScholarshipThreads, renderAutoCommitSettings, stageAutoCommits, readScholarshipCapacity, buildPromiseArchive, parseCsvRows, offerCountForProspect, refreshScholarshipHistory, submitCprOffer, renderSubmitModal, createCprPlayer, loadClassData, resetOfferWindow, setOffersLocked, offersLocked, pendingCommitChanges, restoreSettingsDraft, renderOfferBlock, renderRescindFilterFields, renderVisitLedger, visibleBoardProspectIds, setRecruitingStage, requestReset, approveDangerReset, beginSettingsDraft, hasSettingsChanges, canLeaveSettings, saveSettingsChanges, saveDBNow, leagueStatePayload, mergeSettingsValue, updateCommitsFromSheet, runBackupNow, setTransferFilter, renderTransferFilters, renderClassSetup, requestManualCommitOverride, applyManualCommitOverride, requestClearCommit, clearManualCommitOverride, applyManualCommitOverrides, clearRecruitingBoard, findProspectFromSheetRow, transferCardStyle, parseFullClass, prospectFromRosterRow, confirmTransferImport, releaseSingleStageBoard, addOfferDirect, render, renderNav, navigateTo, applyRoute, setReady(){ dbReady = true; sessionReady = true; }, renderFeed, renderBoardSearchResults, renderTeamsPage,
     renderThreadProspectList, renderProspectDetail, builtInTeamBranding, getTeamBranding, activeTeamBrands,
     mobileRecruitName, renderRecruitName, renderMyOffers, renderCommitsForTeam, renderTeamOffers, renderConditionalRescinds, renderRecruitValues, teamBorderColor, bindEvents, applyDefaultClassData, releaseWave1, releaseWave2,
     currentHSPitches, findHSPitchPlayer, renderHSPitchEditor, renderHSPitchBuilder, buildHSPitchDraft, applyHSVisits, hsBuilderVisits, parseOfferSheet, bindHSPitches, fitHSPitchOptions,
@@ -1460,4 +1460,32 @@ test('submit popup locks background and restores page position on close',()=>{
  delete elements['rb-submit-overlay'];delete elements['rb-submit-dialog'];elements['rb-app'].children=[background];
  app.syncSubmitModalLock();
  assert.equal(background.inert,false);assert.equal(context.document.documentElement.style.overflow,'auto');assert.equal(restored.top,720);
+});
+
+
+test('negated promise is ignored, one promise per paragraph, first three only',()=>{
+ const {app}=harness();
+ const text="Playing Time:\nWhile I can't promise that you will get to play this year, I promise to redshirt you as a freshman to maximize eligibility.\n\nCoach:\nI promise that I will be your coach as long as you are here.\n\nPrestige:\nI promise that we will make a bowl every year.\n\nWinning:\nI promise we will win a title.";
+ const promises=app.cleanDisplayPromises({text,promises:[]});
+ assert.equal(promises.length,3);assert(promises[0].text.startsWith('I promise to redshirt'));
+ assert.deepEqual(Array.from(promises,p=>p.title),['Playing Time','Coach','Prestige']);
+ assert.equal(app.extractPromises('I promise you will start. I promise you will win.\n\nI promise you will graduate.').length,2);
+});
+test('recruit detail puts own offer first and summarizes active visits',()=>{
+ const {app}=harness();app.UI.prospectId='r2';
+ app.DB.offersByProspect.r2=[{id:'other',team:'USC',text:'Scholarship\nOther unique pitch',visits:{campus:true,campusLabel:'Week 4 vs. UCLA'}},{id:'mine',team:'Michigan State',text:'Scholarship\nMy unique pitch',visits:{coach:true}},{id:'gone',team:'Alabama',rescinded:true,text:'Campus Visit Week 2'}];
+ const html=app.renderProspectDetail();
+ assert(html.indexOf('My unique pitch')<html.indexOf('Other unique pitch'));
+ const summary=app.renderProspectVisits(app.DB.offersByProspect.r2);
+ assert(summary.includes('Week 4 vs. UCLA'));assert(summary.includes('Coach visit'));assert(!summary.includes('Alabama'));
+ assert.equal(app.DB.offersByProspect.r2[0].id,'other');
+});
+test('forced league refresh bypasses stale cached CPR state',async()=>{
+ const {app,context}=harness();context.window.location.protocol='https:';context.AbortController=AbortController;
+ app.DB.recruitingStage='cpr';app.DB.updatedAt=123;app.UI.strongStorage=true;
+ let request;
+ context.fetch=async(url,options)=>{request={url,options};return {ok:true,status:200,json:async()=>({state:{recruitingStage:'hs',updatedAt:124},storage:'d1'})};};
+ await app.syncLeagueState(false,{force:true});
+ assert(request.url.includes('?refresh='));assert.equal(request.options.cache,'no-store');assert.equal(request.options.headers['if-none-match'],undefined);
+ assert.equal(app.DB.recruitingStage,'hs');assert.equal(app.UI.leagueVerified,true);
 });

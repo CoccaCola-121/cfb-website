@@ -767,7 +767,7 @@ async function loadAll(){
     const res = await getStored(DB_KEY, true);
     if (res && res.value) DB = Object.assign(DB, JSON.parse(res.value));
   } catch (e) { /* first run */ }
-  await syncLeagueState(false);
+  await syncLeagueState(false, {force:true});
   await ensureDefaultSeasonData();
   dbReady = true;
   render();
@@ -1002,15 +1002,18 @@ async function syncLeagueState(renderAfter, options){
   options = options || {};
   if (!options.force && Date.now() - lastLocalChangeAt < 2500) return false;
   try {
-    const {response:res,data} = await offerRequest('/api/league/state', { credentials: 'include', headers:UI.strongStorage && DB.updatedAt ? {'if-none-match':'"'+DB.updatedAt+'"'} : {} });
-    if(res.status===304)return false;
-    if (!res.ok) return false;
+    const {response:res,data} = await offerRequest('/api/league/state'+(options.force?'?refresh='+Date.now():''), { credentials: 'include', cache:'no-store', headers:!options.force && UI.strongStorage && DB.updatedAt ? {'if-none-match':'"'+DB.updatedAt+'"'} : {} });
+    if(res.status===304){UI.leagueVerified=true;return false;}
+    if (!res.ok || !data?.state)throw Error('Could not refresh the board.');
     if(UI.savingVisits)return false;
+    const hadSyncError=!!UI.leagueSyncError;UI.leagueSyncError='';UI.leagueVerified=true;
     UI.strongStorage=data.storage==='d1';
     const changed = mergeLeagueState(data.state);
-    if (changed && renderAfter && !UI.showSubmitModal && !UI.editOfferTarget && !UI.headerEdit && !UI.missingPitchEdit) render();
+    if ((changed || hadSyncError) && renderAfter && !UI.showSubmitModal && !UI.editOfferTarget && !UI.headerEdit && !UI.missingPitchEdit) render();
     return changed;
   } catch (e) {
+    UI.leagueSyncError='The board could not refresh. You may be viewing an older recruiting cycle.';
+    if(renderAfter && !UI.showSubmitModal)render();
     return false;
   }
 }
@@ -2620,7 +2623,7 @@ function pitchSections(text){
   for(const line of String(text).split('\n')){
     const cleaned=line.replace(/^[ \t]*(?:#{1,6}[ \t]*)?/,'').replace(/\*{1,3}/g,'').trim();
     const colon=cleaned.match(/^([A-Za-z][A-Za-z &/-]{1,34}):/);
-    const title=colon?colon[1].trim():values.test(cleaned)?cleaned:null;
+    const title=colon?colon[1].trim():cleaned.split('/').every(part=>values.test(part.trim()) || /^Winning$/i.test(part.trim()))?cleaned:null;
     if(title && !/^promise$/i.test(title))sections.push({start:offset,end:offset+line.length,title});
     offset+=line.length+1;
   }
@@ -2635,6 +2638,7 @@ function findPitchTitle(text, promiseStart){
 
 function extractPromises(text){
   text=String(text || '').replace(/\r\n?/g,'\n');
+  const listed=NZCFLPromiseLists.extract(text);if(listed.length)return listed.slice(0,3);
   const sections=pitchSections(text),candidates=[],emphasized=[];
   const add=(value,start)=>{
     value=String(value).replace(/\*{1,3}/g,'').replace(/\s+/g,' ').trim();
@@ -2654,6 +2658,7 @@ function extractPromises(text){
   const starts=/\b(?:(?:I|we)\s+(?:can\s+)?promise\b|promise\s*:|promise\s+(?=that\b|you\b|we\b|I\b))/gi;
   while((match=starts.exec(text))){
     const start=match.index;
+    if(/\b(?:can['’]t|cannot|couldn['’]t|won['’]t|wouldn['’]t|do not|don['’]t|not)\s+(?:\w+\s+){0,2}$/i.test(text.slice(Math.max(0,start-45),start)))continue;
     // Only skip this exact bold span, never another promise in the paragraph.
     if(emphasized.some(s=>start>=s.start && start<s.end))continue;
     const next=sections.find(s=>s.start>start);
@@ -2672,10 +2677,12 @@ function extractPromises(text){
     if(emphasized.some(p=>p.start>=paragraphStart && (paragraphEnd<0 || p.start<paragraphEnd) && p.title===findPitchTitle(text,start) && p.category===promiseCategory(value)))continue;
     add(value,start);
   }
-  const seen=new Set();
+  const seen=new Set(),paragraphs=new Set();
   return candidates.sort((a,b)=>a.start-b.start).filter(p=>{
-    const key=p.text.toLowerCase();if(seen.has(key))return false;seen.add(key);return true;
-  }).map(({start,...p})=>p);
+    const breaks=[...text.slice(0,p.start).matchAll(/\n[ \t]*\n/g)];
+    const paragraph=Math.max(breaks.length?breaks.at(-1).index:0,...sections.filter(s=>s.start<=p.start).map(s=>s.start));
+    const key=p.text.toLowerCase();if(seen.has(key) || paragraphs.has(paragraph))return false;seen.add(key);paragraphs.add(paragraph);return true;
+  }).slice(0,3).map(({start,...p})=>p);
 }
 
 function isLikelyPromiseText(text){
@@ -2691,7 +2698,7 @@ function sanitizePromiseText(text){
 
 function cleanDisplayPromises(offer){
   const listed = NZCFLPromiseLists.extract(offer && offer.text);
-  if (listed.length) return listed;
+  if (listed.length) return listed.slice(0,3);
   const source = offer?.templatePromises ? (offer.promises || []) : offer && offer.text ? extractPromises(offer.text) : ((offer && offer.promises) || []);
   const seen = {};
   const cleaned = [];
@@ -2702,7 +2709,7 @@ function cleanDisplayPromises(offer){
     seen[key] = true;
     cleaned.push(Object.assign({}, p, { text: text }));
   });
-  return cleaned;
+  return cleaned.slice(0,3);
 }
 
 function titleForPromise(offer, promise){
@@ -2935,19 +2942,19 @@ function parseOfferSheet(rawText){
 
 // Bound both the request and response-body read: either can stall independently.
 async function offerRequest(url, options={}, timeoutMs=15000, timeoutMessage='The server did not confirm your offer in time. Your draft is saved; check My Offers before retrying.'){
-  const controller=new AbortController();
+  const controller=typeof AbortController!=='undefined'?new AbortController():null;
   let timer;
   const timeout=new Promise((resolve,reject)=>{
     timer=setTimeout(()=>{
       const error=Error(timeoutMessage);
       error.retryable=true;
       reject(error);
-      controller.abort();
+      controller?.abort();
     },timeoutMs);
   });
   try {
     return await Promise.race([
-      (async()=>{const response=await fetch(url,{...options,signal:controller.signal});const data=response.status===304?null:await response.json();return {response,data};})(),
+      (async()=>{const response=await fetch(url,{cache:'no-store',...options,...(controller?{signal:controller.signal}:{})});const data=response.status===304?null:await response.json();return {response,data};})(),
       timeout
     ]);
   }finally{clearTimeout(timer);}
@@ -3174,9 +3181,10 @@ async function submitOfferSheet(rawText){
   if(UI.submitting)return;
   const draftKey=offerDraftKey();
   captureOfferDraft();
+  if(apiAvailable() && !UI.leagueVerified){await syncLeagueState(false,{force:true});if(!UI.leagueVerified)throw Error('Refresh the board before posting. Your draft is saved.');}
   if (recruitingStage() === 'cpr') return submitCprOffer(rawText);
   if (recruitingStage()==='hs' && apiAvailable() && UI.strongStorage && SESSION && rawText.trim())return submitHighSchoolOffer(rawText);
-  if (!SESSION || !rawText.trim()) return;
+  if (!SESSION || !rawText.trim()){const error=document.getElementById('rb-submit-error');if(error){error.textContent=!SESSION?'Your session expired. Sign in again; your draft is saved.':'Write or paste your offer before posting.';error.scrollIntoView({block:'nearest'});}return;}
   if (offersLocked()){
     UI.lastSummary = { errorText: 'Offer denied: offers are locked.' };
     UI.showSubmitModal = false;
@@ -3408,6 +3416,7 @@ function render(){
     return;
   }
   let html = renderNav();
+  if(UI.leagueSyncError)html+='<div class="rb-card" role="alert" style="padding:14px;margin-bottom:14px;">'+escapeHtml(UI.leagueSyncError)+' <button class="rb-btn" id="rb-retry-league">Refresh board</button></div>';
   if (UI.lastSummary) html += renderSummaryBanner();
   if (DB.unmatched.length) html += renderUnmatchedReview();
   if (UI.view === 'feed') html += renderFeed();
@@ -5383,12 +5392,17 @@ function renderTransferProfile(p, full){
   return '<div class="rb-transfer-profile"><div class="rb-transfer-origin">' + renderTeamLogo(brand, 28) + '<span><span class="rb-transfer-origin-label">Previous team:</span> <strong>' + escapeHtml(p.transferFrom || 'School not listed') + '</strong></span><span class="rb-transfer-eligibility">' + escapeHtml(p.grade || 'Grade not listed') + ' · ' + escapeHtml(p.yearsLeft || '?') + ' year' + (Number(p.yearsLeft) === 1 ? '' : 's') + ' left</span></div><p class="rb-transfer-promise"><strong>Broken promise:</strong> ' + escapeHtml(p.brokenPromise || 'Not listed') + '</p><div class="rb-transfer-prompt' + (full ? '' : ' rb-transfer-prompt-preview') + '"><p>' + escapeHtml(p.prompt || p.storyline || 'Not listed') + '</p></div>' + (full ? '' : '<span class="rb-transfer-read">Submit pitch <span aria-hidden="true">→</span></span>') + '</div>';
 }
 
+function renderProspectVisits(offers){
+  const rows=offers.filter(o=>!o.rescinded).map(o=>({offer:o,visits:detectVisits(o.text,o.visits)})).filter(row=>row.visits.coach || row.visits.campus);
+  return '<section class="rb-card" style="padding:16px 20px;margin-bottom:14px;" aria-label="Visit summary"><h2 style="font-size:16px;margin:0 0 10px;">Visits</h2>'+(!rows.length?'<p style="color:var(--slate);margin:0;">No visits offered.</p>':rows.map(({offer,visits})=>'<div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:6px 16px;padding:8px 0;border-top:1px solid var(--hairline);"><strong>'+escapeHtml(offer.team)+'</strong><span>'+escapeHtml([visits.coach?'Coach visit':'',visits.campus?'Campus visit · '+(visits.campusLabel || 'Week not specified'):''].filter(Boolean).join(' · '))+'</span></div>').join(''))+'</section>';
+}
+
 function renderProspectDetail(){
   const p = DB.prospects[UI.prospectId];
   if (!p) return '<div style="color:var(--slate);">Prospect not found.</div>';
   const viewerTeam = SESSION && SESSION.team ? teamKey(canonicalTeamName(SESSION.team)) : '';
   const ownCommit = !!(p.commitTeam && viewerTeam && teamKey(canonicalTeamName(p.commitTeam)) === viewerTeam);
-  const offers = DB.offersByProspect[p.id] || [];
+  const offers = (DB.offersByProspect[p.id] || []).slice().sort((a,b)=>Number(teamKey(b.team)===viewerTeam)-Number(teamKey(a.team)===viewerTeam));
   const sessionOffer = SESSION ? findAnyOfferForTeam(p.id, SESSION.team) : null;
   const returnView = UI.prospectReturnView || 'feed';
   const returnLabel = returnView === 'watchlist' ? 'Back to My Watchlist' : (returnView === 'myoffers' ? 'Back to My Offers' : (returnView === 'mycommits' ? 'Back to My Commits' : (returnView === 'teamcommits' ? 'Back to Team Commits' : (returnView === 'teamoffers' ? 'Back to Team Offers' : 'Back to board'))));
@@ -5419,6 +5433,7 @@ function renderProspectDetail(){
     html += renderRecruitValues(p.values);
   }
   html += '</div>';
+  html += renderProspectVisits(offers);
   if (!offers.length){
     html += '<div class="rb-card" style="padding:28px;text-align:center;color:var(--slate);">No offers yet.</div>';
     return html;
@@ -5921,6 +5936,7 @@ async function removeKennyTestOffer(){
 }
 function bindEvents(){
   syncSubmitModalLock();
+  const retryLeague=document.getElementById('rb-retry-league');if(retryLeague)retryLeague.onclick=()=>syncLeagueState(true,{force:true});
   const activeOffers=document.getElementById('rb-my-offers-active');if(activeOffers)activeOffers.onchange=()=>{UI.myOffersActiveOnly=activeOffers.checked;render();};
   document.querySelectorAll('[data-edit-conditional]').forEach(button=>button.onclick=()=>{
    if(UI.submitting)return;
@@ -6221,9 +6237,15 @@ function bindEvents(){
     if(updateCount) updateCount();
   }
   const submitSheetBtn = document.getElementById('rb-submit-sheet-btn');
-  if (submitSheetBtn) submitSheetBtn.onclick = function(){
+  if (submitSheetBtn) submitSheetBtn.onclick = async function(){
+    captureOfferDraft();
     const text = document.getElementById('rb-sheet-text').value;
-    submitOfferSheet(text);
+    try{await submitOfferSheet(text);}catch(error){
+      finishOfferSubmission();
+      const status=document.getElementById('rb-submit-error');
+      if(status){status.textContent=error.message || 'Could not post. Your draft is saved; please try again.';status.scrollIntoView({block:'nearest'});}
+    }
+    const status=document.getElementById('rb-submit-error');if(status?.textContent)status.scrollIntoView({block:'nearest'});
   };
 
   document.querySelectorAll('[data-rescind-offer]').forEach(function(el){
@@ -6749,6 +6771,9 @@ window.addEventListener('beforeunload', function(e){
   e.preventDefault();
   e.returnValue = '';
 });
+window.addEventListener('pageshow',()=>{if(dbReady)syncLeagueState(true,{force:true});});
+window.addEventListener('online',()=>syncLeagueState(true,{force:true}));
+document.addEventListener('visibilitychange',()=>{if(!document.hidden && dbReady)syncLeagueState(true,{force:true});});
 if ('serviceWorker' in navigator && /^https?:$/.test(window.location.protocol)) {
   navigator.serviceWorker.register('/sw.js').catch(function(e){ console.warn('service worker registration failed', e); });
 }
