@@ -55,3 +55,29 @@ test('generated offer header including position is excluded from pitch word coun
  const text=A.amend('This is my pitch.','header','Delaware',p);
  assert.equal(globalThis.NZCFLTransferRules.pitchWordCount(text,p),4);
 });
+
+
+test('USC correction is owner-only, one-time, and records the full original and revised pitch',async()=>{
+ const p={id:'r32',name:'Reuben Rains',position:'RB'};
+ const offer={id:'o_mwaji8b2',team:'USC',coach:'marthfromsmash',createdAt:1791760070800,text:'USC offers #32 Reuben Rains\n\nScholarship\n\nOriginal pitch.',visits:{coach:false,campus:false},editHistory:[]};
+ const state={recruitingStage:'hs',prospects:{r32:p},offersByProspect:{r32:[offer]}};
+ const data=new Map([['league:state',state],['discord:user:155841820696248320',{discordId:'155841820696248320',team:'USC'}],['discord:user:other',{discordId:'other',team:'USC'}]]);
+ const env={SESSION_SECRET:'test',AUTH_KV:{get:async k=>structuredClone(data.get(k)||null),put:async(k,v)=>data.set(k,JSON.parse(v))}};
+ const run=async(id,expectedText=offer.text)=>onRequestPost({env,waitUntil(){},request:new Request('https://test/api/offers/amend',{method:'POST',headers:{cookie:'nzcfl_session='+await signSession(env,{discordId:id}),'content-type':'application/json'},body:JSON.stringify({action:'correct-body',prospectId:'r32',offerId:offer.id,expectedText,pitch:'I promise you will start two seasons.',promises:[]})})});
+ assert.equal((await run('other')).status,403);
+ const response=await run('155841820696248320');assert.equal(response.status,200);
+ const saved=(await response.json()).state.offersByProspect.r32[0];
+ assert.equal(saved.editHistory[0].beforeText,offer.text);
+ assert.equal(saved.editHistory[0].afterText,saved.text);
+ assert(saved.text.includes('Scholarship'));
+ assert.equal((await run('155841820696248320',saved.text)).status,400);
+ assert.equal(A.canCorrectBody({...offer,id:'other'},p,'hs'),false);
+ assert.throws(()=>A.correctBody(offer,p,'hs','Campus Visit Week 1'),/only the pitch/);
+});
+
+
+test('scholarship detection ignores blank header spacing',async()=>{
+ await import('../cpr-rules.js');
+ assert.equal(globalThis.NZCFLCprRules.scholarshipOffer({text:'Montana offers #8 W. Hawkins\n\n\n\n\n\nScholarship\n\nPitch.'}),true);
+ assert.equal(globalThis.NZCFLCprRules.scholarshipOffer({text:'Montana offers #8 W. Hawkins\nWalk-On\nMy pitch.'}),false);
+});

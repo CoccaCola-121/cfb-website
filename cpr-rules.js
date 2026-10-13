@@ -6,7 +6,7 @@
     return offers.some(offer=>!offer.rescinded && scholarshipOffer(offer)) || player.everScholarship === true || player.offerMode === 'pitch' || (Object.hasOwn(scholarshipCutoffs,player.position) && overall >= scholarshipCutoffs[player.position]);
   }
   function scholarshipOffer(offer){
-    const header=String(offer.text || '').trim().split(/\r?\n/).slice(0,5);
+    const header=String(offer.text || '').trim().split(/\r?\n/).filter(line=>line.trim()).slice(0,5);
     return header.some(line=>/^(?:scholarship|scholarship offer)\s*[.!:]?$/i.test(line.replace(/[*_`]/g,'').trim()) || /\boffers?\b.*\bscholarship\b/i.test(line));
   }
   const normalize = value => String(value || '').trim().replace(/\s+/g,' ').toLowerCase();

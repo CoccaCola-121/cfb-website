@@ -97,5 +97,16 @@
     lines[matches[0]]='';
     return insertVisit(lines.join('\n'),phrase);
   }
-  root.NZCFLOfferAmendments={header,amend,allowed,canAddMissingPitch,addMissingPitch,insertVisit,visitChanges,readableEditChange,canFixVisitPlacement,fixVisitPlacement};
+  function canCorrectBody(o,p,stage){
+    return stage==='hs' && p?.id==='r32' && p.name==='Reuben Rains' && o?.id==='o_mwaji8b2' && o.team==='USC' && o.coach==='marthfromsmash' && o.createdAt===1791760070800 && !o.bodyCorrectedAt && !o.rescinded;
+  }
+  function correctBody(o,p,stage,body){
+    if(!canCorrectBody(o,p,stage))throw Error('This one-time correction is not available.');
+    body=String(body || '').trim();
+    if(!body || body.length>100000)throw Error('Enter the corrected pitch body.');
+    if(/\b(?:coach|campus)\s+visit\b/i.test(body) || header(body).end>0)throw Error('Edit only the pitch. Keep headers and visits out of this correction.');
+    const h=header(o.text);
+    return h.lines.slice(0,h.end).join('\n')+'\n'+body;
+  }
+  root.NZCFLOfferAmendments={canCorrectBody,correctBody,header,amend,allowed,canAddMissingPitch,addMissingPitch,insertVisit,visitChanges,readableEditChange,canFixVisitPlacement,fixVisitPlacement};
 })(globalThis);

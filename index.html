@@ -784,9 +784,8 @@ function apiAvailable(){
 async function loadServerAuth(){
   if (!apiAvailable()) return;
   try {
-    const res = await fetch('/api/auth/me', { credentials: 'include' });
+    const {response:res,data} = await offerRequest('/api/auth/me', { credentials: 'include' });
     if (!res.ok) return;
-    const data = await res.json();
     if (data.authenticated && data.user){
       UI.pendingDiscordUser = data.user;
       if (data.user.team){
@@ -813,9 +812,8 @@ async function loadServerAuth(){
 async function loadTeamAvailability(){
   if (!apiAvailable()) return;
   try {
-    const res = await fetch('/api/teams', { credentials: 'include' });
+    const {response:res,data} = await offerRequest('/api/teams', { credentials: 'include' });
     if (!res.ok) return;
-    const data = await res.json();
     UI.unavailableTeamKeys = data.claimedTeams || [];
     UI.teamLinks = data.links || {};
     if (Array.isArray(data.teams)){
@@ -1004,10 +1002,9 @@ async function syncLeagueState(renderAfter, options){
   options = options || {};
   if (!options.force && Date.now() - lastLocalChangeAt < 2500) return false;
   try {
-    const res = await fetch('/api/league/state', { credentials: 'include', headers:UI.strongStorage && DB.updatedAt ? {'if-none-match':'"'+DB.updatedAt+'"'} : {} });
+    const {response:res,data} = await offerRequest('/api/league/state', { credentials: 'include', headers:UI.strongStorage && DB.updatedAt ? {'if-none-match':'"'+DB.updatedAt+'"'} : {} });
     if(res.status===304)return false;
     if (!res.ok) return false;
-    const data = await res.json();
     if(UI.savingVisits)return false;
     UI.strongStorage=data.storage==='d1';
     const changed = mergeLeagueState(data.state);
@@ -1107,7 +1104,7 @@ async function ensureDefaultSeasonData(){
     try {
       let text = window.NZCFL_DEFAULT_CLASS_CSV || '';
       if (!text){
-        const res = await fetch(DEFAULT_CLASS_FILE);
+        const res = await fetch(DEFAULT_CLASS_FILE, {signal:AbortSignal.timeout(15000)});
         if (!res.ok) throw new Error('HTTP ' + res.status);
         text = await res.text();
       }
@@ -2950,7 +2947,7 @@ async function offerRequest(url, options={}, timeoutMs=15000, timeoutMessage='Th
   });
   try {
     return await Promise.race([
-      (async()=>{const response=await fetch(url,{...options,signal:controller.signal});const data=await response.json();return {response,data};})(),
+      (async()=>{const response=await fetch(url,{...options,signal:controller.signal});const data=response.status===304?null:await response.json();return {response,data};})(),
       timeout
     ]);
   }finally{clearTimeout(timer);}
@@ -3130,7 +3127,12 @@ async function submitHighSchoolOffer(rawText){
   const key=offerDraftKey();captureOfferDraft();
   const parsed=parseOfferSheet(rawText);
   const prospectId=UI.submitTargetId || (parsed?.rank?'r'+parsed.rank:null);
-  const text=parsed?.offerText || rawText;
+  let text=parsed?.offerText || rawText;
+  const player=DB.prospects[prospectId];
+  if(player && Number(player.rank)>=1 && Number(player.rank)<=500 && !NZCFLCprRules.scholarshipOffer({text})){
+    text=NZCFLOfferAmendments.amend(text,'upgrade',SESSION.team,player);
+    const editor=document.getElementById('rb-sheet-text');if(editor){editor.value=text;captureOfferDraft();}
+  }
   // Reuse the request across automatic and manual retries, including refreshes.
   const draft=readOfferDraft();
   const signature=JSON.stringify([prospectId,text]);
@@ -4297,7 +4299,7 @@ function renderHSPitchBuilder(target){
  if(!walkon)UI.hsBuildType='scholarship';
  const options=!target?'<label>Player name<input class="rb-input" id="rb-hs-build-name" placeholder="Enter full name" value="'+escapeHtml(UI.hsBuildName || '')+'" autocomplete="off"></label>'+((UI.hsLookupFailures || 0)>=2?'<label>Position (to distinguish matching names)<input class="rb-input" id="rb-hs-build-position" placeholder="e.g. WR" value="'+escapeHtml(UI.hsBuildPosition || '')+'"></label>':'')+'<button class="rb-btn" id="rb-hs-find-player">Find player</button>'+(UI.hsLookupError?'<p role="alert" style="color:var(--alert);margin:0;">'+escapeHtml(UI.hsLookupError)+'</p>':'')+(selected?'<p style="margin:0;">Found #'+escapeHtml(selected.rank)+' '+escapeHtml(selected.name+' · '+selected.position)+'</p>':''):'';
  return '<details style="border:1px solid var(--hairline);border-radius:8px;padding:12px;margin-bottom:12px;" id="rb-hs-pitch-builder"'+(UI.hsBuilderOpen!==false?' open':'')+'><summary style="cursor:pointer;">Build from my saved pitches</summary><div style="display:grid;gap:10px;margin-top:12px;">'+options+
- '<label>Offer type<select class="rb-input" id="rb-hs-build-type" style="display:block;width:100%;"><option value="scholarship"'+(UI.hsBuildType!=='walkon'?' selected':'')+'>Scholarship</option>'+(walkon?'<option value="walkon"'+(UI.hsBuildType==='walkon'?' selected':'')+'>Walk-On</option>':'')+'</select></label>'+(!walkon?'<p style="font-size:12px;margin:0;color:var(--slate);">Ranks 1–500 require a scholarship.</p>':'')+
+ '<label>Offer type<select class="rb-input" id="rb-hs-build-type" style="display:block;width:100%;"><option value="scholarship"'+(UI.hsBuildType!=='walkon'?' selected':'')+'>Scholarship</option>'+(walkon?'<option value="walkon"'+(UI.hsBuildType==='walkon'?' selected':'')+'>Walk-On</option>':'')+'</select></label>'+(!walkon?'<p style="font-size:12px;margin:0;color:var(--slate);">Ranks 1–500 are submitted as scholarships, including pasted drafts.</p>':'')+
  '<p style="font-size:12px;margin:0;color:var(--slate);">'+(selected?'Top values: '+escapeHtml(values.map(f=>f.label).join(' · ') || 'Not available'):'Choose a player to see their top values.')+'</p>'+
  (state.draft && JSON.stringify(state.draft)!==JSON.stringify(state.library)?'<p role="status" style="color:var(--gold);">Your pitch library has unsaved changes. Save them to use the new dropdowns.</p><button class="rb-btn" id="rb-hs-save-use"'+(state.saving?' disabled':'')+'>'+(state.saving?'Saving…':'Save &amp; use changes')+'</button>':'')+
  renderHSWording(selected,state.draft || state.library)+
@@ -4863,10 +4865,29 @@ async function toggleWatchlist(pid){
     UI.lastSummary={errorText:error.message || 'Could not save watchlist change.'};
   } finally { delete UI.watchlistPending[pid]; renderAfterWatchlist(); }
 }
+function watchlistNumbers(text){
+  const tokens=String(text).replace(/^[ \t]*\|?[ :\-]+\|?[ \t]*$/gm,'').replace(/[|*]/g,' ').trim().split(/\s+/).filter(Boolean);
+  const ids=[],unknown=[];
+  for(const token of new Set(tokens)){
+    const matches=/^#?\d+$/.test(token)?Object.values(DB.prospects).filter(p=>Number(p.rank)===Number(token.replace('#',''))):[];
+    if(matches.length===1)ids.push(matches[0].id);else unknown.push(token);
+  }
+  return {ids:[...new Set(ids)],unknown};
+}
+async function addWatchlistNumbers(){
+  if(!UI.watchlistLoaded || UI.watchlistBulkSaving)return;
+  const result=watchlistNumbers(UI.watchlistNumbers || '');
+  if(result.unknown.length || !result.ids.length){UI.watchlistNumberStatus=result.unknown.length?'Not found or ambiguous: '+result.unknown.join(', '):'Enter player numbers first.';renderAfterWatchlist();return;}
+  const ids=result.ids.filter(id=>!UI.watchlistIds.includes(id));
+  if(!ids.length){UI.watchlistNumberStatus='These players are already on your watchlist.';renderAfterWatchlist();return;}
+  UI.pendingWatchlistBulk={action:'add-many',ids,count:ids.length};
+  await confirmWatchlistBulk();
+  if(ids.every(id=>UI.watchlistIds.includes(id))){UI.watchlistNumbers='';UI.watchlistNumberStatus=ids.length+' players added.';renderAfterWatchlist();}
+}
 function renderWatchlist(){
   if (!UI.watchlistLoaded) return '<div class="rb-card" style="padding:24px;"><div class="rb-h" style="font-size:20px;margin-bottom:12px;">My Watchlist</div><p role="status">' + escapeHtml(UI.watchlistError || 'Loading your team watchlist…') + '</p><button class="rb-btn" id="rb-retry-watchlist">Retry</button></div>';
-  const ids = UI.watchlistIds.filter(pid=>!!DB.prospects[pid]);
-  return renderThreadProspectList({id:'watchlist',title:'My Watchlist',prospectIds:ids,stars:null}, {watchlist:true});
+  const ids = UI.watchlistIds.filter(pid=>!!DB.prospects[pid]).sort((a,b)=>(Number(DB.prospects[a].rank)||Infinity)-(Number(DB.prospects[b].rank)||Infinity));
+  return '<details class="rb-card" style="padding:16px;margin-bottom:16px;"><summary>Add players by number</summary><p>Paste a column of player numbers, one per line.</p><textarea class="rb-textarea" id="rb-watchlist-numbers" rows="4" aria-label="Player numbers" placeholder="1&#10;2&#10;143">'+escapeHtml(UI.watchlistNumbers || '')+'</textarea><button class="rb-btn" id="rb-add-watchlist-numbers"'+(UI.watchlistBulkSaving?' disabled':'')+'>Add players</button><p role="status">'+escapeHtml(UI.watchlistNumberStatus || '')+'</p></details>'+renderThreadProspectList({id:'watchlist',title:'My Watchlist',prospectIds:ids,stars:null}, {watchlist:true});
 }
 
 function renderFeed(){
@@ -4960,7 +4981,7 @@ function renderThreadProspectList(t, options){
   html += '</div>';
   html += '<div class="rb-card" style="padding:14px 16px;margin-bottom:14px;">';
   const visibleIds = visibleBoardProspectIds(t);
-  if (recruitingStage() === 'transfer') visibleIds.sort(function(a,b){ const pa = DB.prospects[a], pb = DB.prospects[b]; return (pa.sourceOrder ?? pa.rank) - (pb.sourceOrder ?? pb.rank); });
+  if (!isWatchlist && recruitingStage() === 'transfer') visibleIds.sort(function(a,b){ const pa = DB.prospects[a], pb = DB.prospects[b]; return (pa.sourceOrder ?? pa.rank) - (pb.sourceOrder ?? pb.rank); });
   html += '<div class="rb-board-filter-top">' + renderPositionCounts(visibleIds, function(pid){ return DB.prospects[pid] && DB.prospects[pid].position; }, filterKey) + '<span id="rb-board-result-count" role="status" aria-live="polite">' + visibleIds.length + ' players</span></div>';
   html += '<input class="rb-input" data-thread-search="' + t.id + '" value="' + escapeHtml((UI.threadSearches || {})[t.id] || '') + '" placeholder="' + (recruitingStage() !== 'hs' ? 'Search players by name, home state or previous school' : 'Search recruits by name, rank, hometown or school') + '" />';
   if (recruitingStage() !== 'hs') {
@@ -5368,6 +5389,7 @@ function renderOfferAmendments(o,p,hideUpgrade){
   const attrs=' data-amend-prospect="'+escapeHtml(p.id)+'" data-amend-offer="'+escapeHtml(o.id)+'"';
   let buttons='';
   if(SESSION.discordId==='959185641613164604' && NZCFLOfferAmendments.canFixVisitPlacement(o,p,recruitingStage()))buttons+='<button class="rb-btn" data-amend-action="fix-visit-placement"'+attrs+'>Move campus visit above pitch</button>';
+  if(SESSION.discordId==='155841820696248320' && NZCFLOfferAmendments.canCorrectBody(o,p,recruitingStage()))buttons+='<button class="rb-btn rb-btn-gold" data-add-missing-pitch="1"'+attrs+'>One-time pitch correction</button>';
   if(NZCFLOfferAmendments.canAddMissingPitch(o,p,recruitingStage()))buttons+='<button class="rb-btn rb-btn-gold" data-add-missing-pitch="1"'+attrs+'>Add missing pitch</button>';
   if(h.offerLine<0 || h.typeLine<0)buttons+='<button class="rb-btn" data-amend-action="header"'+attrs+'>Add offer header</button>';
   if(h.offerLine>=0 && h.typeLine>h.offerLine)buttons+='<button class="rb-btn" data-edit-offer-header="1"'+attrs+'>Edit offer header</button>';
@@ -5440,13 +5462,14 @@ async function saveHeaderEdit(){
 }
 function openMissingPitch(pid,oid){
   const p=DB.prospects[pid],o=findOfferById(pid,oid);
-  if(!SESSION || !o || teamKey(o.team)!==teamKey(SESSION.team) || offersLocked() || !NZCFLOfferAmendments.canAddMissingPitch(o,p,recruitingStage()))return;
-  UI.missingPitchEdit={prospectId:pid,offerId:oid,expectedText:o.text,text:'',error:''};render();
+  const correction=SESSION?.discordId==='155841820696248320' && NZCFLOfferAmendments.canCorrectBody(o,p,recruitingStage());
+  if(!SESSION || !o || teamKey(o.team)!==teamKey(SESSION.team) || offersLocked() || (!correction && !NZCFLOfferAmendments.canAddMissingPitch(o,p,recruitingStage())))return;
+  UI.missingPitchEdit={prospectId:pid,offerId:oid,expectedText:o.text,correction,text:correction?NZCFLOfferAmendments.header(o.text).lines.slice(NZCFLOfferAmendments.header(o.text).end).join('\n'):'',error:''};render();
 }
 function renderMissingPitchModal(){
   const edit=UI.missingPitchEdit,p=DB.prospects[edit.prospectId];
   return '<div style="position:fixed;inset:0;background:rgba(0,0,0,.72);display:flex;align-items:center;justify-content:center;z-index:65;"><div class="rb-card" role="dialog" aria-modal="true" aria-labelledby="rb-missing-pitch-title" style="padding:24px;width:560px;max-width:92vw;max-height:90dvh;overflow:auto;box-sizing:border-box;">'+
-    '<h2 class="rb-h" id="rb-missing-pitch-title">Add missing pitch</h2><p>'+escapeHtml(p?.name || '')+'</p><p style="font-size:13px;color:var(--slate);">One-time approved correction. Paste the missing body, including Scholarship if intended. Your saved header stays in place. Add visits separately using Edit visits.</p>'+
+    '<h2 class="rb-h" id="rb-missing-pitch-title">' +(edit.correction?'Correct pitch':'Add missing pitch')+'</h2><p>'+escapeHtml(p?.name || '')+'</p><p style="font-size:13px;color:var(--slate);">' +(edit.correction?'One-time approved body edit. The original and revised pitch will be shown in edit history. Headers and visits stay unchanged.':'One-time approved correction. Paste the missing body, including Scholarship if intended. Your saved header stays in place. Add visits separately using Edit visits.')+'</p>'+
     '<div class="rb-mono" style="font-size:12px;white-space:pre-wrap;">'+escapeHtml(edit.expectedText)+'</div><textarea id="rb-missing-pitch-text" class="rb-textarea" rows="10" maxlength="100000" aria-label="Missing pitch" placeholder="Scholarship&#10;&#10;Your pitch…">'+escapeHtml(edit.text)+'</textarea><p style="font-size:12px;color:var(--slate);">Saving is recorded in edit history and ends this correction.</p>'+
     (edit.error?'<p role="alert" style="color:var(--alert);">'+escapeHtml(edit.error)+'</p>':'')+'<div style="display:flex;justify-content:flex-end;gap:8px;margin-top:14px;"><button class="rb-btn" id="rb-cancel-missing-pitch"'+(UI.submitting?' disabled':'')+'>Cancel</button><button class="rb-btn rb-btn-gold" id="rb-save-missing-pitch"'+(UI.submitting?' disabled':'')+'>'+(UI.submitting?'Saving…':'Save pitch')+'</button></div></div></div>';
 }
@@ -5456,14 +5479,14 @@ async function saveMissingPitch(){
   const offer=findOfferById(edit.prospectId,edit.offerId);
   try{
     if(!offer || offer.text!==edit.expectedText)throw Error('This offer changed. Reopen the correction before saving.');
-    NZCFLOfferAmendments.addMissingPitch(offer,DB.prospects[edit.prospectId],recruitingStage(),edit.text);
+    NZCFLOfferAmendments[edit.correction?'correctBody':'addMissingPitch'](offer,DB.prospects[edit.prospectId],recruitingStage(),edit.text);
   }catch(error){edit.error=error.message;render();return;}
   UI.submitting=true;edit.error='';render();
   try{
-    const response=await fetch('/api/offers/amend',{method:'POST',credentials:'include',headers:{'content-type':'application/json'},body:JSON.stringify({prospectId:edit.prospectId,offerId:edit.offerId,action:'add-pitch',expectedText:edit.expectedText,pitch:edit.text,promises:extractPromises(edit.text)})});
+    const response=await fetch('/api/offers/amend',{method:'POST',credentials:'include',headers:{'content-type':'application/json'},body:JSON.stringify({prospectId:edit.prospectId,offerId:edit.offerId,action:edit.correction?'correct-body':'add-pitch',expectedText:edit.expectedText,pitch:edit.text,promises:extractPromises(edit.text)})});
     const data=await response.json().catch(()=>{throw Error('Save was not confirmed. Your pitch is still here; please retry.');});
     if(!response.ok || !data.ok)throw Error(data.error || 'Could not save the pitch.');
-    mergeLeagueState(data.state);UI.missingPitchEdit=null;UI.lastSummary={errorText:'Missing pitch added.',dismissAt:Date.now()+6000};
+    mergeLeagueState(data.state);UI.missingPitchEdit=null;UI.lastSummary={errorText:'Pitch correction saved.',dismissAt:Date.now()+6000};
   }catch(error){edit.error=error.message;}
   finally{UI.submitting=false;render();}
 }
@@ -5517,6 +5540,7 @@ function renderOfferBlock(o, opts){
       html += '<div style="border-top:1px solid var(--hairline);padding-top:6px;font-size:11px;color:var(--slate);line-height:1.45;">';
       html += '<div class="rb-mono" style="color:var(--gold);">' + escapeHtml(new Date(entry.editedAt).toLocaleString()) + '</div>';
       (entry.changes || []).forEach(function(change){ html += '<div>' + escapeHtml(NZCFLOfferAmendments.readableEditChange(change)) + '</div>'; });
+      if(entry.beforeText!=null)html+='<details><summary>View original and revised pitch</summary><h4>Before</h4><div style="white-space:pre-wrap;">'+escapeHtml(entry.beforeText)+'</div><h4>After</h4><div style="white-space:pre-wrap;">'+escapeHtml(entry.afterText)+'</div></details>';
       html += '</div>';
     });
     html += '</div></details>';
@@ -6052,6 +6076,8 @@ function bindEvents(){
   });
   document.querySelectorAll('[data-watchlist-flag]').forEach(function(el){ el.onclick=function(e){ e.preventDefault(); e.stopPropagation(); toggleWatchlist(el.getAttribute('data-watchlist-flag')); }; });
   const retryWatchlist=document.getElementById('rb-retry-watchlist'); if(retryWatchlist) retryWatchlist.onclick=loadWatchlist;
+  const numbers=document.getElementById('rb-watchlist-numbers');if(numbers)numbers.oninput=()=>{UI.watchlistNumbers=numbers.value;};
+  const addNumbers=document.getElementById('rb-add-watchlist-numbers');if(addNumbers)addNumbers.onclick=addWatchlistNumbers;
   const bulkWatchlist=document.getElementById('rb-watchlist-bulk-action');
   if (bulkWatchlist) bulkWatchlist.onclick=function(){requestWatchlistBulk(bulkWatchlist.getAttribute('data-watchlist-bulk'));};
   const cancelBulkWatchlist=document.getElementById('rb-cancel-watchlist-bulk');

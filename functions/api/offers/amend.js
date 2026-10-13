@@ -38,7 +38,15 @@ export async function onRequestPost({request,env,waitUntil}){
   if(offer.rescinded || p.commitTeam || globalThis.NZCFLOfferWindow.locked(state))return json({ok:false,error:'This offer can no longer be changed.'},{status:409});
   if(offer.text!==body.expectedText)return json({ok:false,error:'This offer changed. Refresh it before trying again.'},{status:409});
   let changes;
-  if(body.action==='fix-visit-placement'){
+  const beforeText=offer.text;
+  if(body.action==='correct-body'){
+    if(user.discordId!=='155841820696248320')return json({ok:false,error:'Only this offer’s coach can use this correction.'},{status:403});
+    offer.text=globalThis.NZCFLOfferAmendments.correctBody(offer,p,state.recruitingStage,body.pitch);
+    if(offer.text===beforeText)throw Error('No pitch changes to save.');
+    offer.bodyCorrectedAt=Date.now();
+    offer.promises=(Array.isArray(body.promises)?body.promises:[]).map(p=>({text:String(p?.text || '').slice(0,5000),title:String(p?.title || '').slice(0,80),category:String(p?.category || '').slice(0,80)}));
+    changes=['Corrected pitch and promises with commissioner approval.'];
+  }else if(body.action==='fix-visit-placement'){
     if(user.discordId!=='959185641613164604')return json({ok:false,error:'Only this offer’s coach can apply this correction.'},{status:403});
     offer.text=globalThis.NZCFLOfferAmendments.fixVisitPlacement(offer,p,state.recruitingStage);
     offer.visitPlacementFixedAt=Date.now();
@@ -61,8 +69,8 @@ export async function onRequestPost({request,env,waitUntil}){
   offer.updatedAt=Date.now();
   offer.editHistory=[...(offer.editHistory || []),{
     id:'eh_'+crypto.randomUUID(), editedAt:offer.updatedAt, editor:user.team,
-    changes
-  }].slice(-20);
+    changes, ...(body.action==='correct-body'?{beforeText,afterText:offer.text}:{})
+  }];
   const saved=await writeLeagueState(env,state);
   queueLeagueBackup(env,saved,waitUntil,{source:'offer-amendment'});
   return json({ok:true,state:saved});

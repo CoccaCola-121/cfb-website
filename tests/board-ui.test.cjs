@@ -10,7 +10,7 @@ const script = page.match(/<script>([\s\S]*?)<\/script>/)[1];
 const boot = script.lastIndexOf('\napplyRoute(routeFromPath(window.location.pathname));');
 assert(boot > 0, 'The app bootstrap must be identifiable without executing network requests.');
 const source = script.slice(0, boot) + `
-  globalThis.app = { DB, UI, ownOfferTypeBadge, renderOwnTypeFilter, mergeLeagueState, renderOfferAmendments, captureOfferDraft, readOfferDraft, clearOfferDraft, offerDraftKey, applyConditionalRescinds, readRescindRuleForm, validateRescindRuleDraft, requestQuickWalkon, renderQuickWalkonConfirm, canQuickOfferWalkon, quickOfferWalkon, renderQuickWalkon, renderProspectBoardCard, scheduleSummaryCountdown, dismissSummaryBanner, bindFloatingSubmit, extractPromises, cleanDisplayPromises, readCprBoard, updateBucksEntries, renderBucksSettings, renderCprProfile, cprPreviousSchool, ensureCprScholarshipThreads, renderAutoCommitSettings, stageAutoCommits, readScholarshipCapacity, buildPromiseArchive, parseCsvRows, offerCountForProspect, refreshScholarshipHistory, submitCprOffer, renderSubmitModal, createCprPlayer, loadClassData, resetOfferWindow, setOffersLocked, offersLocked, pendingCommitChanges, restoreSettingsDraft, renderOfferBlock, renderRescindFilterFields, renderVisitLedger, visibleBoardProspectIds, setRecruitingStage, requestReset, approveDangerReset, beginSettingsDraft, hasSettingsChanges, canLeaveSettings, saveSettingsChanges, saveDBNow, leagueStatePayload, mergeSettingsValue, updateCommitsFromSheet, runBackupNow, setTransferFilter, renderTransferFilters, renderClassSetup, requestManualCommitOverride, applyManualCommitOverride, requestClearCommit, clearManualCommitOverride, applyManualCommitOverrides, clearRecruitingBoard, findProspectFromSheetRow, transferCardStyle, parseFullClass, prospectFromRosterRow, confirmTransferImport, releaseSingleStageBoard, addOfferDirect, render, renderNav, navigateTo, applyRoute, setReady(){ dbReady = true; sessionReady = true; }, renderFeed, renderBoardSearchResults, renderTeamsPage,
+  globalThis.app = { DB, UI, offerRequest, watchlistNumbers, renderWatchlist, submitHighSchoolOffer, ownOfferTypeBadge, renderOwnTypeFilter, mergeLeagueState, renderOfferAmendments, captureOfferDraft, readOfferDraft, clearOfferDraft, offerDraftKey, applyConditionalRescinds, readRescindRuleForm, validateRescindRuleDraft, requestQuickWalkon, renderQuickWalkonConfirm, canQuickOfferWalkon, quickOfferWalkon, renderQuickWalkon, renderProspectBoardCard, scheduleSummaryCountdown, dismissSummaryBanner, bindFloatingSubmit, extractPromises, cleanDisplayPromises, readCprBoard, updateBucksEntries, renderBucksSettings, renderCprProfile, cprPreviousSchool, ensureCprScholarshipThreads, renderAutoCommitSettings, stageAutoCommits, readScholarshipCapacity, buildPromiseArchive, parseCsvRows, offerCountForProspect, refreshScholarshipHistory, submitCprOffer, renderSubmitModal, createCprPlayer, loadClassData, resetOfferWindow, setOffersLocked, offersLocked, pendingCommitChanges, restoreSettingsDraft, renderOfferBlock, renderRescindFilterFields, renderVisitLedger, visibleBoardProspectIds, setRecruitingStage, requestReset, approveDangerReset, beginSettingsDraft, hasSettingsChanges, canLeaveSettings, saveSettingsChanges, saveDBNow, leagueStatePayload, mergeSettingsValue, updateCommitsFromSheet, runBackupNow, setTransferFilter, renderTransferFilters, renderClassSetup, requestManualCommitOverride, applyManualCommitOverride, requestClearCommit, clearManualCommitOverride, applyManualCommitOverrides, clearRecruitingBoard, findProspectFromSheetRow, transferCardStyle, parseFullClass, prospectFromRosterRow, confirmTransferImport, releaseSingleStageBoard, addOfferDirect, render, renderNav, navigateTo, applyRoute, setReady(){ dbReady = true; sessionReady = true; }, renderFeed, renderBoardSearchResults, renderTeamsPage,
     renderThreadProspectList, renderProspectDetail, builtInTeamBranding, getTeamBranding, activeTeamBrands,
     mobileRecruitName, renderRecruitName, renderMyOffers, renderCommitsForTeam, renderTeamOffers, renderConditionalRescinds, renderRecruitValues, teamBorderColor, bindEvents, applyDefaultClassData, releaseWave1, releaseWave2,
     currentHSPitches, findHSPitchPlayer, renderHSPitchEditor, renderHSPitchBuilder, buildHSPitchDraft, applyHSVisits, hsBuilderVisits, parseOfferSheet, bindHSPitches, fitHSPitchOptions,
@@ -1406,4 +1406,33 @@ test('own offer types have filters and compact upgrade while player pages retain
  assert.match(commits,/data-own-offer-type="walkon"/);
  o.text='Scholarship';
  assert.match(app.renderCommitsForTeam('Michigan State','My commits'),/data-own-offer-type="scholarship"/);
+});
+
+
+test('watchlist column paste validates ranks and renders in rank order',()=>{
+ const {app}=harness();app.UI.watchlistLoaded=true;app.UI.watchlistIds=['r3','r1','r2'];
+ assert.deepEqual(Array.from(app.watchlistNumbers('3\n1\n1\n#2').ids),['r3','r1','r2']);
+ assert.deepEqual(Array.from(app.watchlistNumbers('| **1** |\n| :---: |\n| **2** |').ids),['r1','r2']);
+ assert.deepEqual(Array.from(app.watchlistNumbers('999\nnope').unknown),['999','nope']);
+ const html=app.renderWatchlist();
+ assert(html.indexOf('Jordan Able')<html.indexOf('Morgan Baker'));
+ assert(html.indexOf('Morgan Baker')<html.indexOf('Casey Cole'));
+ assert(html.includes('rb-watchlist-numbers'));
+});
+
+
+test('HS pasted top-500 offer submits scholarship with current edited body',async()=>{
+ const {app,context,elements}=harness();
+ context.AbortController=AbortController;context.crypto=require('node:crypto').webcrypto;
+ app.DB.recruitingStage='hs';app.UI.submitTargetId='r2';app.UI.showSubmitModal=true;
+ elements['rb-sheet-text']=element();elements['rb-sheet-text'].value='Michigan State offers #2 Morgan Baker\n\nWalk-On\n\nMy latest edited promise.';
+ let sent;
+ context.fetch=async(url,options)=>{sent=JSON.parse(options.body);return {ok:true,json:async()=>({ok:true,prospectId:'r2',offer:{id:'test',team:'Michigan State',text:sent.text}})};};
+ await app.submitHighSchoolOffer(elements['rb-sheet-text'].value);
+ assert(sent.text.includes('Scholarship'));assert(!sent.text.includes('Walk-On'));assert(sent.text.includes('My latest edited promise.'));
+});
+test('request timeout covers a stalled response body',async()=>{
+ const {app,context}=harness();context.AbortController=AbortController;context.setTimeout=setTimeout;context.clearTimeout=clearTimeout;
+ context.fetch=async()=>({ok:true,json:()=>new Promise(()=>{})});
+ await assert.rejects(app.offerRequest('/api/auth/me',{},5,'Connection timed out.'),/Connection timed out/);
 });
