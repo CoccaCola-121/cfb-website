@@ -918,3 +918,10 @@ html { scrollbar-gutter: stable; }
 .rb-rule-history-body>.rb-card{border:0;background:transparent !important;padding:0 !important;margin:0;justify-content:flex-end !important;flex-wrap:wrap;}
 .rb-rule-history-body>.rb-card .rb-btn{font-size:12px;padding:7px 12px;}
 @media(max-width:600px){.rb-rule-history>summary{grid-template-columns:auto 1fr auto;gap:8px 10px;padding:12px;}.rb-rule-title{grid-row:2;grid-column:1 / -1;}.rb-rule-count{justify-self:end;}.rb-rule-history-body{padding:0 12px 12px;}}
+
+/* Keep the page behind the offer editor stationary and unselectable. */
+.rb-submit-open [data-submit-inert] { pointer-events:none; user-select:none; -webkit-user-select:none; }
+.rb-submit-open .rb-back-top { visibility:hidden; }
+#rb-submit-overlay { user-select:none; -webkit-user-select:none; }
+#rb-submit-dialog { user-select:text; -webkit-user-select:text; }
+#rb-submit-dialog textarea { overscroll-behavior:contain; }

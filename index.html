@@ -3348,7 +3348,48 @@ async function confirmReset(){
 
 // ---------- Rendering ----------
 
+let submitModalLock=null;
+function syncSubmitModalLock(){
+  if(!document.body || !document.documentElement)return;
+  const overlay=document.getElementById('rb-submit-overlay');
+  const dialog=document.getElementById('rb-submit-dialog');
+  if(overlay && !submitModalLock){
+    submitModalLock={x:window.scrollX || 0,y:window.scrollY || 0,bodyStyle:document.body.style.cssText,htmlOverflow:document.documentElement.style.overflow,focusId:document.activeElement?.id};
+    document.body.style.position='fixed';
+    document.body.style.top=-submitModalLock.y+'px';
+    document.body.style.left=-submitModalLock.x+'px';
+    document.body.style.width='100%';
+    document.body.style.overflow='hidden';
+    document.documentElement.style.overflow='hidden';
+    document.body.classList.add('rb-submit-open');
+    window.getSelection?.()?.removeAllRanges();
+  }else if(!overlay && submitModalLock){
+    const saved=submitModalLock;submitModalLock=null;
+    document.body.style.cssText=saved.bodyStyle;
+    document.documentElement.style.overflow=saved.htmlOverflow;
+    document.body.classList.remove('rb-submit-open');
+    window.scrollTo({left:saved.x,top:saved.y,behavior:'instant'});
+    if(saved.focusId)document.getElementById(saved.focusId)?.focus({preventScroll:true});
+  }
+  const root=document.getElementById('rb-app');
+  for(const child of root.children){
+    if(overlay && child!==overlay){child.inert=true;child.setAttribute('data-submit-inert','');}
+    else if(child.hasAttribute('data-submit-inert')){child.inert=false;child.removeAttribute('data-submit-inert');}
+  }
+  if(!dialog)return;
+  if(!dialog.contains(document.activeElement))dialog.focus({preventScroll:true});
+  overlay.onkeydown=function(e){
+    if(e.key!=='Tab')return;
+    const focusable=Array.from(dialog.querySelectorAll('button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), a[href], summary, [tabindex="0"]')).filter(el=>el.getClientRects().length);
+    const first=focusable[0],last=focusable.at(-1);
+    if(!first){e.preventDefault();dialog.focus();}
+    else if(e.shiftKey && (document.activeElement===first || document.activeElement===dialog)){e.preventDefault();last.focus();}
+    else if(!e.shiftKey && (document.activeElement===last || document.activeElement===dialog)){e.preventDefault();first.focus();}
+  };
+}
+
 function render(){
+  const submitScroll=document.getElementById('rb-submit-dialog')?.scrollTop || 0;
   captureRescindDraft();
   const root = document.getElementById('rb-app');
   const previousNav = document.getElementById('rb-main-nav');
@@ -3402,6 +3443,8 @@ function render(){
   if (UI.confirmReset) html += renderResetConfirmModal();
   html += renderBackTopControl();
   root.innerHTML = html;
+  const submitDialog=document.getElementById('rb-submit-dialog');
+  if(submitDialog)submitDialog.scrollTop=submitScroll;
   const nextNav = document.getElementById('rb-main-nav');
   if (nextNav) nextNav.scrollLeft = navScrollLeft;
   bindEvents();
@@ -5586,8 +5629,8 @@ function renderSubmitModal(){
     (recruitingStage() === 'cpr' ? (target ? 'Submit your offer for ' + escapeHtml(target.name) + (isPitchRecruit(target) ? '. Include your offer header, then your pitch (800 words max).' : '.') : 'Paste your offer. We’ll match the player by name and position, then use their existing thread or create one from the CSV. Pitch recruits allow 800 words.') : pitchOffer ? (target ? 'Write or paste a personalized pitch for ' + (recruitNumber(target) ? recruitNumber(target) + ' ' : '') + renderRecruitName(target.name) + '. Include up to 3 promises; short pitch-only submissions are fine.' : 'Write or paste a personalized pitch. Include up to 3 promises; short pitch-only submissions are fine.') :
       (target ? 'Paste one offer sheet as-is. This will post directly to ' + (recruitNumber(target) ? recruitNumber(target) + ' ' : '') + renderRecruitName(target.name) + ', detect visits, and file your team name automatically.' : 'Paste one offer sheet as-is. We\'ll match it to the right prospect, detect visits, and file your team name automatically.'));
   const placeholder = pitchOffer ? 'Write or paste your pitch here' : 'Paste your auto-offer sheet output here';
-  return '<div style="position:fixed;inset:0;background:rgba(0,0,0,0.6);display:flex;align-items:center;justify-content:center;z-index:50;" data-close-modal="1">' +
-    '<div class="rb-card" style="padding:24px;width:520px;max-width:90vw;max-height:calc(100dvh - 32px);overflow-y:auto;box-sizing:border-box;" onclick="event.stopPropagation()">' +
+  return '<div id="rb-submit-overlay" style="position:fixed;inset:0;background:rgba(0,0,0,0.6);display:flex;align-items:center;justify-content:center;z-index:150;overscroll-behavior:none;" data-close-modal="1">' +
+    '<div id="rb-submit-dialog" class="rb-card" role="dialog" aria-modal="true" aria-label="Submit offer" tabindex="-1" style="padding:24px;width:520px;max-width:90vw;max-height:calc(100dvh - 32px);overflow-y:auto;overscroll-behavior:contain;box-sizing:border-box;" onclick="event.stopPropagation()">' +
       '<div class="rb-h" style="font-size:16px;margin-bottom:4px;">Submit offer</div>' +
       '<div style="font-size:12px;color:var(--slate);margin-bottom:12px;">' +
         submitHelp +
@@ -5877,6 +5920,7 @@ async function removeKennyTestOffer(){
   finally{UI.submitting=false;render();}
 }
 function bindEvents(){
+  syncSubmitModalLock();
   const activeOffers=document.getElementById('rb-my-offers-active');if(activeOffers)activeOffers.onchange=()=>{UI.myOffersActiveOnly=activeOffers.checked;render();};
   document.querySelectorAll('[data-edit-conditional]').forEach(button=>button.onclick=()=>{
    if(UI.submitting)return;
