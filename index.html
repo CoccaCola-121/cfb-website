@@ -3162,7 +3162,9 @@ async function submitHighSchoolOffer(rawText){
     // the authoritative board instead of accepting a misleading 304.
     DB.updatedAt=null;
     setStored(DB_KEY,JSON.stringify(DB),true);
-    clearOfferDraft(key);UI.showSubmitModal=false;UI.submitTargetId=null;
+    clearOfferDraft(key);
+    Object.assign(UI,{hsLookupFailures:0,hsLookupError:'',hsBuildName:'',hsBuildPosition:'',hsBuildProspect:null,hsChoiceKey:null,hsChoices:{},hsVisitKey:null,hsVisits:null});
+    UI.showSubmitModal=false;UI.submitTargetId=null;
     UI.lastSummary={matched:data.offer?1:0,unmatched:data.unmatched?1:0,total:1,dismissAt:Date.now()+6000};
   }catch(error){const node=document.getElementById('rb-submit-error');if(node)node.textContent=error.message;}
   finally{finishOfferSubmission();if(!UI.showSubmitModal)render();}

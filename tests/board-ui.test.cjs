@@ -1425,11 +1425,14 @@ test('HS pasted top-500 offer submits scholarship with current edited body',asyn
  const {app,context,elements}=harness();
  context.AbortController=AbortController;context.crypto=require('node:crypto').webcrypto;
  app.DB.recruitingStage='hs';app.UI.submitTargetId='r2';app.UI.showSubmitModal=true;
+ Object.assign(app.UI,{hsLookupFailures:2,hsBuildPosition:'WR',hsBuildName:'Morgan Baker',hsBuildProspect:'r2',hsLookupError:'Previous lookup error'});
  elements['rb-sheet-text']=element();elements['rb-sheet-text'].value='Michigan State offers #2 Morgan Baker\n\nWalk-On\n\nMy latest edited promise.';
  let sent;
  context.fetch=async(url,options)=>{sent=JSON.parse(options.body);return {ok:true,json:async()=>({ok:true,prospectId:'r2',offer:{id:'test',team:'Michigan State',text:sent.text}})};};
  await app.submitHighSchoolOffer(elements['rb-sheet-text'].value);
  assert(sent.text.includes('Scholarship'));assert(!sent.text.includes('Walk-On'));assert(sent.text.includes('My latest edited promise.'));
+ assert.equal(app.UI.hsLookupFailures,0);assert.equal(app.UI.hsBuildPosition,'');assert.equal(app.UI.hsBuildName,'');assert.equal(app.UI.hsBuildProspect,null);
+ assert(!app.renderHSPitchBuilder().includes('Position (to distinguish matching names)'));
 });
 test('request timeout covers a stalled response body',async()=>{
  const {app,context}=harness();context.AbortController=AbortController;context.setTimeout=setTimeout;context.clearTimeout=clearTimeout;
