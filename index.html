@@ -5393,8 +5393,22 @@ function renderTransferProfile(p, full){
 }
 
 function renderProspectVisits(offers){
-  const rows=offers.filter(o=>!o.rescinded).map(o=>({offer:o,visits:detectVisits(o.text,o.visits)})).filter(row=>row.visits.coach || row.visits.campus);
-  return '<section class="rb-card" style="padding:16px 20px;margin-bottom:14px;" aria-label="Visit summary"><h2 style="font-size:16px;margin:0 0 10px;">Visits</h2>'+(!rows.length?'<p style="color:var(--slate);margin:0;">No visits offered.</p>':rows.map(({offer,visits})=>'<div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:6px 16px;padding:8px 0;border-top:1px solid var(--hairline);"><strong>'+escapeHtml(offer.team)+'</strong><span>'+escapeHtml([visits.coach?'Coach visit':'',visits.campus?'Campus visit · '+(visits.campusLabel || 'Week not specified'):''].filter(Boolean).join(' · '))+'</span></div>').join(''))+'</section>';
+  const rows=offers.filter(o=>!o.rescinded).map(o=>({offer:o,visits:detectVisits(o.text,o.visits)}));
+  const coaches=[...new Set(rows.filter(r=>r.visits.coach).map(r=>r.offer.team))].sort((a,b)=>a.localeCompare(b));
+  const weeks=new Map(),unknown=[];
+  for(const {offer,visits} of rows){
+    if(!visits.campus)continue;
+    const week=NZCFLVisitRules.week(visits.campusLabel);
+    const entry={team:offer.team,label:visits.campusLabel || 'Week not specified'};
+    if(!week || week>99){unknown.push(entry);continue;}
+    if(!weeks.has(week))weeks.set(week,[]);
+    weeks.get(week).push(entry);
+  }
+  const names=entries=>entries.slice().sort((a,b)=>a.team.localeCompare(b.team)).map(e=>'<span title="'+escapeHtml(e.label)+'">'+escapeHtml(e.team)+'</span>').join(', ') || '<span style="color:var(--slate);">0</span>';
+  let campus='';
+  for(let week=1;week<=Math.max(0,...weeks.keys());week++)campus+='<span><strong>Week '+week+':</strong> '+names(weeks.get(week) || [])+'</span>';
+  if(unknown.length)campus+='<span><strong>Week unspecified:</strong> '+names(unknown)+'</span>';
+  return '<section class="rb-card" style="padding:12px 16px;margin-bottom:14px;font-size:13px;line-height:1.5;" aria-label="Visit summary"><div><strong>Coach visits:</strong> '+(coaches.length?escapeHtml(coaches.join(', ')):'0')+'</div><div style="display:flex;flex-wrap:wrap;gap:4px 16px;margin-top:6px;"><strong>Campus visits:</strong>'+(campus || '<span>0</span>')+'</div></section>';
 }
 
 function renderProspectDetail(){
