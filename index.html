@@ -762,7 +762,14 @@ function deleteStored(key, shared){
   return Promise.resolve();
 }
 
-async function loadAll(){
+let bootPromise=null;
+function loadAll(){
+  if(bootPromise)return bootPromise;
+  bootPromise=bootApp().finally(()=>{bootPromise=null;});
+  return bootPromise;
+}
+async function bootApp(){
+ try{
   try {
     const res = await getStored(DB_KEY, true);
     if (res && res.value) DB = Object.assign(DB, JSON.parse(res.value));
@@ -773,8 +780,13 @@ async function loadAll(){
   render();
   await loadServerAuth();
   sessionReady = true;
-  startLeagueSync();
-  render();
+  restoreSuspendedOffer();
+ }catch(error){
+   UI.leagueSyncError='Loading was interrupted. Refresh the board to reconnect; your saved offer draft is kept.';
+ }finally{
+   dbReady=true;sessionReady=true;
+   startLeagueSync();render();
+ }
 }
 
 function apiAvailable(){
@@ -2940,24 +2952,52 @@ function parseOfferSheet(rawText){
   };
 }
 
+const pendingOfferRequests=new Set();
+function expireSuspendedRequests(){
+  for(const pending of pendingOfferRequests)if(Date.now()>=pending.deadline)pending.expire();
+}
+function saveSuspendedOffer(){
+  captureOfferDraft();
+  try{
+    if(UI.showSubmitModal && SESSION)window.sessionStorage.setItem('rb-resume-offer',JSON.stringify({owner:SESSION.discordId || SESSION.team,stage:recruitingStage(),target:UI.submitTargetId || null}));
+  }catch(e){}
+}
+function restoreSuspendedOffer(){
+  try{
+    const saved=JSON.parse(window.sessionStorage.getItem('rb-resume-offer') || 'null');
+    if(!saved || !SESSION || saved.owner!==(SESSION.discordId || SESSION.team) || saved.stage!==recruitingStage())return;
+    if(saved.target && !DB.prospects[saved.target])return;
+    UI.submitTargetId=saved.target;
+    if(readOfferDraft().text)UI.showSubmitModal=true;
+  }catch(e){}
+}
+function resumeMobilePage(){
+  expireSuspendedRequests();
+  if(!dbReady || !sessionReady){void loadAll();return;}
+  if(UI.showSubmitModal)captureOfferDraft();
+  void syncLeagueState(true,{force:true});
+}
+
 // Bound both the request and response-body read: either can stall independently.
 async function offerRequest(url, options={}, timeoutMs=15000, timeoutMessage='The server did not confirm your offer in time. Your draft is saved; check My Offers before retrying.'){
   const controller=typeof AbortController!=='undefined'?new AbortController():null;
-  let timer;
+  let timer,pending;
   const timeout=new Promise((resolve,reject)=>{
-    timer=setTimeout(()=>{
+    const expire=()=>{
       const error=Error(timeoutMessage);
       error.retryable=true;
       reject(error);
       controller?.abort();
-    },timeoutMs);
+    };
+    pending={deadline:Date.now()+timeoutMs,expire};pendingOfferRequests.add(pending);
+    timer=setTimeout(expire,timeoutMs);
   });
   try {
     return await Promise.race([
       (async()=>{const response=await fetch(url,{cache:'no-store',...options,...(controller?{signal:controller.signal}:{})});const data=response.status===304?null:await response.json();return {response,data};})(),
       timeout
     ]);
-  }finally{clearTimeout(timer);}
+  }finally{clearTimeout(timer);pendingOfferRequests.delete(pending);}
 }
 
 function finishOfferSubmission(quickId){
@@ -3373,6 +3413,7 @@ function syncSubmitModalLock(){
     window.getSelection?.()?.removeAllRanges();
   }else if(!overlay && submitModalLock){
     const saved=submitModalLock;submitModalLock=null;
+    try{window.sessionStorage.removeItem('rb-resume-offer');}catch(e){}
     document.body.style.cssText=saved.bodyStyle;
     document.documentElement.style.overflow=saved.htmlOverflow;
     document.body.classList.remove('rb-submit-open');
@@ -5406,7 +5447,7 @@ function renderProspectVisits(offers){
   }
   const names=entries=>entries.slice().sort((a,b)=>a.team.localeCompare(b.team)).map(e=>'<span title="'+escapeHtml(e.label)+'">'+escapeHtml(e.team)+'</span>').join(', ') || '<span style="color:var(--slate);">N/A</span>';
   let campus='';
-  for(let week=1;week<=Math.max(0,...weeks.keys());week++)campus+='<span><strong>Week '+week+':</strong> '+names(weeks.get(week) || [])+'</span>';
+  for(const week of [...weeks.keys()].sort((a,b)=>a-b))campus+='<span><strong>Week '+week+':</strong> '+names(weeks.get(week) || [])+'</span>';
   if(unknown.length)campus+='<span><strong>Week unspecified:</strong> '+names(unknown)+'</span>';
   return '<section class="rb-card" style="padding:12px 16px;margin-bottom:14px;font-size:13px;line-height:1.5;" aria-label="Visit summary"><div><strong>Coach visits:</strong> '+(coaches.length?escapeHtml(coaches.join(', ')):'N/A')+'</div><div style="display:flex;flex-wrap:wrap;gap:4px 16px;margin-top:6px;"><strong>Campus visits:</strong>'+(campus || '<span>N/A</span>')+'</div></section>';
 }
@@ -6785,9 +6826,10 @@ window.addEventListener('beforeunload', function(e){
   e.preventDefault();
   e.returnValue = '';
 });
-window.addEventListener('pageshow',()=>{if(dbReady)syncLeagueState(true,{force:true});});
+window.addEventListener('pageshow',resumeMobilePage);
+window.addEventListener('pagehide',saveSuspendedOffer);
 window.addEventListener('online',()=>syncLeagueState(true,{force:true}));
-document.addEventListener('visibilitychange',()=>{if(!document.hidden && dbReady)syncLeagueState(true,{force:true});});
+document.addEventListener('visibilitychange',()=>{if(document.hidden)saveSuspendedOffer();else resumeMobilePage();});
 if ('serviceWorker' in navigator && /^https?:$/.test(window.location.protocol)) {
   navigator.serviceWorker.register('/sw.js').catch(function(e){ console.warn('service worker registration failed', e); });
 }
