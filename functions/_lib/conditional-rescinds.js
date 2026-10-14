@@ -68,6 +68,20 @@ function activeOfferForTeam(offers, team) {
   return (offers || []).find((offer) => offer && !offer.rescinded && teamKey(offer.team) === teamKey(team)) || null;
 }
 
+export function previewConditionalRule(state,rule){
+  const prospects=state.prospects || {},offers=state.offersByProspect || {};
+  const commits=Object.values(prospects).filter(p=>teamKey(p.commitTeam)===teamKey(rule.team) && ruleMatchesProspect(rule,p,activeOfferForTeam(offers[p.id],rule.team)));
+  const threshold=Math.max(1,Number(rule.count)||1),met=commits.length>=threshold;
+  const targetRule=met?globalThis.NZCFLAutoCommits.rescindTargetRule(rule,commits,overallValue):null;
+  const targets=[];
+  if(targetRule)for(const p of Object.values(prospects)){
+    if(p.commitTeam)continue;
+    for(const offer of offers[p.id] || [])if(!offer.rescinded && teamKey(offer.team)===teamKey(rule.team) && ruleMatchesProspect(targetRule,p,offer))targets.push({id:offer.id,playerId:p.id,name:p.name});
+  }
+  const committed=commits.map(p=>({id:p.id,name:p.name}));
+  return {met,count:commits.length,threshold,committed,targets,token:JSON.stringify([threshold,committed.map(p=>p.id).sort(),targets.map(o=>o.id).sort()])};
+}
+
 export function applyConditionalRescinds(state, options = {}) {
   const prospects = state.prospects || {};
   const offersByProspect = state.offersByProspect || {};

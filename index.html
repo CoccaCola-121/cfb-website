@@ -3784,10 +3784,10 @@ function rescindFilterSummary(rule){
   return conditionalRuleSummary(clone).replace(/^1 commit(?: · )?/, '') || 'all active offers';
 }
 
-function renderRescindFilterFields(prefix, includeCount){
+function renderRescindFilterFields(prefix, includeCount, hideCount){
   let html = '';
   html += '<div class="rb-mobile-stack rb-rescind-filters" style="display:grid;grid-template-columns:' + (includeCount ? '1fr ' : '') + (recruitingStage() === 'hs' ? '1fr ' : '') + '1fr;gap:10px;margin-bottom:10px;">';
-  if (includeCount) html += '<label><span class="rb-mono" style="font-size:11px;color:var(--slate);">Total commits needed</span><input class="rb-input" id="' + prefix + '-count" type="number" min="1" value="1" /></label>';
+  if (includeCount && !hideCount) html += '<label><span class="rb-mono" style="font-size:11px;color:var(--slate);">Total commits needed</span><input class="rb-input" id="' + prefix + '-count" type="number" min="1" value="1" /></label>';
   if (recruitingStage() === 'hs') html += '<label><span class="rb-mono" style="font-size:11px;color:var(--slate);">Stars</span><select class="rb-input" id="' + prefix + '-stars"><option value="">Any stars</option><option value="5">5 stars</option><option value="4">4 stars</option><option value="3">3 stars</option><option value="2">2 stars</option><option value="1">1 star</option><option value="0">0 stars</option></select></label>';
   html += '<label><span class="rb-mono" style="font-size:11px;color:var(--slate);">Offer type</span><select class="rb-input" id="' + prefix + '-scholarship"><option value="">Any type</option><option value="scholarship">Scholarship</option><option value="walkon">Walk-on</option></select></label>';
   html += '</div>';
@@ -3807,9 +3807,10 @@ function rulesForTeam(team){
 function renderConditionalPlayers(kind,label){
   const selectedRule=UI.editingConditional && rulesForTeam(SESSION.team).find(r=>r.id===UI.editingConditional.id);
   const selectedIds=selectedRule?.[kind==='trigger'?'triggerIds':'targetIds'] || [];
-  const rows=getOfferRowsForTeam(SESSION.team).filter(row=>selectedIds.includes(row.prospectId) || !row.offer.rescinded && !row.prospect.commitTeam).sort((a,b)=>a.prospect.name.localeCompare(b.prospect.name));
-  return '<details style="margin-top:12px;"><summary style="cursor:pointer;">'+label+'</summary><p style="font-size:12px;color:var(--slate);">Optional: selected players replace the filters for this list.</p><div style="max-height:220px;overflow:auto;display:grid;gap:8px;padding:8px;">'+rows.map(row=>'<label style="display:flex;gap:8px;align-items:center;"><input type="checkbox" data-conditional-players="'+kind+'" value="'+escapeHtml(row.prospectId)+'">'+escapeHtml(row.prospect.name+' · '+row.prospect.position+' · '+(row.prospect.rating || ''))+'</label>').join('')+'</div></details>';
+  const rows=getOfferRowsForTeam(SESSION.team).filter(row=>selectedIds.includes(row.prospectId) || !row.offer.rescinded && (!row.prospect.commitTeam || kind==='trigger' && teamKey(row.prospect.commitTeam)===teamKey(SESSION.team))).sort((a,b)=>a.prospect.name.localeCompare(b.prospect.name));
+  return '<details open style="margin-top:12px;border:1px solid var(--hairline);border-radius:6px;padding:12px;"><summary style="cursor:pointer;font-weight:600;">'+label+'</summary><p style="font-size:12px;color:var(--slate);">'+(kind==='trigger'?'Count commitments from these players. Pick all 40 to trigger on any of them, or only your bottom 10.':'Pick the offers you want withdrawn, such as your bottom 10. Their game ranking does not matter. Committed players keep their commitments.')+' Selected players replace filters for this list. Leave empty to use filters.</p><div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px;"><input class="rb-input" data-rule-search="'+kind+'" placeholder="Find a player" aria-label="Search '+kind+' players" style="flex:1;min-width:120px;"><button class="rb-btn" data-rule-select="'+kind+'" data-checked="true">Select all listed</button><button class="rb-btn" data-rule-select="'+kind+'" data-checked="false">Clear list</button><span data-rule-count="'+kind+'" aria-live="polite"></span></div><div style="max-height:220px;overflow:auto;display:grid;gap:8px;">'+rows.map(row=>'<label data-rule-player-row="'+kind+'" style="display:flex;gap:8px;align-items:center;"><input type="checkbox" data-conditional-players="'+kind+'" value="'+escapeHtml(row.prospectId)+'">'+escapeHtml(row.prospect.name+' · '+row.prospect.position+(row.prospect.commitTeam?' · Already committed to you':''))+'</label>').join('')+'</div></details>';
 }
+
 function renderConditionalRescinds(){
   const rules = rulesForTeam(SESSION.team);
   let html = '<div class="rb-card rb-rescind-center" id="rb-rescind-center" data-owner="' + escapeHtml(SESSION?.discordId+':'+SESSION?.team+':'+conditionalClassKey()) + '" tabindex="-1" style="padding:18px 20px;margin-bottom:14px;scroll-margin-top:80px;">';
@@ -3834,10 +3835,11 @@ function renderConditionalRescinds(){
   }
   html += '<div class="rb-card" style="padding:12px;background:var(--panel-alt);">';
   html += '<div class="rb-h" style="font-size:14px;margin-bottom:10px;">Conditional Rule</div>';
-  html += '<div style="font-size:13px;color:var(--slate);margin-bottom:10px;">When I win this many matching recruits, rescind my other active offers matching the same filters.</div>';
-  html += renderRescindFilterFields('rb-cond', true);
-  html += renderConditionalPlayers('trigger','Trigger players — current offers');
-  html += renderConditionalPlayers('target','Offers to rescind — custom list');
+  html += '<div style="font-size:13px;color:var(--slate);margin-bottom:10px;">Choose two independent lists: whose commitments count, and which offers to rescind. For example: after 1 of your 40 recruits commits, rescind your selected bottom 10.</div>';
+  html += '<label style="display:block;max-width:220px;">Total commitments needed<input class="rb-input" id="rb-cond-count" type="number" min="1" max="200" value="1"></label><p style="font-size:12px;color:var(--slate);">This includes players who have already committed to you.</p>';
+  html += '<details style="margin-top:10px;"><summary>Filters (optional with custom lists)</summary><p style="font-size:12px;color:var(--slate);">Filters apply only to lists where no players are selected.</p>'+renderRescindFilterFields('rb-cond', true, true)+'</details>';
+  html += renderConditionalPlayers('trigger','1. Whose commitments count?');
+  html += renderConditionalPlayers('target','2. Which offers should be rescinded?');
   html += '<div style="margin-top:10px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;"><button class="rb-btn rb-btn-gold" id="rb-add-conditional">' + (UI.editingConditional?'Save rule changes':'Save auto rule') + '</button><button class="rb-btn" id="rb-cancel-rule-edit" '+(UI.editingConditional?'':'hidden')+'>Cancel edit</button><span class="rb-mono" style="font-size:11px;color:var(--slate);">' + 'Existing commits count. A rule takes effect immediately if its total is already met.' + '</span></div>';
   if (UI.conditionalError) html += '<div style="font-size:12px;color:var(--alert);margin-top:8px;">' + escapeHtml(UI.conditionalError) + '</div>';
   if (UI.conditionalStatus) html += '<div style="font-size:12px;color:var(--gold);margin-top:8px;">' + escapeHtml(UI.conditionalStatus) + '</div>';
@@ -4027,9 +4029,20 @@ async function saveConditionalAction(action){
   if(!SESSION || UI.submitting)return;
   UI.submitting=true;UI.conditionalError=null;UI.conditionalStatus='Saving…';render();
   try{
-    const response=await fetch('/api/conditional-rescinds',{method:'POST',credentials:'include',headers:{'content-type':'application/json'},body:JSON.stringify({...action,classKey:conditionalClassKey()})});
-    const data=await response.json().catch(()=>{throw Error('The save was not confirmed. Your draft is kept; retry safely.');});
-    if(!response.ok || !data.ok)throw Error(data.error || 'Rule save was not confirmed.');
+    let data,confirmed=action.confirmImmediate;
+    for(let attempt=0;attempt<4;attempt++){
+      const result=await offerRequest('/api/conditional-rescinds',{method:'POST',credentials:'include',headers:{'content-type':'application/json'},body:JSON.stringify({...action,confirmImmediate:confirmed,classKey:conditionalClassKey()})});
+      data=result.data;
+      if(data.needsConfirmation){
+        const p=data.preview;
+        const message='This rule is already met: you have '+p.count+' matching commitments, and it needs '+p.threshold+'. Existing commitments count—not just new ones.\n\nAlready committed: '+p.committed.map(p=>p.name).join(', ')+'.\n\n'+(p.targets.length?'Saving now will immediately rescind '+p.targets.length+' offers:\n'+p.targets.map(p=>p.name).join(', '):'No active offers would be rescinded right now, but the rule will be active immediately.')+'\n\nSave and activate this rule?';
+        if(!window.confirm(message)){UI.conditionalStatus='Not saved. Adjust the total or player lists below.';return;}
+        confirmed=p.token;continue;
+      }
+      if(!result.response.ok || !data.ok)throw Error(data.error || 'Rule save was not confirmed.');
+      break;
+    }
+    if(!data?.ok)throw Error('Commitments changed while confirming. Review and save again.');
     mergeLeagueState(data.state);
     UI.conditionalStatus=action.action==='delete'?'Rule deletion confirmed.':'Rule saved on server.'+(data.rescinded?' '+data.rescinded+' offers rescinded.':'');
     if(action.action!=='delete'){UI.clearConditionalDraft=true;UI.conditionalRetry=null;UI.editingConditional=null;}
@@ -6320,6 +6333,11 @@ function bindEvents(){
   const cancelSingleRescindBtn = document.getElementById('rb-cancel-single-rescind');
   if (cancelSingleRescindBtn) cancelSingleRescindBtn.onclick = cancelSingleRescind;
 
+  const updateRuleCount=kind=>{const count=document.querySelector('[data-rule-count="'+kind+'"]');if(count)count.textContent=document.querySelectorAll('[data-conditional-players="'+kind+'"]:checked').length+' selected';};
+  for(const kind of ['trigger','target'])updateRuleCount(kind);
+  document.querySelectorAll('[data-conditional-players]').forEach(el=>el.onchange=()=>updateRuleCount(el.dataset.conditionalPlayers));
+  document.querySelectorAll('[data-rule-select]').forEach(button=>button.onclick=()=>{const kind=button.dataset.ruleSelect;document.querySelectorAll('[data-conditional-players="'+kind+'"]').forEach(el=>el.checked=button.dataset.checked==='true');updateRuleCount(kind);});
+  document.querySelectorAll('[data-rule-search]').forEach(input=>input.oninput=()=>{document.querySelectorAll('[data-rule-player-row="'+input.dataset.ruleSearch+'"]').forEach(row=>row.style.display=row.textContent.toLowerCase().includes(input.value.toLowerCase().trim())?'flex':'none');});
   const addConditionalBtn = document.getElementById('rb-add-conditional');
   if (addConditionalBtn) addConditionalBtn.onclick = addConditionalRule;
 

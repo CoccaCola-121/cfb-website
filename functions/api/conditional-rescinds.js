@@ -2,7 +2,7 @@ import {getCurrentUser,json} from '../_lib/auth.js';
 import {teamKey} from '../_lib/teams-util.js';
 import {readLeagueState,writeLeagueState} from '../_lib/league-state.js';
 import {classKey} from '../_lib/removed-players.js';
-import {applyConditionalRescinds} from '../_lib/conditional-rescinds.js';
+import {applyConditionalRescinds,previewConditionalRule} from '../_lib/conditional-rescinds.js';
 import {queueLeagueBackup} from '../_lib/backup.js';
 const fail=(error,status=400)=>json({ok:false,error},{status});
 function cleanRule(input,user,state,old){
@@ -44,6 +44,10 @@ export async function onRequestPost({request,env,waitUntil}){
     if(old)return json({ok:true,state,rescinded:0});
     if(rules.filter(r=>teamKey(r.team)===teamKey(user.team)).length>=200)return fail('Remove unused rules before adding more.');
     state.conditionalRescinds=[...rules,cleanRule(body.rule,user,state)];
+   }
+   if(body.action!=='delete'){
+    const preview=previewConditionalRule(state,state.conditionalRescinds.find(r=>r.id===id));
+    if(preview.met && body.confirmImmediate!==preview.token)return json({ok:false,needsConfirmation:true,preview,error:'Existing commitments already meet this rule.'},{status:409});
    }
    const results=body.action!=='delete'?applyConditionalRescinds(state,{onlyRuleId:id}):[];
    const saved=await writeLeagueState(env,state);
