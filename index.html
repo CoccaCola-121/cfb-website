@@ -5404,11 +5404,11 @@ function renderProspectVisits(offers){
     if(!weeks.has(week))weeks.set(week,[]);
     weeks.get(week).push(entry);
   }
-  const names=entries=>entries.slice().sort((a,b)=>a.team.localeCompare(b.team)).map(e=>'<span title="'+escapeHtml(e.label)+'">'+escapeHtml(e.team)+'</span>').join(', ') || '<span style="color:var(--slate);">0</span>';
+  const names=entries=>entries.slice().sort((a,b)=>a.team.localeCompare(b.team)).map(e=>'<span title="'+escapeHtml(e.label)+'">'+escapeHtml(e.team)+'</span>').join(', ') || '<span style="color:var(--slate);">N/A</span>';
   let campus='';
   for(let week=1;week<=Math.max(0,...weeks.keys());week++)campus+='<span><strong>Week '+week+':</strong> '+names(weeks.get(week) || [])+'</span>';
   if(unknown.length)campus+='<span><strong>Week unspecified:</strong> '+names(unknown)+'</span>';
-  return '<section class="rb-card" style="padding:12px 16px;margin-bottom:14px;font-size:13px;line-height:1.5;" aria-label="Visit summary"><div><strong>Coach visits:</strong> '+(coaches.length?escapeHtml(coaches.join(', ')):'0')+'</div><div style="display:flex;flex-wrap:wrap;gap:4px 16px;margin-top:6px;"><strong>Campus visits:</strong>'+(campus || '<span>0</span>')+'</div></section>';
+  return '<section class="rb-card" style="padding:12px 16px;margin-bottom:14px;font-size:13px;line-height:1.5;" aria-label="Visit summary"><div><strong>Coach visits:</strong> '+(coaches.length?escapeHtml(coaches.join(', ')):'N/A')+'</div><div style="display:flex;flex-wrap:wrap;gap:4px 16px;margin-top:6px;"><strong>Campus visits:</strong>'+(campus || '<span>N/A</span>')+'</div></section>';
 }
 
 function renderProspectDetail(){
@@ -5421,7 +5421,7 @@ function renderProspectDetail(){
   const returnView = UI.prospectReturnView || 'feed';
   const returnLabel = returnView === 'watchlist' ? 'Back to My Watchlist' : (returnView === 'myoffers' ? 'Back to My Offers' : (returnView === 'mycommits' ? 'Back to My Commits' : (returnView === 'teamcommits' ? 'Back to Team Commits' : (returnView === 'teamoffers' ? 'Back to Team Offers' : 'Back to board'))));
   let html = '<div style="margin-bottom:16px;"><button class="rb-btn" data-nav="' + escapeHtml(returnView) + '">&larr; ' + escapeHtml(returnLabel) + '</button></div>';
-  if(canUseDangerZone())html+='<div style="display:flex;justify-content:flex-end;margin-bottom:12px;"><button class="rb-btn rb-btn-danger" id="rb-remove-player" data-player="'+escapeHtml(p.id)+'">Remove player thread</button></div>';
+  if(recruitingStage()==='cpr' && canUseDangerZone())html+='<div style="display:flex;justify-content:flex-end;margin-bottom:12px;"><button class="rb-btn rb-btn-danger" id="rb-remove-player" data-player="'+escapeHtml(p.id)+'">Remove player thread</button></div>';
   html += '<div class="rb-card" style="padding:18px 20px;margin-bottom:14px;' + (p.transferFrom ? transferCardStyle(p) : (p.commitTeam ? committedCardStyle(p.commitTeam) : '')) + '">';
   html += '<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;">';
   html += '<div style="min-width:0;flex:1 1 420px;">';
@@ -5917,12 +5917,12 @@ function bindFloatingSubmit(){
 
 function renderRemovePlayerConfirm(){
   const p=DB.prospects[UI.pendingRemovePlayer];
-  if(!p || !canUseDangerZone())return '';
+  if(!p || !canUseDangerZone() || recruitingStage()!=='cpr')return '';
   return '<div style="position:fixed;inset:0;background:rgba(0,0,0,.72);display:flex;align-items:center;justify-content:center;z-index:65;"><div class="rb-card" role="dialog" aria-modal="true" aria-labelledby="rb-remove-confirm-title" style="padding:24px;width:460px;max-width:90vw;box-sizing:border-box;"><div class="rb-h" id="rb-remove-confirm-title" style="font-size:20px;margin-bottom:16px;">Remove player thread?</div><p>Remove <strong>'+escapeHtml(p.name)+'</strong> from the board?</p><p style="color:var(--slate);line-height:1.5;">Their offers will be archived. Coaches cannot recreate this player’s thread for this class.</p><div style="display:flex;justify-content:flex-end;gap:8px;flex-wrap:wrap;"><button class="rb-btn" id="rb-cancel-remove-player">Cancel</button><button class="rb-btn rb-btn-danger" id="rb-confirm-remove-player">Remove thread</button></div></div></div>';
 }
 async function removePlayerThread(pid){
   const p=DB.prospects[pid];
-  if(!canUseDangerZone() || !p || UI.submitting)return;
+  if(!canUseDangerZone() || !p || UI.submitting || recruitingStage()!=='cpr')return;
   UI.pendingRemovePlayer=null;
   UI.submitting=true;
   const submitButton=document.getElementById('rb-submit-sheet-btn');

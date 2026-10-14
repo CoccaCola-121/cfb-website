@@ -8,6 +8,7 @@ export async function onRequestPost({request,env,waitUntil}){
   if(!user || accessLevel(env,user)!=='commissioner')return json({ok:false,error:'Commissioner access required.'},{status:403});
   const body=await request.json();
   const state=await readLeagueState(env),p=state?.prospects?.[body.prospectId];
+  if(state?.recruitingStage!=='cpr')return json({ok:false,error:'Player thread removal is only available during CPR.'},{status:403});
   if(!p)return json({ok:false,error:'Player not found.'},{status:404});
   if(body.expectedUpdatedAt!==state.updatedAt)return json({ok:false,error:'The board changed. Refresh before removing this player.'},{status:409});
   state.removedPlayers ||= {};
