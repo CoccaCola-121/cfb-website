@@ -75,21 +75,27 @@
 </div>
 <noscript><p style="padding:24px;color:#F2F2F0;font-family:sans-serif;">RecruitHQ needs JavaScript to load the league and sign you in. Enable JavaScript, then reload this page.</p></noscript>
 
-<script src="team-branding.js"></script>
-<script src="offer-amendments.js"></script>
-<script src="scholarship-template.js"></script>
-<script src="default-class-2062.js"></script>
-<script src="/cpr-rules.js" onerror="this.onerror=null;this.src='cpr-rules.js'"></script>
-<script src="/walkon-limit.js" onerror="this.onerror=null;this.src='walkon-limit.js'"></script>
-<script src="/scholarship-history.js" onerror="this.onerror=null;this.src='scholarship-history.js'"></script>
-<script src="/auto-commits.js" onerror="this.onerror=null;this.src='auto-commits.js'"></script>
-<script src="/offer-window.js" onerror="this.onerror=null;this.src='offer-window.js'"></script>
-<script src="/transfer-rules.js" onerror="this.onerror=null;this.src='transfer-rules.js'"></script>
-<script src="/promise-lists.js" onerror="this.onerror=null;this.src='promise-lists.js'"></script>
-<script src="/visit-rules.js" onerror="this.onerror=null;this.src='visit-rules.js'"></script>
-<script src="/hs-pitch-library.js" onerror="this.onerror=null;this.src='hs-pitch-library.js'"></script>
+<script src="/team-branding.js" onerror="this.onerror=null;this.src='/team-branding.js?retry=1'"></script>
+<script src="/offer-amendments.js" onerror="this.onerror=null;this.src='/offer-amendments.js?retry=1'"></script>
+<script src="/scholarship-template.js" onerror="this.onerror=null;this.src='/scholarship-template.js?retry=1'"></script>
+<script src="/default-class-2062.js" onerror="this.onerror=null;this.src='/default-class-2062.js?retry=1'"></script>
+<script src="/cpr-rules.js" onerror="this.onerror=null;this.src='/cpr-rules.js?retry=1'"></script>
+<script src="/walkon-limit.js" onerror="this.onerror=null;this.src='/walkon-limit.js?retry=1'"></script>
+<script src="/scholarship-history.js" onerror="this.onerror=null;this.src='/scholarship-history.js?retry=1'"></script>
+<script src="/auto-commits.js" onerror="this.onerror=null;this.src='/auto-commits.js?retry=1'"></script>
+<script src="/offer-window.js" onerror="this.onerror=null;this.src='/offer-window.js?retry=1'"></script>
+<script src="/transfer-rules.js" onerror="this.onerror=null;this.src='/transfer-rules.js?retry=1'"></script>
+<script src="/promise-lists.js" onerror="this.onerror=null;this.src='/promise-lists.js?retry=1'"></script>
+<script src="/visit-rules.js" onerror="this.onerror=null;this.src='/visit-rules.js?retry=1'"></script>
+<script src="/hs-pitch-library.js" onerror="this.onerror=null;this.src='/hs-pitch-library.js?retry=1'"></script>
 <script>
 (function(){
+
+// Do not open an editor that cannot finish rendering after a successful save.
+if(typeof NZCFLOfferAmendments === 'undefined'){
+  document.getElementById('rb-app').innerHTML='<main style="padding:32px;font-family:sans-serif;"><h1>Some site files could not load</h1><p>Reconnect and reload this page. Your saved offer drafts are kept.</p><button onclick="window.location.reload()">Reload RecruitHQ</button></main>';
+  return;
+}
 
 const DB_KEY = 'recruiting-board-db-v2';
 const SESSION_KEY = 'rb-session-v1';
@@ -5909,6 +5915,7 @@ function renderTeamAdminModal(){
     html += '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px;">';
     html += '<button class="rb-btn rb-btn-danger" id="rb-modal-remove-team">Remove coach</button>';
     html += '</div>';
+    html += '<details style="margin-bottom:16px;"><summary>Replace Discord account</summary><p style="font-size:13px;color:var(--slate);">Use this when the same coach changes accounts. All offers and commitments stay with the team.</p><label>New Discord user ID<input class="rb-input" id="rb-replacement-discord" inputmode="numeric" /></label><button class="rb-btn" id="rb-replace-account" style="margin-top:8px;">Replace account now</button><p id="rb-replacement-status" role="status"></p></details>';
     html += '<label><span class="rb-mono" style="font-size:11px;color:var(--slate);">Move coach to</span><input class="rb-input" id="rb-team-change-input" placeholder="Type team name" value="' + escapeHtml(UI.teamChangeTeam || '') + '" list="rb-team-change-options" /></label>';
     html += '<div style="display:flex;justify-content:flex-end;gap:8px;flex-wrap:wrap;margin-top:14px;">';
     html += '<button class="rb-btn" id="rb-team-change-cancel">Cancel</button>';
@@ -6744,6 +6751,22 @@ function bindEvents(){
   if (teamChangeCancel) teamChangeCancel.onclick = function(e){
     if (e) e.stopPropagation();
     closeTeamAdminModal();
+  };
+  const replaceAccount = document.getElementById('rb-replace-account');
+  if(replaceAccount)replaceAccount.onclick=async function(){
+    const status=document.getElementById('rb-replacement-status');
+    const discordId=document.getElementById('rb-replacement-discord').value.trim();
+    const modal=UI.teamAdminModal;
+    if(!modal)return;
+    replaceAccount.disabled=true;
+    status.textContent='Updating account link…';
+    try{
+      const {response,data}=await offerRequest('/api/admin/replace-account',{method:'POST',credentials:'include',headers:{'content-type':'application/json'},body:JSON.stringify({team:modal.team,previousDiscordId:modal.discordId,discordId})});
+      if(!response.ok || !data.ok)throw Error(data.error || 'Could not replace the account.');
+      UI.teamAdminModal=null;
+      UI.adminActionStatus='Discord account replaced. Offers and commitments preserved.';
+      await loadTeamAvailability();render();
+    }catch(error){status.textContent=error.message;replaceAccount.disabled=false;}
   };
   const modalRemoveTeam = document.getElementById('rb-modal-remove-team');
   if (modalRemoveTeam) modalRemoveTeam.onclick = function(e){
