@@ -126,7 +126,7 @@ let UI = { view: 'feed', threadId: null, showSubmitModal: false, submitting: fal
            backupStatus: null, backupError: null, backingUp: false,
            teamAdminModal: null, brandingFileName: '', adminActionStatus: null, adminActionError: null,
            commitOverrideRank: '', commitOverrideTeam: '', commitOverrideStatus: null, commitOverrideError: null,
-           pendingCommitOverride: null, pendingClearCommit: null, positionFilters: {}, boardSearch: '', threadSearches: {}, hideMyOffers: false, watchlistOfferFilter: 'all', watchlistIds: [], watchlistLoaded: false, watchlistError: '', watchlistTeam: '', watchlistStage: '', watchlistPending: {}, pendingWatchlistBulk: null, watchlistBulkSaving: false };
+           pendingCommitOverride: null, pendingClearCommit: null, positionFilters: {}, boardSearch: '', threadSearches: {}, hideMyOffers: false, watchlistOfferFilter: 'all', myOffersFilter: 'all', watchlistIds: [], watchlistLoaded: false, watchlistError: '', watchlistTeam: '', watchlistStage: '', watchlistPending: {}, pendingWatchlistBulk: null, watchlistBulkSaving: false };
 let dbReady = false, sessionReady = false;
 let summaryTimer = null;
 let leagueSyncTimer = null;
@@ -187,6 +187,7 @@ function resetBoardFilters(){
   UI.boardOfferFilter = 'all';
   UI.hideMyOffers = false;
   UI.watchlistOfferFilter = 'all';
+  UI.myOffersFilter = 'all';
   UI.coachAddedOnly = false;
   UI.hideCommittedBoards = false;
 }
@@ -4541,11 +4542,15 @@ function renderMyOffers(){
   if (!SESSION){
     return '<div class="rb-card" style="padding:32px;text-align:center;color:var(--slate);">Log in to view your offers.</div>';
   }
-  const rows = getOfferRowsForTeam(SESSION.team).filter(row=>!UI.myOffersActiveOnly || !row.offer.rescinded && !row.prospect.commitTeam);
+  const offerFilter=UI.myOffersFilter || 'all';
+  const rows = getOfferRowsForTeam(SESSION.team).filter(row=>{
+    const active=!row.offer.rescinded && !row.prospect.commitTeam;
+    return offerFilter==='active'?active:offerFilter==='inactive'?!active:true;
+  });
   const autoPreview=currentOfferAutoPreview();
   const filterKey = positionFilterKey('offers', SESSION.team);
   let html = '<div class="rb-cpr-board-heading rb-my-offers-heading"><div><div class="rb-h" style="font-size:20px;margin-bottom:4px;">My Offers</div><div class="rb-my-offers-subtitle">'+rows.length+' offer'+(rows.length===1?'':'s')+' from '+escapeHtml(SESSION.team)+'.</div></div><div class="rb-card rb-cpr-submit-wrap"><button type="button" class="rb-btn rb-jump-rescind" id="rb-jump-rescind">Jump to Rescind Center</button></div></div>';
-  html += '<label class="rb-toggle" style="margin-bottom:16px;"><span>Active only (uncommitted, not rescinded)</span><input type="checkbox" id="rb-my-offers-active" '+(UI.myOffersActiveOnly?'checked':'')+'><span class="rb-switch-track"><span class="rb-switch-thumb"></span></span></label>';
+  html += '<div class="rb-segmented" role="group" aria-label="My offer status" style="margin-bottom:16px;">'+[['inactive','Inactive','Rescinded offers or committed players'],['all','All','All your offers'],['active','Active','Uncommitted players with a non-rescinded offer']].map(([value,label,hint])=>'<button type="button" data-my-offers-filter="'+value+'" aria-pressed="'+(offerFilter===value)+'" title="'+hint+'">'+label+'</button>').join('')+'</div>';
   html += renderScholarshipTemplateEditor();
   html += renderHSPitchEditor();
   html += renderVisitLedger();
@@ -4562,7 +4567,7 @@ function renderMyOffers(){
   html += '</div>';
 
   if (!rows.length){
-    html += '<div class="rb-card" style="padding:28px;text-align:center;color:var(--slate);">No offers yet.</div>';
+    html += '<div class="rb-card" style="padding:28px;text-align:center;color:var(--slate);">'+(offerFilter==='all'?'No offers yet.':'No '+offerFilter+' offers.')+'</div>';
   } else {
     html += '<div style="display:flex;flex-direction:column;gap:10px;">';
     rows.forEach(function(row){
@@ -5518,7 +5523,7 @@ function renderProspectDetail(){
   html += '</div>';
   html += renderProspectVisits(offers);
   if (!offers.length){
-    html += '<div class="rb-card" style="padding:28px;text-align:center;color:var(--slate);">No offers yet.</div>';
+    html += '<div class="rb-card" style="padding:28px;text-align:center;color:var(--slate);">'+(offerFilter==='all'?'No offers yet.':'No '+offerFilter+' offers.')+'</div>';
     return html;
   }
   html += '<div style="display:flex;flex-direction:column;gap:12px;">';
@@ -6021,7 +6026,7 @@ async function removeKennyTestOffer(){
 function bindEvents(){
   syncSubmitModalLock();
   const retryLeague=document.getElementById('rb-retry-league');if(retryLeague)retryLeague.onclick=()=>syncLeagueState(true,{force:true});
-  const activeOffers=document.getElementById('rb-my-offers-active');if(activeOffers)activeOffers.onchange=()=>{UI.myOffersActiveOnly=activeOffers.checked;render();};
+  document.querySelectorAll('[data-my-offers-filter]').forEach(button=>{button.onclick=()=>{UI.myOffersFilter=button.getAttribute('data-my-offers-filter');render();};});
   document.querySelectorAll('[data-edit-conditional]').forEach(button=>button.onclick=()=>{
    if(UI.submitting)return;
    const rule=rulesForTeam(SESSION.team).find(r=>r.id===button.dataset.editConditional);if(!rule)return;

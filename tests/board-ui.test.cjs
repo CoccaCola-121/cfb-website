@@ -1551,3 +1551,22 @@ test('watchlist offer switch separates own active offers from unoffered and resc
  app.UI.view='thread';
  assert.deepEqual(Array.from(app.visibleBoardProspectIds(thread)),['none','rescinded','other']);
 });
+
+test('My Offers switch partitions active, rescinded, and committed offers',()=>{
+ const {app}=harness();app.setSession({team:'Michigan State'});
+ app.DB.prospects={};app.DB.offersByProspect={};
+ for(const [id,commitTeam,rescinded] of [['active','',false],['rescinded','',true],['own','Michigan State',false],['away','USC',false]]){
+  app.DB.prospects[id]={id,name:'Recruit '+id,rank:1,position:'DL',commitTeam};
+  app.DB.offersByProspect[id]=[{id:'offer-'+id,team:'Michigan State',text:'Scholarship',rescinded}];
+ }
+ for(const [filter,count] of [['all',4],['active',1],['inactive',3]]){
+  app.UI.myOffersFilter=filter;
+  const html=app.renderMyOffers();
+  assert.equal((html.match(/data-my-offer-card="1"/g)||[]).length,count);
+  assert.match(html,new RegExp('data-my-offers-filter="'+filter+'" aria-pressed="true"'));
+  if(filter==='active')assert(!html.includes('data-search="1 #1 recruit rescinded'));
+  if(filter==='inactive')assert(!html.includes('data-search="1 #1 recruit active'));
+ }
+ app.DB.offersByProspect={};
+ assert.match(app.renderMyOffers(),/No inactive offers/);
+});
