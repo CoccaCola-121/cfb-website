@@ -1441,7 +1441,7 @@ test('request timeout covers a stalled response body',async()=>{
 });
 
 
-test('submit popup locks background and restores page position on close',()=>{
+for(const modal of ['submit','rescind'])test(modal+' popup locks background and restores page position on close',()=>{
  const {app,context,elements}=harness();
  const body={style:{cssText:'',position:'',top:'',left:'',width:'',overflow:''},classList:{add(){},remove(){}}};
  context.document.body=body;context.document.documentElement={style:{overflow:'auto'}};
@@ -1450,14 +1450,14 @@ test('submit popup locks background and restores page position on close',()=>{
  const background={inert:false,setAttribute(){this.marked=true;},hasAttribute(){return this.marked;},removeAttribute(){this.marked=false;}};
  const overlay={};let focused=false;
  const dialog={contains(){return false;},focus(){focused=true;},querySelectorAll(){return [];}};
- elements['rb-submit-overlay']=overlay;elements['rb-submit-dialog']=dialog;
+ elements['rb-'+modal+'-overlay']=overlay;elements['rb-'+modal+'-dialog']=dialog;
  elements['rb-app'].children=[background,overlay];
  overlay.hasAttribute=()=>false;
  app.syncSubmitModalLock();
  assert.equal(body.style.position,'fixed');assert.equal(body.style.top,'-720px');assert.equal(background.inert,true);assert(focused);
  // Rebinding during an editor update must not overwrite the original position.
  context.window.scrollY=0;app.syncSubmitModalLock();
- delete elements['rb-submit-overlay'];delete elements['rb-submit-dialog'];elements['rb-app'].children=[background];
+ delete elements['rb-'+modal+'-overlay'];delete elements['rb-'+modal+'-dialog'];elements['rb-app'].children=[background];
  app.syncSubmitModalLock();
  assert.equal(background.inert,false);assert.equal(context.document.documentElement.style.overflow,'auto');assert.equal(restored.top,720);
 });
@@ -1509,4 +1509,24 @@ test('suspended offer restores its draft and campus weeks omit empty gaps',()=>{
  app.restoreSuspendedOffer();assert.equal(app.UI.showSubmitModal,true);assert.equal(app.UI.submitTargetId,'r2');assert.equal(app.readOfferDraft().text,'My unfinished pitch');
  const html=app.renderProspectVisits([{team:'USC',text:'Campus Visit Week 1'},{team:'Duke',text:'Campus Visit Week 4'}]);
  assert(html.includes('Week 1:'));assert(html.includes('Week 4:'));assert(!html.includes('Week 2:'));assert(!html.includes('Week 3:'));
+});
+
+
+test('opening rescind preserves expanded offers and the pre-render page position',()=>{
+ const {app,context,elements}=harness();
+ app.setReady();app.setSession({team:'Michigan State',discordId:'coach'});
+ app.UI.view='myoffers';app.UI.pendingSingleRescind={prospectId:'p',offerId:'o'};
+ app.DB.prospects={p:{id:'p',rank:100,name:'Test Recruit',position:'DL'}};
+ app.DB.offersByProspect={p:[{id:'o',team:'Michigan State',text:'Scholarship'}]};
+ const offer=element({'data-offer-key':'["p","o"]'});offer.open=true;
+ const query=context.document.querySelectorAll;
+ context.document.querySelectorAll=selector=>selector==='[data-offer-key][open]'?(offer.open?[offer]:[]):selector==='[data-offer-key]'?[offer]:query(selector);
+ let html='',restored;
+ context.window.scrollY=1500;
+ Object.defineProperty(elements['rb-app'],'innerHTML',{get(){return html;},set(value){html=value;offer.open=false;context.window.scrollY=200;}});
+ context.window.scrollTo=position=>{restored=position;};
+ app.render();
+ assert.equal(offer.open,true);
+ assert.equal(restored.top,1500);
+ assert.match(html,/id="rb-rescind-dialog"[^>]*role="dialog"/);
 });

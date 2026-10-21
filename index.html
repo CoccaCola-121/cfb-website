@@ -3405,8 +3405,8 @@ async function confirmReset(){
 let submitModalLock=null;
 function syncSubmitModalLock(){
   if(!document.body || !document.documentElement)return;
-  const overlay=document.getElementById('rb-submit-overlay');
-  const dialog=document.getElementById('rb-submit-dialog');
+  const overlay=document.getElementById('rb-rescind-overlay') || document.getElementById('rb-submit-overlay');
+  const dialog=document.getElementById('rb-rescind-dialog') || document.getElementById('rb-submit-dialog');
   if(overlay && !submitModalLock){
     submitModalLock={x:window.scrollX || 0,y:window.scrollY || 0,bodyStyle:document.body.style.cssText,htmlOverflow:document.documentElement.style.overflow,focusId:document.activeElement?.id};
     document.body.style.position='fixed';
@@ -3444,6 +3444,8 @@ function syncSubmitModalLock(){
 }
 
 function render(){
+  const pagePosition={left:window.scrollX || 0,top:window.scrollY || 0,behavior:'instant'};
+  const expandedOffers=new Set(Array.from(document.querySelectorAll('[data-offer-key][open]'),el=>el.getAttribute('data-offer-key')));
   const submitScroll=document.getElementById('rb-submit-dialog')?.scrollTop || 0;
   captureRescindDraft();
   const root = document.getElementById('rb-app');
@@ -3499,6 +3501,8 @@ function render(){
   if (UI.confirmReset) html += renderResetConfirmModal();
   html += renderBackTopControl();
   root.innerHTML = html;
+  document.querySelectorAll('[data-offer-key]').forEach(el=>{el.open=expandedOffers.has(el.getAttribute('data-offer-key'));});
+  if(UI.pendingSingleRescind && !submitModalLock)window.scrollTo(pagePosition);
   const submitDialog=document.getElementById('rb-submit-dialog');
   if(submitDialog)submitDialog.scrollTop=submitScroll;
   const nextNav = document.getElementById('rb-main-nav');
@@ -5641,7 +5645,7 @@ function renderOfferBlock(o, opts){
   '</div>';
   let html = '';
   if (opts.collapsed){
-    html += '<details class="rb-branded-offer' + (o.rescinded ? ' rb-offer-rescinded' : invalid ? ' rb-offer-invalid' : '') + '" data-offer-details="1" style="' + offerStyle + 'padding:10px 14px;">';
+    html += '<details class="rb-branded-offer' + (o.rescinded ? ' rb-offer-rescinded' : invalid ? ' rb-offer-invalid' : '') + '" data-offer-details="1" data-offer-key="' + escapeHtml(JSON.stringify([opts.prospect?.id || '',o.id])) + '" style="' + offerStyle + 'padding:10px 14px;">';
     html += '<summary class="rb-offer-summary" style="list-style:none;cursor:pointer;">' + header + '</summary>';
     html += '<div style="margin-top:8px;">';
   } else {
@@ -5884,9 +5888,9 @@ function renderSingleRescindConfirmModal(){
   const pending = UI.pendingSingleRescind || {};
   const prospect = DB.prospects[pending.prospectId] || {};
   const offer = (DB.offersByProspect[pending.prospectId] || []).find(function(o){ return o.id === pending.offerId; }) || {};
-  return '<div style="position:fixed;inset:0;background:rgba(0,0,0,0.72);display:flex;align-items:center;justify-content:center;z-index:65;">' +
-    '<div class="rb-card" style="padding:24px;width:520px;max-width:90vw;border-color:#B33A32;">' +
-      '<div class="rb-h" style="font-size:20px;margin-bottom:8px;color:#FFF2F1;">Rescind this offer?</div>' +
+  return '<div id="rb-rescind-overlay" style="position:fixed;inset:0;background:rgba(0,0,0,0.72);display:flex;align-items:center;justify-content:center;z-index:65;">' +
+    '<div id="rb-rescind-dialog" class="rb-card" role="dialog" aria-modal="true" aria-labelledby="rb-rescind-title" tabindex="-1" style="padding:24px;width:520px;max-width:90vw;max-height:85dvh;overflow:auto;overscroll-behavior:contain;box-sizing:border-box;border-color:#B33A32;">' +
+      '<div id="rb-rescind-title" class="rb-h" style="font-size:20px;margin-bottom:8px;color:#FFF2F1;">Rescind this offer?</div>' +
       '<div style="font-size:14px;color:var(--text);line-height:1.5;margin-bottom:10px;">' + escapeHtml(offer.team || SESSION.team) + ' will rescind its offer to <strong>' + (recruitNumber(prospect) ? recruitNumber(prospect) + ' ' : '') + renderRecruitName(prospect.name || 'this recruit') + '</strong>.</div>' +
       '<div style="font-size:13px;color:var(--alert);line-height:1.45;margin-bottom:18px;">This cannot be undone. The offer will still show on the record as rescinded.</div>' +
       '<div style="display:flex;justify-content:flex-end;gap:8px;flex-wrap:wrap;">' +
