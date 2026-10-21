@@ -1530,3 +1530,24 @@ test('opening rescind preserves expanded offers and the pre-render page position
  assert.equal(restored.top,1500);
  assert.match(html,/id="rb-rescind-dialog"[^>]*role="dialog"/);
 });
+
+test('watchlist offer switch separates own active offers from unoffered and rescinded players',()=>{
+ const {app}=harness();app.setSession({team:'Michigan State'});
+ app.UI.view='watchlist';app.UI.boardCommitFilter='all';app.UI.hideMyOffers=true;
+ app.DB.prospects={};app.DB.offersByProspect={};
+ for(const id of ['active','none','rescinded','other'])app.DB.prospects[id]={id,name:id,rank:1,position:'DL'};
+ app.DB.offersByProspect.active=[{team:'Michigan State',text:'Scholarship'}];
+ app.DB.offersByProspect.rescinded=[{team:'Michigan State',rescinded:true,text:'Scholarship'}];
+ app.DB.offersByProspect.other=[{team:'USC',text:'Scholarship'}];
+ const thread={id:'watchlist',title:'My Watchlist',prospectIds:Object.keys(app.DB.prospects)};
+ for(const [filter,expected] of [['all',['active','none','rescinded','other']],['active',['active']],['inactive',['none','rescinded','other']]]){
+  app.UI.watchlistOfferFilter=filter;
+  assert.deepEqual(Array.from(app.visibleBoardProspectIds(thread)),expected);
+ }
+ const html=app.renderThreadProspectList(thread,{watchlist:true});
+ assert.match(html,/data-watchlist-offer-filter="inactive" aria-pressed="true"/);
+ assert.match(html,/>Inactive<.*>All<.*>Active</);
+ assert(!html.includes('rb-hide-my-offers'));
+ app.UI.view='thread';
+ assert.deepEqual(Array.from(app.visibleBoardProspectIds(thread)),['none','rescinded','other']);
+});

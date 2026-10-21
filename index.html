@@ -126,7 +126,7 @@ let UI = { view: 'feed', threadId: null, showSubmitModal: false, submitting: fal
            backupStatus: null, backupError: null, backingUp: false,
            teamAdminModal: null, brandingFileName: '', adminActionStatus: null, adminActionError: null,
            commitOverrideRank: '', commitOverrideTeam: '', commitOverrideStatus: null, commitOverrideError: null,
-           pendingCommitOverride: null, pendingClearCommit: null, positionFilters: {}, boardSearch: '', threadSearches: {}, hideMyOffers: false, watchlistIds: [], watchlistLoaded: false, watchlistError: '', watchlistTeam: '', watchlistStage: '', watchlistPending: {}, pendingWatchlistBulk: null, watchlistBulkSaving: false };
+           pendingCommitOverride: null, pendingClearCommit: null, positionFilters: {}, boardSearch: '', threadSearches: {}, hideMyOffers: false, watchlistOfferFilter: 'all', watchlistIds: [], watchlistLoaded: false, watchlistError: '', watchlistTeam: '', watchlistStage: '', watchlistPending: {}, pendingWatchlistBulk: null, watchlistBulkSaving: false };
 let dbReady = false, sessionReady = false;
 let summaryTimer = null;
 let leagueSyncTimer = null;
@@ -186,6 +186,7 @@ function resetBoardFilters(){
   UI.boardCommitFilter = 'all';
   UI.boardOfferFilter = 'all';
   UI.hideMyOffers = false;
+  UI.watchlistOfferFilter = 'all';
   UI.coachAddedOnly = false;
   UI.hideCommittedBoards = false;
 }
@@ -712,7 +713,11 @@ function visibleBoardProspectIds(t){
     const offered = (DB.offersByProspect[pid] || []).some(function(o){ return activeValidOffer(pid,o); });
     if (UI.boardOfferFilter === 'offered' && !offered) return false;
     if (UI.boardOfferFilter === 'unoffered' && offered) return false;
-    if (UI.hideMyOffers && SESSION && (DB.offersByProspect[pid] || []).some(function(o){ return o && !o.rescinded && teamKey(o.team) === teamKey(SESSION.team); })) return false;
+    const ownActive = SESSION && threadOffers.some(o=>o && !o.rescinded && teamKey(o.team)===teamKey(SESSION.team));
+    if(UI.view==='watchlist'){
+      if(UI.watchlistOfferFilter==='active' && !ownActive)return false;
+      if(UI.watchlistOfferFilter==='inactive' && ownActive)return false;
+    }else if(UI.hideMyOffers && ownActive)return false;
     if (filter === 'committed') return !!p.commitTeam;
     if (filter === 'uncommitted') return !p.commitTeam;
     return true;
@@ -5095,7 +5100,8 @@ function renderThreadProspectList(t, options){
   let html = '<div' + (recruitingStage() === 'cpr' && !isWatchlist ? ' class="rb-cpr-board-heading"' : '') + '><div><div class="rb-h" style="font-size:20px;margin-bottom:4px;">' + escapeHtml(t.title) + '</div>';
   html += '<div class="rb-cpr-board-description" style="font-size:13px;color:var(--slate);' + (recruitingStage() === 'cpr' && !isWatchlist ? '' : 'margin-bottom:18px;') + '">' + (isWatchlist ? 'Flagged players for your team.' : (recruitingStage() === 'transfer' ? 'Transfers in class-sheet order. 800-word pitches; offer headers excluded.' : (recruitingStage() === 'cpr' ? 'Free agents meeting position minimums, plus coach-created threads.' : rankRangeForThread(t) + ' on the board. Offers from every team stay visible here.'))) + '</div></div>';
   if (recruitingStage() === 'cpr' && !isWatchlist) html += renderCprCreate();
-  if (isWatchlist || recruitingStage() === 'cpr') html += '<label class="rb-toggle"'+(isWatchlist?' style="margin-bottom:16px;"':'')+'><span>Hide my offers</span><input type="checkbox" id="rb-hide-my-offers" ' + (UI.hideMyOffers ? 'checked' : '') + ' /><span class="rb-switch-track"><span class="rb-switch-thumb"></span></span></label>';
+  if(isWatchlist)html+='<div style="margin-bottom:16px;"><div id="rb-watchlist-offer-label" style="font-size:12px;color:var(--slate);margin-bottom:6px;">My offers</div><div class="rb-segmented" role="group" aria-labelledby="rb-watchlist-offer-label">'+[['inactive','Inactive','No active offer from your team, including rescinded offers'],['all','All','All watchlisted players'],['active','Active','Active offers from your team']].map(([value,label,hint])=>'<button type="button" data-watchlist-offer-filter="'+value+'" aria-pressed="'+((UI.watchlistOfferFilter || 'all')===value)+'" title="'+hint+'">'+label+'</button>').join('')+'</div></div>';
+  else if (recruitingStage() === 'cpr') html += '<label class="rb-toggle"'+'><span>Hide my offers</span><input type="checkbox" id="rb-hide-my-offers" ' + (UI.hideMyOffers ? 'checked' : '') + ' /><span class="rb-switch-track"><span class="rb-switch-thumb"></span></span></label>';
   html += '</div>';
   html += '<div class="rb-card" style="padding:14px 16px;margin-bottom:14px;">';
   const visibleIds = visibleBoardProspectIds(t);
@@ -6097,6 +6103,9 @@ function bindEvents(){
   document.querySelectorAll('[data-board-offer-filter]').forEach(function(button){ button.onclick = function(){ UI.boardOfferFilter = button.getAttribute('data-board-offer-filter'); render(); }; });
   const coachAddedOnly=document.getElementById('rb-coach-added-only');
   if(coachAddedOnly)coachAddedOnly.onchange=function(){UI.coachAddedOnly=coachAddedOnly.checked;render();};
+  document.querySelectorAll('[data-watchlist-offer-filter]').forEach(button=>{
+    button.onclick=()=>{UI.watchlistOfferFilter=button.getAttribute('data-watchlist-offer-filter');render();};
+  });
   const hideMyOffers = document.getElementById('rb-hide-my-offers');
   if (hideMyOffers) hideMyOffers.onchange = function(){ UI.hideMyOffers = hideMyOffers.checked; render(); };
   const saveSettings = document.getElementById('rb-save-settings');
