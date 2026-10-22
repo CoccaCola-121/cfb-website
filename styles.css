@@ -925,3 +925,13 @@ html { scrollbar-gutter: stable; }
 #rb-submit-overlay { user-select:none; -webkit-user-select:none; }
 #rb-submit-dialog { user-select:text; -webkit-user-select:text; }
 #rb-submit-dialog textarea { overscroll-behavior:contain; }
+
+/* Keep wrapped campus weeks aligned beneath the first week. */
+.rb-campus-summary { display:grid; grid-template-columns:max-content minmax(0,1fr); align-items:baseline; gap:8px 12px; margin-top:8px; }
+.rb-campus-weeks { display:flex; flex-wrap:wrap; align-items:baseline; gap:8px 20px; min-width:0; }
+.rb-visit-week { max-width:100%; overflow-wrap:anywhere; }
+.rb-visit-week > strong { white-space:nowrap; }
+@media(max-width:600px) {
+  .rb-campus-summary { grid-template-columns:minmax(0,1fr); gap:4px; }
+  .rb-campus-weeks { gap:6px 16px; }
+}

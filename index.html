@@ -5480,9 +5480,9 @@ function renderProspectVisits(offers){
   }
   const names=entries=>entries.slice().sort((a,b)=>a.team.localeCompare(b.team)).map(e=>'<span title="'+escapeHtml(e.label)+'">'+escapeHtml(e.team)+'</span>').join(', ') || '<span style="color:var(--slate);">N/A</span>';
   let campus='';
-  for(const week of [...weeks.keys()].sort((a,b)=>a-b))campus+='<span><strong>Week '+week+':</strong> '+names(weeks.get(week) || [])+'</span>';
-  if(unknown.length)campus+='<span><strong>Week unspecified:</strong> '+names(unknown)+'</span>';
-  return '<section class="rb-card" style="padding:12px 16px;margin-bottom:14px;font-size:13px;line-height:1.5;" aria-label="Visit summary"><div><strong>Coach visits:</strong> '+(coaches.length?escapeHtml(coaches.join(', ')):'N/A')+'</div><div style="display:flex;flex-wrap:wrap;gap:4px 16px;margin-top:6px;"><strong>Campus visits:</strong>'+(campus || '<span>N/A</span>')+'</div></section>';
+  for(const week of [...weeks.keys()].sort((a,b)=>a-b))campus+='<span class="rb-visit-week"><strong>Week '+week+':</strong> '+names(weeks.get(week) || [])+'</span>';
+  if(unknown.length)campus+='<span class="rb-visit-week"><strong>Week unspecified:</strong> '+names(unknown)+'</span>';
+  return '<section class="rb-card" style="padding:12px 16px;margin-bottom:14px;font-size:13px;line-height:1.5;" aria-label="Visit summary"><div><strong>Coach visits:</strong> '+(coaches.length?escapeHtml(coaches.join(', ')):'N/A')+'</div><div class="rb-campus-summary"><strong>Campus visits:</strong><div class="rb-campus-weeks">'+(campus || '<span>N/A</span>')+'</div></div></section>';
 }
 
 function renderProspectDetail(){
