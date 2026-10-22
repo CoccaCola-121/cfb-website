@@ -926,12 +926,15 @@ html { scrollbar-gutter: stable; }
 #rb-submit-dialog { user-select:text; -webkit-user-select:text; }
 #rb-submit-dialog textarea { overscroll-behavior:contain; }
 
-/* Keep wrapped campus weeks aligned beneath the first week. */
-.rb-campus-summary { display:grid; grid-template-columns:max-content minmax(0,1fr); align-items:baseline; gap:8px 12px; margin-top:8px; }
-.rb-campus-weeks { display:flex; flex-wrap:wrap; align-items:baseline; gap:8px 20px; min-width:0; }
-.rb-visit-week { max-width:100%; overflow-wrap:anywhere; }
-.rb-visit-week > strong { white-space:nowrap; }
+/* Campus weeks are separate, evenly spaced groups rather than running prose. */
+.rb-campus-summary { margin-top:12px; padding-top:12px; border-top:1px solid var(--hairline); }
+.rb-campus-summary > strong { display:block; margin-bottom:8px; }
+.rb-campus-weeks { display:grid; grid-template-columns:repeat(auto-fit,minmax(160px,1fr)); gap:8px; }
+.rb-visit-week { display:block; min-width:0; padding:8px 10px; border-radius:6px; background:rgba(255,255,255,.035); overflow-wrap:anywhere; }
+.rb-visit-week > strong { display:block; margin-bottom:3px; font-size:11px; font-weight:600; color:var(--slate); }
 @media(max-width:600px) {
-  .rb-campus-summary { grid-template-columns:minmax(0,1fr); gap:4px; }
-  .rb-campus-weeks { gap:6px 16px; }
+  .rb-campus-weeks { grid-template-columns:repeat(2,minmax(0,1fr)); }
+}
+@media(max-width:360px) {
+  .rb-campus-weeks { grid-template-columns:minmax(0,1fr); }
 }
