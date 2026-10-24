@@ -4627,7 +4627,7 @@ function renderCommitsForTeam(team, title){
   html += '<div class="rb-card" style="padding:18px 20px;margin-bottom:14px;">';
   html += renderPositionCounts(commits, function(p){ return p && p.position; }, filterKey);
   html += renderOwnTypeFilter('commits');
-  html += '<input class="rb-input" id="rb-my-commit-search" placeholder="' + (recruitingStage() === 'transfer' ? 'Search commits by player name or promise' : 'Search commits by recruit name, rank, hometown, or promise') + '" />';
+  html += '<input class="rb-input" id="rb-my-commit-search" placeholder="' + (recruitingStage() === 'transfer' ? 'Search commits by name, promise, or promise type' : 'Search commits by name, rank, hometown, promise, or promise type') + '" />';
   html += '</div>';
   if (!commits.length){
     html += '<div class="rb-card" style="padding:28px;text-align:center;color:var(--slate);">No commits yet.</div>';
@@ -4636,7 +4636,7 @@ function renderCommitsForTeam(team, title){
   html += '<div style="display:flex;flex-direction:column;gap:10px;">';
   commits.forEach(function(p){
     const offers = (DB.offersByProspect[p.id] || []).filter(function(o){ return o.team === team; });
-    const promiseSearch = offers.map(function(o){ return (o.promises || []).map(function(pr){ return pr.text || ''; }).join(' '); }).join(' ');
+    const promiseSearch = offers.map(function(o){ return cleanDisplayPromises(o).map(function(pr){ return [pr.text, titleForPromise(o,pr), pr.category].filter(Boolean).join(' ').replace(/_/g,' '); }).join(' '); }).join(' ');
     const bucket = positionBucket(p.position);
     const searchText = [p.rank, '#' + p.rank, p.name, p.hometown, promiseSearch].join(' ').toLowerCase();
     html += '<div class="rb-card rb-mobile-tight" data-my-commit-card="1" data-own-offer-type="' + NZCFLAutoCommits.commitKind(DB,p.id,p) + '" data-position-bucket="' + escapeHtml(bucket) + '" data-search="' + escapeHtml(searchText) + '" style="padding:14px 18px;">';
@@ -5523,7 +5523,7 @@ function renderProspectDetail(){
   html += '</div>';
   html += renderProspectVisits(offers);
   if (!offers.length){
-    html += '<div class="rb-card" style="padding:28px;text-align:center;color:var(--slate);">'+(offerFilter==='all'?'No offers yet.':'No '+offerFilter+' offers.')+'</div>';
+    html += '<div class="rb-card" style="padding:28px;text-align:center;color:var(--slate);">No offers yet.</div>';
     return html;
   }
   html += '<div style="display:flex;flex-direction:column;gap:12px;">';

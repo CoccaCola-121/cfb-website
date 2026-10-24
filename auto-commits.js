@@ -38,13 +38,50 @@
     if(!Number.isInteger(bucks) || bucks<0 || bucks>3) return null;
     return Math.max(0,row.open+bucks-(totals.scholarship[t] || 0)+(source.includedCommits?.[t] || 0));
   }
+  const scholarshipCapReason='Automatic rescind: scholarship cap reached.';
+  function markScholarshipCap(state,offer,now){
+    offer.rescinded=true;offer.rescindedAt=now;offer.rescindReason=scholarshipCapReason;
+    offer.scholarshipCapRescind={batchId:[state.recruitingStage,key(offer.team),now].join(':'),stage:state.recruitingStage,at:now};
+  }
+  // Legacy cap rescinds (including Colorado's) can be identified by their exact
+  // server-written reason and timestamp; never infer a cap rescind from status alone.
+  function scholarshipCapRecovery(state,team){
+    const room=remaining(state,team,'scholarship');
+    const offers=[];
+    for(const [prospectId,rows] of Object.entries(state.offersByProspect || {})){
+      const p=state.prospects?.[prospectId];if(!p || p.commitTeam)continue;
+      for(const o of rows){
+        if(key(o.team)!==key(team) || !o.rescinded || o.rescindReason!==scholarshipCapReason ||
+           !Number.isFinite(o.rescindedAt) || o.conditionalRescindRuleId || offerKind(state,p,o)!=='scholarship')continue;
+        const record=o.scholarshipCapRescind;
+        if(record && (record.at!==o.rescindedAt || record.stage!==state.recruitingStage))continue;
+        offers.push({prospectId,offerId:o.id,team:o.team,name:p.name,at:o.rescindedAt,
+          batchId:record?.batchId || [state.recruitingStage,key(o.team),o.rescindedAt].join(':')});
+      }
+    }
+    return {remaining:room,canRestore:room!==null && room>0,offers};
+  }
+  // Intentionally not wired to a UI or automatic capacity refresh. A future
+  // authorized workflow can preview then call this against the latest state.
+  function restoreScholarshipCapRescinds(state,team,{batchIds}={},now=Date.now()){
+    const preview=scholarshipCapRecovery(state,team);
+    if(!preview.canRestore)throw Error('Confirmed open scholarship spots are required before restoring cap rescinds.');
+    const selected=preview.offers.filter(row=>!batchIds || batchIds.includes(row.batchId));
+    for(const row of selected){
+      const o=state.offersByProspect[row.prospectId].find(o=>o.id===row.offerId);
+      o.scholarshipCapHistory ||= [];
+      o.scholarshipCapHistory.push({batchId:row.batchId,rescindedAt:o.rescindedAt,reason:o.rescindReason,restoredAt:now});
+      o.rescinded=false;delete o.rescindedAt;delete o.rescindReason;delete o.scholarshipCapRescind;
+    }
+    return {restored:selected};
+  }
   function applyScholarshipCap(state,now=Date.now()){
     const totals=counts(state);let changed=0;
     for(const [id,offers] of Object.entries(state.offersByProspect || {})){
       const p=state.prospects?.[id];if(!p || p.commitTeam)continue;
       for(const offer of offers){
         if(offer.rescinded || offerKind(state,p,offer)!=='scholarship' || remaining(state,offer.team,'scholarship',totals)!==0)continue;
-        offer.rescinded=true;offer.rescindedAt=now;offer.rescindReason='Automatic rescind: scholarship cap reached.';changed++;
+        markScholarshipCap(state,offer,now);changed++;
       }
     }
     return changed;
@@ -163,7 +200,7 @@
       const p=state.prospects[row.prospectId];p.commitTeam=row.team;p.commitType=kind;
       state.manualCommitOverrides[row.prospectId]={team:row.team,name:p.name,stage:state.recruitingStage,updatedAt:now,commitType:kind,source:'auto'};
     }
-    for(const row of result.rescinds){const o=(state.offersByProspect[row.prospectId] || []).find(o=>o.id===row.offerId);if(o){o.rescinded=true;o.rescindedAt=now;o.rescindReason=row.reason;if(row.conditionalRescindRuleId)o.conditionalRescindRuleId=row.conditionalRescindRuleId;}}
+    for(const row of result.rescinds){const o=(state.offersByProspect[row.prospectId] || []).find(o=>o.id===row.offerId);if(o){o.rescinded=true;o.rescindedAt=now;o.rescindReason=row.reason;if(row.reason===scholarshipCapReason)markScholarshipCap(state,o,now);if(row.conditionalRescindRuleId)o.conditionalRescindRuleId=row.conditionalRescindRuleId;}}
     if(result.commits.length)state.commitUpdatedAt=now;
     return result;
   }
@@ -175,5 +212,5 @@
     if (!values.length || values.some(v=>v==null || !Number.isFinite(v))) return null;
     return {...rule,overallMode:rule.overallMode==='belowCommit'?'below':'atMost',overallValue:Math.min(...values)};
   }
-  root.NZCFLAutoCommits={applyScholarshipCap,conditionalKind,invalidOffer,relativeOverall,rescindTargetRule,key,rating,offerKind,commitKind,counts,remaining,parseCapacitySheet,validate,fingerprint,preview,apply};
+  root.NZCFLAutoCommits={scholarshipCapRecovery,restoreScholarshipCapRescinds,applyScholarshipCap,conditionalKind,invalidOffer,relativeOverall,rescindTargetRule,key,rating,offerKind,commitKind,counts,remaining,parseCapacitySheet,validate,fingerprint,preview,apply};
 })(globalThis);

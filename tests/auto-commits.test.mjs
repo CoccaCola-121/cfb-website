@@ -84,3 +84,39 @@ test('capacity and Bucks allowances persist in league state, invalid allowances 
  const s=state();assert.deepEqual(sanitizeState(s).scholarshipCapacity,s.scholarshipCapacity);assert.deepEqual(sanitizeState(s).bucksRemaining,s.bucksRemaining);
  s.bucksRemaining.alpha=4;assert.match(A.validate(s),/0 to 3/);
 });
+
+test('cap recovery preserves manual, conditional, walk-on and committed rescinds and supports legacy batches',()=>{
+ const s=state();s.scholarshipCapacity.teams.alpha.open=0;
+ for(const id of ['cap','legacy','manual','conditional','walkon','committed'])player(s,id,45,[['Alpha',id==='walkon'?'walkon':'scholarship']]);
+ A.applyScholarshipCap(s,100);
+ const get=id=>s.offersByProspect[id][0];
+ assert.equal(get('cap').scholarshipCapRescind.batchId,'cpr:alpha:100');
+ delete get('legacy').scholarshipCapRescind;
+ get('manual').rescindReason='Rescinded by coach.';
+ get('conditional').conditionalRescindRuleId='rule1';
+ Object.assign(get('walkon'),{rescinded:true,rescindedAt:100,rescindReason:'Automatic rescind: walk-on cap reached.'});
+ s.prospects.committed.commitTeam='Beta';
+ assert.throws(()=>A.restoreScholarshipCapRescinds(s,'Alpha'),/open scholarship/);
+ s.scholarshipCapacity.teams.alpha.open=2;
+ const protectedBefore=JSON.stringify(['manual','conditional','walkon','committed'].map(get));
+ assert.deepEqual(A.scholarshipCapRecovery(s,'Alpha').offers.map(o=>o.prospectId),['cap','legacy']);
+ assert.equal(A.restoreScholarshipCapRescinds(s,'Alpha',{batchIds:['wrong']},200).restored.length,0);
+ assert.equal(A.restoreScholarshipCapRescinds(s,'Alpha',{batchIds:['cpr:alpha:100']},200).restored.length,2);
+ assert.equal(protectedBefore,JSON.stringify(['manual','conditional','walkon','committed'].map(get)));
+ assert.equal(get('cap').scholarshipCapHistory[0].rescindedAt,100);
+ assert.equal(get('cap').scholarshipCapHistory[0].restoredAt,200);
+ assert.equal(A.restoreScholarshipCapRescinds(s,'Alpha',{},300).restored.length,0);
+ assert.equal(A.applyScholarshipCap(s,300),0);
+ s.scholarshipCapacity.teams.alpha.open=0;
+ A.applyScholarshipCap(s,400);
+ assert.equal(get('cap').scholarshipCapRescind.batchId,'cpr:alpha:400');
+ assert.equal(get('cap').scholarshipCapHistory.length,1);
+});
+test('recovery cannot reopen with missing capacity or stale cap provenance',()=>{
+ const s=state();player(s,'p',45,[['Alpha']]);s.scholarshipCapacity.teams.alpha.open=0;A.applyScholarshipCap(s,100);
+ s.offersByProspect.p[0].scholarshipCapRescind.stage='hs';
+ s.scholarshipCapacity.teams.alpha.open=1;
+ assert.equal(A.scholarshipCapRecovery(s,'Alpha').offers.length,0);
+ delete s.scholarshipCapacity;
+ assert.throws(()=>A.restoreScholarshipCapRescinds(s,'Alpha'),/open scholarship/);
+});

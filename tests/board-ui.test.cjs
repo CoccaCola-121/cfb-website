@@ -1570,3 +1570,20 @@ test('My Offers switch partitions active, rescinded, and committed offers',()=>{
  app.DB.offersByProspect={};
  assert.match(app.renderMyOffers(),/No inactive offers/);
 });
+
+test('unoffered walk-on prospect pages render in HS and CPR',()=>{
+ const {app}=harness();app.setSession({team:'Michigan State'});
+ for(const stage of ['hs','cpr']){
+  app.DB.recruitingStage=stage;app.DB.prospects.empty={id:'empty',name:'Unoffered Walkon',position:'K',rank:800,overall:40,potential:50};
+  app.UI.prospectId='empty';app.DB.offersByProspect.empty=[];
+  const html=app.renderProspectDetail();assert.match(html,/No offers yet/);assert.match(html,/Unoffered Walkon/);
+ }
+});
+test('My Commits search includes promise categories even without category words in promise text',()=>{
+ const {app}=harness();app.setSession({team:'Michigan State'});
+ app.DB.prospects={p:{id:'p',rank:1,name:'Test Recruit',position:'DL',commitTeam:'Michigan State'}};
+ app.DB.offersByProspect={p:[{id:'o',team:'Michigan State',text:'Scholarship',templatePromises:true,promises:[{text:'I promise you will start as a junior.',title:'Playing Time',category:'playing_time'},{text:'I promise we will play near your home.',title:'Location',category:'location'}]}]};
+ const html=app.renderCommitsForTeam('Michigan State');
+ const search=html.match(/data-my-commit-card="1"[^>]*data-search="([^"]*)"/)[1];
+ assert.match(search,/playing time/);assert.match(search,/location/);assert.match(html,/promise type/);
+});
