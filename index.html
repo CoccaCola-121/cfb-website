@@ -869,6 +869,7 @@ function restoreSettingsDraft(){
   UI.scheduleError = null;
   UI.bucksEntries=''; UI.bucksStatus=null;
   UI.cprMetadataStatus = null; UI.scholarshipStatus = null; UI.capacityStatus = null; UI.autoStatus = null; UI.autoCategory = null;
+  UI.earlyDeclareesStatus=null; UI.earlyDeclareesError=null; UI.earlyDeclareesResult=null;
   UI.transferDraft = null;
   UI.classError = null; UI.classFileName = ''; UI.commitStatus = null; UI.commitError = null;
   UI.brandingStatus = null; UI.brandingError = null; UI.commitEditing = false;
@@ -908,14 +909,14 @@ async function saveSettingsChanges(){
   if (!settingsDraft || settingsSaving || !canViewSettings()) return;
   const weekInput=document.getElementById('rb-current-week');
   if(weekInput && !weekInput.checkValidity()){weekInput.reportValidity();return;}
-  if (UI.cprMetadataLoading || UI.scholarshipLoading || UI.capacityLoading) { UI.settingsError='Wait for the league export to finish processing.'; render(); return; }
+  if (UI.cprMetadataLoading || UI.scholarshipLoading || UI.capacityLoading || UI.earlyDeclareesLoading) { UI.settingsError='Wait for the import to finish processing.'; render(); return; }
   if (UI.transferLoading || UI.transferDraft) { UI.settingsError = 'Finish reviewing and loading the transfer class before saving.'; render(); return; }
   if (UI.scheduleError) { UI.settingsError = UI.scheduleError; render(); return; }
   if (settingsDraft.autoApplied) {
     const counts=NZCFLAutoCommits.counts(DB);
     const invalid=(settingsDraft.autoAwards || []).some(function(row){
       const k=NZCFLAutoCommits.key(row.team);
-      return row.kind==='walkon' ? (counts.walkon[k] || 0)>15 : !DB.scholarshipCapacity?.teams?.[k] || (counts.scholarship[k] || 0)>DB.scholarshipCapacity.teams[k].open+(DB.bucksRemaining?.[k] ?? 3);
+      return row.kind==='walkon' ? (counts.walkon[k] || 0)>15 : !DB.scholarshipCapacity?.teams?.[k] || (counts.scholarship[k] || 0)>DB.scholarshipCapacity.teams[k].open+(DB.bucksRemaining?.[k] ?? 3)+(DB.scholarshipCapacity.earlyDeclarees?.counts?.[k] || 0)+(DB.scholarshipCapacity.includedCommits?.[k] || 0);
     });
     if(invalid){UI.settingsError='Team limits changed after applying autos. Discard this draft and produce the autos again.';render();return;}
   }
@@ -935,6 +936,7 @@ async function saveSettingsChanges(){
       if (!response.ok) throw new Error('Could not check current league data. Your draft is still here.');
       const current = (await response.json()).state || {};
       if (transaction.autoApplied && NZCFLAutoCommits.fingerprint(transaction.base) !== NZCFLAutoCommits.fingerprint(current)) throw Error('Offers or team limits changed after this auto preview. Discard this draft and produce the autos again.');
+      if (transaction.earlyDeclareesApplied && NZCFLAutoCommits.fingerprint(transaction.base) !== NZCFLAutoCommits.fingerprint(current)) throw Error('Offers, commitments, or team limits changed after the early-declaree import. Discard this draft, reopen Settings, and import again to review the latest balances and restored offers.');
       payload = mergeSettingsValue(transaction.payload, payload, current);
       const saved = await fetch('/api/league/state', { method:'PUT', credentials:'include', headers:{'content-type':'application/json'}, body:JSON.stringify({state:payload, expectedUpdatedAt:current.updatedAt || null}) });
       const result = await saved.json().catch(function(){ return {}; });
@@ -964,6 +966,7 @@ async function saveSettingsChanges(){
     resetCommitFields();
     UI.pastedCommits='';UI.pastedCommitResult='';UI.pastedCommitsOpen=false;
     UI.settingsStatus = 'Settings changes saved.';
+    if(UI.earlyDeclareesResult)UI.earlyDeclareesStatus='Early-declaree balances and offer changes saved.';
   } catch (error) { UI.settingsError = error.message || 'Save failed. Your draft is still here.'; }
   finally { settingsSaving = false; render(); }
 }
@@ -1529,6 +1532,7 @@ function makeThread(title, prospectIds, stars){
 function clearRecruitingBoard(){
   resetOfferWindow();
   DB.scholarshipCapacity = null;
+  UI.earlyDeclareesStatus=null; UI.earlyDeclareesError=null; UI.earlyDeclareesResult=null;
   UI.autoCategory = null; UI.autoStatus = null;
   DB.fullRoster = [];
   DB.released = {};
@@ -3378,6 +3382,7 @@ async function confirmReset(){
     UI.assignError = {};
   } else if (UI.confirmReset === 'class'){
     DB.scholarshipCapacity = null;
+    UI.earlyDeclareesStatus=null; UI.earlyDeclareesError=null; UI.earlyDeclareesResult=null;
     DB.manualCommitOverrides = {};
     resetOfferWindow();
     DB.fullRoster = [];
@@ -5201,7 +5206,7 @@ function renderOfferSchedule(){
 
 const DEFAULT_CAPACITY_SHEET='https://docs.google.com/spreadsheets/d/11-87AU--uFWHfHCB3S2IbkVOrSNP2X3x1j_M5s1dFys/edit?gid=1039825625';
 async function readScholarshipCapacity(){
-  if(!settingsDraft || UI.capacityLoading || !canViewSettings())return;
+  if(!settingsDraft || UI.capacityLoading || UI.earlyDeclareesLoading || !canViewSettings())return;
   if(Object.values(NZCFLAutoCommits.counts(DB).scholarship).some(n=>n>0)){UI.capacityStatus='Starting counts cannot be refreshed after scholarship commitments. This prevents double-counting sheet updates.';render();return;}
   const link=document.getElementById('rb-capacity-source')?.value || DEFAULT_CAPACITY_SHEET;
   const match=link.match(/spreadsheets\/d\/([A-Za-z0-9_-]+)/),gid=link.match(/[?#&]gid=(\d+)/);
@@ -5214,11 +5219,48 @@ async function readScholarshipCapacity(){
     if(settingsDraft!==draft || DB.fullRoster!==roster || recruitingStage()!==stage)return;
     const teams={};
     Object.values(data.teams).forEach(row=>{const team=canonicalTeamName(row.team);teams[NZCFLAutoCommits.key(team)]={team,open:row.open};});
-    DB.scholarshipCapacity={source:data.source,sourceColumn:data.sourceColumn,updatedAt:Date.now(),stage,teams};
+    const capacity={source:data.source,sourceColumn:data.sourceColumn,updatedAt:Date.now(),stage,teams};
+    if(DB.scholarshipCapacity?.stage===stage && DB.scholarshipCapacity.earlyDeclarees)capacity.earlyDeclarees=DB.scholarshipCapacity.earlyDeclarees;
+    const error=NZCFLAutoCommits.validate({...DB,scholarshipCapacity:capacity});if(error)throw Error(error);
+    DB.scholarshipCapacity=capacity;
     UI.capacityStatus=Object.keys(teams).length+' starting balances read. Save changes to publish.';
     UI.autoCategory=null;
   }catch(e){if(settingsDraft===draft)UI.capacityStatus=e.message;}
   finally{UI.capacityLoading=false;if(settingsDraft===draft)render();}
+}
+async function importEarlyDeclarees(file){
+  if(!file || !settingsDraft || settingsSaving || !canViewSettings() || UI.earlyDeclareesLoading || UI.capacityLoading)return;
+  const draft=settingsDraft,cap=DB.scholarshipCapacity,stage=recruitingStage();
+  UI.earlyDeclareesLoading=true;UI.earlyDeclareesError=null;UI.earlyDeclareesStatus='Reading early declarees…';render();
+  try{
+    if(file.size>5*1024*1024)throw Error('Choose a CSV smaller than 5 MB.');
+    const csv=await file.text();
+    if(settingsDraft!==draft || DB.scholarshipCapacity!==cap || recruitingStage()!==stage)return;
+    UI.earlyDeclareesResult=NZCFLAutoCommits.applyEarlyDeclarees(DB,csv,file.name);
+    draft.earlyDeclareesApplied=true;
+    applyConditionalRescinds();
+    UI.autoCategory=null;UI.autoStatus=null;
+    const result=UI.earlyDeclareesResult;
+    result.restored=result.restored.filter(row=>!(DB.offersByProspect[row.prospectId] || []).find(o=>o.id===row.offerId)?.rescinded);
+    result.rows.forEach(row=>{row.restored=result.restored.filter(offer=>NZCFLAutoCommits.key(offer.team)===row.key).length;});
+    UI.earlyDeclareesStatus=result.total+' early declarees imported; '+result.restored.length+' cap-rescinded offers restored'+(result.rescinded?'; '+result.rescinded+' offers rescinded at corrected limits':'')+'. Review below, then Save changes to publish.';
+  }catch(error){if(settingsDraft===draft){UI.earlyDeclareesError=error.message;UI.earlyDeclareesStatus=null;}}
+  finally{UI.earlyDeclareesLoading=false;if(settingsDraft===draft)render();}
+}
+function renderEarlyDeclareesSettings(){
+  const cap=DB.scholarshipCapacity,imported=cap?.earlyDeclarees;
+  const rows=UI.earlyDeclareesResult?.rows || Object.entries(imported?.counts || {}).map(([key,count])=>({team:cap.teams[key]?.team || key,count,after:NZCFLAutoCommits.remaining(DB,key,'scholarship')})).sort((a,b)=>a.team.localeCompare(b.team));
+  const disabled=!cap || cap.stage!==recruitingStage() || UI.earlyDeclareesLoading || UI.capacityLoading;
+  let html='<details class="rb-auto-capacity rb-early-declarees"'+(UI.earlyDeclareesResult || UI.earlyDeclareesStatus || UI.earlyDeclareesError?' open':'')+'><summary>Early declarees'+(imported?' · '+Object.values(imported.counts).reduce((sum,n)=>sum+n,0)+' imported':'')+'</summary>';
+  html+='<p class="rb-auto-note">Upload the full Early Entries CSV: column H = Team, column I = EEs. Each early declaree reduces scholarships in use by one, freeing one spot. Offers automatically rescinded at the scholarship cap, including Bucks, become active again when room opens. Coach rescinds stay rescinded; conditional rules still apply.</p>';
+  html+='<input type="file" class="rb-file-input" id="rb-early-declarees-csv" accept=".csv,text/csv"'+(disabled?' disabled':'')+' /><label class="rb-file-label" for="rb-early-declarees-csv">'+(UI.earlyDeclareesLoading?'Reading CSV…':'Import early-declaree CSV')+'</label>';
+  html+='<p class="rb-auto-note">'+(!cap || cap.stage!==recruitingStage()?'Read scholarship starting counts above first. ':'')+'Reimporting replaces this class’s early-declaree totals; missing teams return to zero. It never adds the same departures twice.</p>';
+  if(imported)html+='<p class="rb-auto-note">'+escapeHtml(imported.fileName || 'CSV import')+' · '+escapeHtml(new Date(imported.importedAt).toLocaleDateString())+'</p>';
+  if(UI.earlyDeclareesError)html+='<p class="rb-auto-note" role="alert" style="color:var(--alert)">'+escapeHtml(UI.earlyDeclareesError)+'</p>';
+  if(UI.earlyDeclareesStatus)html+='<p class="rb-auto-note" role="status">'+escapeHtml(UI.earlyDeclareesStatus)+'</p>';
+  if(rows.length)html+='<div class="rb-early-declarees-table"><table><caption>Scholarship availability, including Bucks</caption><thead><tr><th scope="col">Team</th><th scope="col">EEs</th><th scope="col">Open spots</th><th scope="col">Restored</th></tr></thead><tbody>'+rows.map(row=>'<tr><th scope="row">'+escapeHtml(row.team)+'</th><td>'+row.count+'</td><td>'+(row.before===undefined?'':row.before+' → ')+(row.after ?? '—')+'</td><td>'+(row.restored ?? '—')+'</td></tr>').join('')+'</tbody></table></div>';
+  if(UI.earlyDeclareesResult?.restored.length)html+='<details class="rb-auto-rescinds"><summary>Restored cap rescinds</summary><ul>'+UI.earlyDeclareesResult.restored.map(row=>'<li>'+escapeHtml(row.team)+' · '+escapeHtml(row.name)+'</li>').join('')+'</ul></details>';
+  return html+'</details>';
 }
 function stageAutoCommits(){
   if(!settingsDraft || !canViewSettings() || !UI.autoCategory)return;
@@ -5279,7 +5321,7 @@ function renderAutoCommitSettings(){
   if(hasCommits)html+='<p class="rb-auto-note">Starting counts are frozen while scholarship commitments exist.</p>';
   if(cap)html+='<p class="rb-auto-note">Updated '+escapeHtml(new Date(cap.updatedAt).toLocaleDateString())+'</p>';
   if(UI.capacityStatus)html+='<p class="rb-auto-note" role="status">'+escapeHtml(UI.capacityStatus)+'</p>';
-  html+='</details>'+renderBucksSettings()+'<div class="rb-auto-controls"><div class="rb-segmented" aria-label="Auto-commit category"><button data-auto-category="scholarship" aria-pressed="'+(UI.autoCategory==='scholarship')+'">Scholarship autos</button>';
+  html+='</details>'+renderBucksSettings()+renderEarlyDeclareesSettings()+'<div class="rb-auto-controls"><div class="rb-segmented" aria-label="Auto-commit category"><button data-auto-category="scholarship" aria-pressed="'+(UI.autoCategory==='scholarship')+'">Scholarship autos</button>';
   if(recruitingStage()!=='transfer')html+='<button data-auto-category="walkon" aria-pressed="'+(UI.autoCategory==='walkon')+'">Walk-on autos</button>';
   html+='</div><button class="rb-btn" id="rb-auto-refresh">Refresh autos</button></div>';
   if(UI.autoStatus)html+='<p class="rb-auto-note" role="status">'+escapeHtml(UI.autoStatus)+'</p>';
@@ -6124,6 +6166,8 @@ function bindEvents(){
   }
   const capacityRead=document.getElementById('rb-capacity-read');
   if(capacityRead)capacityRead.onclick=readScholarshipCapacity;
+  const earlyDeclareesFile=document.getElementById('rb-early-declarees-csv');
+  if(earlyDeclareesFile)earlyDeclareesFile.onchange=function(){void importEarlyDeclarees(earlyDeclareesFile.files?.[0]);};
   const autoApply=document.getElementById('rb-apply-autos');
   if(autoApply)autoApply.onclick=stageAutoCommits;
   document.querySelectorAll('[data-auto-category]').forEach(el=>{el.onclick=function(){UI.autoCategory=el.getAttribute('data-auto-category');render();};});

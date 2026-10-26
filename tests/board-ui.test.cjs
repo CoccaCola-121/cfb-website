@@ -10,7 +10,7 @@ const script = page.match(/<script>([\s\S]*?)<\/script>/)[1];
 const boot = script.lastIndexOf('\napplyRoute(routeFromPath(window.location.pathname));');
 assert(boot > 0, 'The app bootstrap must be identifiable without executing network requests.');
 const source = script.slice(0, boot) + `
-  globalThis.app = { DB, UI, expireSuspendedRequests, saveSuspendedOffer, restoreSuspendedOffer, renderProspectDetail, renderProspectVisits, syncLeagueState, syncSubmitModalLock, offerRequest, watchlistNumbers, renderWatchlist, submitHighSchoolOffer, ownOfferTypeBadge, renderOwnTypeFilter, mergeLeagueState, renderOfferAmendments, captureOfferDraft, readOfferDraft, clearOfferDraft, offerDraftKey, applyConditionalRescinds, readRescindRuleForm, validateRescindRuleDraft, requestQuickWalkon, renderQuickWalkonConfirm, canQuickOfferWalkon, quickOfferWalkon, renderQuickWalkon, renderProspectBoardCard, scheduleSummaryCountdown, dismissSummaryBanner, bindFloatingSubmit, extractPromises, cleanDisplayPromises, readCprBoard, updateBucksEntries, renderBucksSettings, renderCprProfile, cprPreviousSchool, ensureCprScholarshipThreads, renderAutoCommitSettings, stageAutoCommits, readScholarshipCapacity, buildPromiseArchive, parseCsvRows, offerCountForProspect, refreshScholarshipHistory, submitCprOffer, renderSubmitModal, createCprPlayer, loadClassData, resetOfferWindow, setOffersLocked, offersLocked, pendingCommitChanges, restoreSettingsDraft, renderOfferBlock, renderRescindFilterFields, renderVisitLedger, visibleBoardProspectIds, setRecruitingStage, requestReset, approveDangerReset, beginSettingsDraft, hasSettingsChanges, canLeaveSettings, saveSettingsChanges, saveDBNow, leagueStatePayload, mergeSettingsValue, updateCommitsFromSheet, runBackupNow, setTransferFilter, renderTransferFilters, renderClassSetup, requestManualCommitOverride, applyManualCommitOverride, requestClearCommit, clearManualCommitOverride, applyManualCommitOverrides, clearRecruitingBoard, findProspectFromSheetRow, transferCardStyle, parseFullClass, prospectFromRosterRow, confirmTransferImport, releaseSingleStageBoard, addOfferDirect, render, renderNav, navigateTo, applyRoute, setReady(){ dbReady = true; sessionReady = true; }, renderFeed, renderBoardSearchResults, renderTeamsPage,
+  globalThis.app = { DB, UI, importEarlyDeclarees, renderEarlyDeclareesSettings, expireSuspendedRequests, saveSuspendedOffer, restoreSuspendedOffer, renderProspectDetail, renderProspectVisits, syncLeagueState, syncSubmitModalLock, offerRequest, watchlistNumbers, renderWatchlist, submitHighSchoolOffer, ownOfferTypeBadge, renderOwnTypeFilter, mergeLeagueState, renderOfferAmendments, captureOfferDraft, readOfferDraft, clearOfferDraft, offerDraftKey, applyConditionalRescinds, readRescindRuleForm, validateRescindRuleDraft, requestQuickWalkon, renderQuickWalkonConfirm, canQuickOfferWalkon, quickOfferWalkon, renderQuickWalkon, renderProspectBoardCard, scheduleSummaryCountdown, dismissSummaryBanner, bindFloatingSubmit, extractPromises, cleanDisplayPromises, readCprBoard, updateBucksEntries, renderBucksSettings, renderCprProfile, cprPreviousSchool, ensureCprScholarshipThreads, renderAutoCommitSettings, stageAutoCommits, readScholarshipCapacity, buildPromiseArchive, parseCsvRows, offerCountForProspect, refreshScholarshipHistory, submitCprOffer, renderSubmitModal, createCprPlayer, loadClassData, resetOfferWindow, setOffersLocked, offersLocked, pendingCommitChanges, restoreSettingsDraft, renderOfferBlock, renderRescindFilterFields, renderVisitLedger, visibleBoardProspectIds, setRecruitingStage, requestReset, approveDangerReset, beginSettingsDraft, hasSettingsChanges, canLeaveSettings, saveSettingsChanges, saveDBNow, leagueStatePayload, mergeSettingsValue, updateCommitsFromSheet, runBackupNow, setTransferFilter, renderTransferFilters, renderClassSetup, requestManualCommitOverride, applyManualCommitOverride, requestClearCommit, clearManualCommitOverride, applyManualCommitOverrides, clearRecruitingBoard, findProspectFromSheetRow, transferCardStyle, parseFullClass, prospectFromRosterRow, confirmTransferImport, releaseSingleStageBoard, addOfferDirect, render, renderNav, navigateTo, applyRoute, setReady(){ dbReady = true; sessionReady = true; }, renderFeed, renderBoardSearchResults, renderTeamsPage,
     renderThreadProspectList, renderProspectDetail, builtInTeamBranding, getTeamBranding, activeTeamBrands,
     mobileRecruitName, renderRecruitName, renderMyOffers, renderCommitsForTeam, renderTeamOffers, renderConditionalRescinds, renderRecruitValues, teamBorderColor, bindEvents, applyDefaultClassData, releaseWave1, releaseWave2,
     currentHSPitches, findHSPitchPlayer, renderHSPitchEditor, renderHSPitchBuilder, buildHSPitchDraft, applyHSVisits, hsBuilderVisits, parseOfferSheet, bindHSPitches, fitHSPitchOptions,
@@ -952,6 +952,77 @@ test('scholarship starting balances are captured and cannot refresh after commit
 test('new class clears starting balances but retains manually tracked yearly Bucks allowances',()=>{
  const {app}=harness();app.DB.scholarshipCapacity={stage:'cpr',teams:{}};app.DB.bucksRemaining={alabama:1};app.clearRecruitingBoard();
  assert.equal(app.DB.scholarshipCapacity,null);assert.equal(app.DB.bucksRemaining.alabama,1);
+});
+
+function earlyDeclareeFixture(){
+ const h=harness(),{app,context}=h;
+ app.setSession({accessLevel:'moderator'});app.DB.recruitingStage='hs';app.DB.offersLocked=true;
+ app.DB.prospects={r2:{id:'r2',rank:2,name:'Morgan Baker',position:'WR',rating:'54/68',overall:54,potential:68}};
+ app.DB.offersByProspect={r2:[{id:'o1',team:'Michigan State',text:'Scholarship'}]};
+ app.DB.scholarshipCapacity={stage:'hs',sourceColumn:'D',updatedAt:1,teams:{'michigan state':{team:'Michigan State',open:-3}}};
+ context.NZCFLAutoCommits.applyScholarshipCap(app.DB,100);
+ app.beginSettingsDraft();
+ return {...h,file:{name:'Early Entries.csv',size:150,text:async()=>',,,,,,,Team,EEs\n,,,,,,,Michigan State,2'}};
+}
+test('early-declaree upload stages balances and restores offers; discard restores the original state',async()=>{
+ const {app,context,elements,file}=earlyDeclareeFixture();
+ elements['rb-early-declarees-csv']={files:[file]};app.bindEvents();
+ assert.equal(typeof elements['rb-early-declarees-csv'].onchange,'function');
+ await app.importEarlyDeclarees(file);
+ assert.equal(app.DB.scholarshipCapacity.earlyDeclarees.counts['michigan state'],2);
+ assert.equal(app.DB.offersByProspect.r2[0].rescinded,false);
+ assert.equal(app.hasSettingsChanges(),true);
+ assert.match(app.renderEarlyDeclareesSettings(),/0 → 2/);
+ assert.match(app.renderEarlyDeclareesSettings(),/Morgan Baker/);
+ assert.match(app.UI.earlyDeclareesStatus,/Save changes/);
+ await app.importEarlyDeclarees(file);
+ assert.equal(context.NZCFLAutoCommits.remaining(app.DB,'Michigan State','scholarship'),2);
+ assert.equal(app.DB.offersByProspect.r2[0].scholarshipCapHistory.length,1);
+ app.restoreSettingsDraft();
+ assert.equal(app.DB.scholarshipCapacity.earlyDeclarees,undefined);
+ assert.equal(app.DB.offersByProspect.r2[0].rescinded,true);
+ assert.equal(app.UI.earlyDeclareesResult,null);
+});
+test('early-declaree imports respect moderator access and reject invalid files without changing the draft',async()=>{
+ const {app,file}=earlyDeclareeFixture(),before=JSON.stringify(app.leagueStatePayload());
+ app.setSession({accessLevel:'coach'});await app.importEarlyDeclarees(file);
+ assert.equal(JSON.stringify(app.leagueStatePayload()),before);
+ app.setSession({accessLevel:'moderator'});
+ await app.importEarlyDeclarees({...file,text:async()=>',,,,,,,Team,EEs\n,,,,,,,Unknown,2'});
+ assert.match(app.UI.earlyDeclareesError,/unknown team/);
+ assert.equal(JSON.stringify(app.leagueStatePayload()),before);
+ assert.equal(app.hasSettingsChanges(),false);
+ await app.importEarlyDeclarees({...file,size:6*1024*1024});assert.match(app.UI.earlyDeclareesError,/5 MB/);
+});
+test('discarding settings during CSV loading ignores the late file result',async()=>{
+ const {app,file}=earlyDeclareeFixture();let finish;
+ const loading=app.importEarlyDeclarees({...file,text:()=>new Promise(resolve=>{finish=resolve;})});
+ app.restoreSettingsDraft();finish(await file.text());await loading;
+ assert.equal(app.DB.scholarshipCapacity.earlyDeclarees,undefined);
+ assert.equal(app.DB.offersByProspect.r2[0].rescinded,true);
+ assert.equal(app.UI.earlyDeclareesLoading,false);
+});
+test('early-declaree save checks live state and retains the draft on concurrent commitments',async()=>{
+ const {app,context,file}=earlyDeclareeFixture(),live=JSON.parse(JSON.stringify(app.leagueStatePayload()));
+ await app.importEarlyDeclarees(file);
+ live.prospects.r2.commitTeam='Wisconsin';context.window.location.protocol='https:';let puts=0;
+ context.fetch=async(url,options={})=>{if(options.method==='PUT')puts++;return {ok:true,json:async()=>({state:live})};};
+ await app.saveSettingsChanges();
+ assert.equal(puts,0);assert.match(app.UI.settingsError,/changed after the early-declaree import/);
+ assert.equal(app.hasSettingsChanges(),true);
+});
+test('early-declaree settings save persists changes and class reset clears the adjustment',async()=>{
+ const {app,context,file}=earlyDeclareeFixture(),live=JSON.parse(JSON.stringify(app.leagueStatePayload()));
+ await app.importEarlyDeclarees(file);context.window.location.protocol='https:';let saved;
+ context.fetch=async(url,options={})=>{
+  if(options.method==='PUT')saved=JSON.parse(options.body).state;
+  return {ok:true,json:async()=>({state:saved || live})};
+ };
+ await app.saveSettingsChanges();assert.equal(app.UI.settingsError,null);
+ assert.equal(saved.scholarshipCapacity.earlyDeclarees.counts['michigan state'],2);
+ assert.equal(saved.offersByProspect.r2[0].rescinded,false);assert.equal(app.hasSettingsChanges(),false);
+ assert.match(app.UI.earlyDeclareesStatus,/saved/);
+ app.clearRecruitingBoard();assert.equal(app.DB.scholarshipCapacity,null);assert.equal(app.UI.earlyDeclareesResult,null);
 });
 
 test('below-threshold scholarship players gain threads after scholarship import without duplicates',()=>{

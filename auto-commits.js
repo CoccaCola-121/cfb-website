@@ -36,7 +36,9 @@
     if(!row || source.stage!==state.recruitingStage || !Number.isInteger(row.open) || state.recruitingStage==='hs' && source.sourceColumn!=='D') return null;
     const bucks=state.bucksRemaining?.[t] ?? 3;
     if(!Number.isInteger(bucks) || bucks<0 || bucks>3) return null;
-    return Math.max(0,row.open+bucks-(totals.scholarship[t] || 0)+(source.includedCommits?.[t] || 0));
+    const early=source.earlyDeclarees?.counts?.[t] ?? 0;
+    if(!Number.isSafeInteger(early) || early<0)return null;
+    return Math.max(0,row.open+bucks+early-(totals.scholarship[t] || 0)+(source.includedCommits?.[t] || 0));
   }
   const scholarshipCapReason='Automatic rescind: scholarship cap reached.';
   function markScholarshipCap(state,offer,now){
@@ -61,8 +63,7 @@
     }
     return {remaining:room,canRestore:room!==null && room>0,offers};
   }
-  // Intentionally not wired to a UI or automatic capacity refresh. A future
-  // authorized workflow can preview then call this against the latest state.
+  // Used by the early-declaree import only when that import frees more spots.
   function restoreScholarshipCapRescinds(state,team,{batchIds}={},now=Date.now()){
     const preview=scholarshipCapRecovery(state,team);
     if(!preview.canRestore)throw Error('Confirmed open scholarship spots are required before restoring cap rescinds.');
@@ -72,6 +73,7 @@
       o.scholarshipCapHistory ||= [];
       o.scholarshipCapHistory.push({batchId:row.batchId,rescindedAt:o.rescindedAt,reason:o.rescindReason,restoredAt:now});
       o.rescinded=false;delete o.rescindedAt;delete o.rescindReason;delete o.scholarshipCapRescind;
+      o.updatedAt=now;
     }
     return {restored:selected};
   }
@@ -104,7 +106,7 @@
     return teams;
   }
   function fingerprint(state){
-    return JSON.stringify([state.recruitingStage,state.offersLocked,state.offerSchedule,state.prospects,state.offersByProspect,state.scholarshipCapacity,state.bucksRemaining,state.conditionalRescinds]);
+    return JSON.stringify([state.recruitingStage,!!state.offersLocked,state.offerSchedule || null,state.prospects || {},state.offersByProspect || {},state.scholarshipCapacity || null,state.bucksRemaining || {},state.conditionalRescinds || []]);
   }
   function validate(state){
     for(const [team,value] of Object.entries(state.bucksRemaining || {})) if(!Number.isInteger(value)||value<0||value>3)return 'Bucks spots for '+team+' must be a whole number from 0 to 3.';
@@ -113,7 +115,55 @@
     if(state.recruitingStage==='hs' && cap.stage==='hs' && cap.sourceColumn!=='D')return 'Refresh and read high-school scholarship counts from column D before saving.';
     for(const row of Object.values(cap.teams || {}))if(!Number.isInteger(row.open))return 'Scholarship counts must be whole numbers.';
     for(const value of Object.values(cap.includedCommits || {}))if(!Number.isInteger(value)||value<0)return 'Included scholarship commitments must be nonnegative whole numbers.';
+    if(cap.earlyDeclarees){
+      const values=cap.earlyDeclarees.counts;
+      if(!values || typeof values!=='object' || Array.isArray(values))return 'Early-declaree counts must list teams and whole numbers.';
+      for(const [team,value] of Object.entries(values)){
+        if(!Object.hasOwn(cap.teams || {},team))return 'Unknown early-declaree team: '+team+'.';
+        if(!Number.isSafeInteger(value) || value<0)return 'Early-declaree counts must be nonnegative whole numbers.';
+      }
+    }
     return '';
+  }
+  function parseEarlyDeclarees(csv,state){
+    const cap=state.scholarshipCapacity;
+    if(!cap || cap.stage!==state.recruitingStage)throw Error('Read scholarship starting counts for this class before importing early declarees.');
+    const error=validate(state);if(error)throw Error(error);
+    const rows=root.NZCFLScholarshipHistory.parseCsv(String(csv).replace(/^\uFEFF/,'')),header=rows.shift() || [];
+    if(!/^team$/i.test(String(header[7] || '').trim()) || !/^(?:EEs|early declarees|early entries)$/i.test(String(header[8] || '').trim()))throw Error('Upload the full CSV export with Team in column H and EEs in column I.');
+    const values={};
+    rows.forEach((row,index)=>{
+      const name=String(row[7] || '').trim(),raw=String(row[8] || '').trim();
+      if(!name && !raw)return;
+      const t=key(name),line=index+2;
+      if(!name)throw Error('Row '+line+': column H needs a team name.');
+      if(!Object.hasOwn(cap.teams || {},t))throw Error('Row '+line+': unknown team or missing scholarship balance for '+name+'.');
+      if(!/^\d+$/.test(raw) || !Number.isSafeInteger(Number(raw)))throw Error('Row '+line+': '+name+' needs a nonnegative whole number in column I.');
+      if(Object.hasOwn(values,t))throw Error('Row '+line+': duplicate early-declaree team '+name+'.');
+      values[t]=Number(raw);
+    });
+    if(!Object.keys(values).length)throw Error('No early-declaree counts found in columns H and I.');
+    return values;
+  }
+  function applyEarlyDeclarees(state,csv,fileName='',now=Date.now()){
+    // Parse and validate the entire file before changing any balances or offers.
+    const values=parseEarlyDeclarees(csv,state),cap=state.scholarshipCapacity;
+    const previous=cap.earlyDeclarees?.counts || {},totals=counts(state);
+    const rows=[...new Set([...Object.keys(previous),...Object.keys(values)])].map(t=>({
+      key:t,team:cap.teams[t].team,previous:previous[t] || 0,count:values[t] || 0,
+      before:remaining(state,t,'scholarship',totals),restored:0
+    })).sort((a,b)=>a.team.localeCompare(b.team));
+    if(!cap.earlyDeclarees || rows.some(row=>row.count!==row.previous))cap.earlyDeclarees={counts:values,fileName,importedAt:now};
+    const restored=[];
+    for(const row of rows){
+      row.after=remaining(state,row.key,'scholarship',totals);
+      if(row.count>row.previous && row.after>0){
+        const result=restoreScholarshipCapRescinds(state,row.key,{},now);
+        row.restored=result.restored.length;restored.push(...result.restored);
+      }
+    }
+    const rescinded=applyScholarshipCap(state,now);
+    return {rows,restored,rescinded,total:Object.values(values).reduce((sum,n)=>sum+n,0)};
   }
   function preview(state,kind,now=Date.now()){
     const result={kind,commits:[],rescinds:[],errors:[],contested:0};
@@ -212,5 +262,5 @@
     if (!values.length || values.some(v=>v==null || !Number.isFinite(v))) return null;
     return {...rule,overallMode:rule.overallMode==='belowCommit'?'below':'atMost',overallValue:Math.min(...values)};
   }
-  root.NZCFLAutoCommits={scholarshipCapRecovery,restoreScholarshipCapRescinds,applyScholarshipCap,conditionalKind,invalidOffer,relativeOverall,rescindTargetRule,key,rating,offerKind,commitKind,counts,remaining,parseCapacitySheet,validate,fingerprint,preview,apply};
+  root.NZCFLAutoCommits={parseEarlyDeclarees,applyEarlyDeclarees,scholarshipCapRecovery,restoreScholarshipCapRescinds,applyScholarshipCap,conditionalKind,invalidOffer,relativeOverall,rescindTargetRule,key,rating,offerKind,commitKind,counts,remaining,parseCapacitySheet,validate,fingerprint,preview,apply};
 })(globalThis);

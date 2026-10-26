@@ -829,6 +829,12 @@ html { scrollbar-gutter: stable; }
 .rb-auto-note { margin:10px 0 14px; }
 .rb-auto-capacity { padding:12px 0; border-top:1px solid var(--hairline); border-bottom:1px solid var(--hairline); }
 .rb-auto-capacity > summary { cursor:pointer; font-size:13px; font-weight:600; }
+.rb-early-declarees-table { overflow-x:auto; margin:14px 0; }
+.rb-early-declarees-table table { width:100%; border-collapse:collapse; font-size:12px; }
+.rb-early-declarees-table caption { text-align:left; color:var(--slate); padding-bottom:8px; }
+.rb-early-declarees-table th, .rb-early-declarees-table td { padding:8px; text-align:left; border-bottom:1px solid var(--hairline); }
+.rb-early-declarees-table thead th { color:var(--slate); }
+.rb-early-declarees-table td { white-space:nowrap; }
 .rb-auto-source { display:flex; gap:8px; align-items:center; }
 .rb-auto-source .rb-input { min-width:0; font-size:12px; }
 .rb-auto-source .rb-btn { flex-shrink:0; font-size:12px; }
