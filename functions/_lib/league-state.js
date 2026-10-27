@@ -2,6 +2,7 @@ import {applyConditionalRescinds} from './conditional-rescinds.js';
 import {applyRemovedPlayers} from './removed-players.js';
 import {readTransactionalState,initializeTransactionalState,writeTransactionalState} from './transactional-state.js';
 import {repairHsCapacity} from './hs-capacity-repair.js';
+import {refundWashingtonStateCampusVisits} from './washington-state-visit-refund.js';
 import '../../cpr-rules.js';
 import '../../walkon-limit.js';
 import '../../transfer-rules.js';
@@ -57,10 +58,10 @@ export async function readLeagueState(env) {
       const legacy=await env.AUTH_KV.get(STATE_KEY,'json');
       if(legacy)state=await initializeTransactionalState(env.LEAGUE_DB,legacy);
     }
-    // Migrate the exact affected HS snapshot once, using the same CAS protection
+    // Apply exact, approved HS data corrections once, using the same CAS protection
     // as offer saves. Re-read to retain storageSnapshot for the caller's next save.
     for(let attempt=0;attempt<3;attempt++){
-      const repaired=repairHsCapacity(state);
+      const repaired=repairHsCapacity(state) || refundWashingtonStateCampusVisits(state);
       if(!repaired)break;
       try{await writeTransactionalState(env.LEAGUE_DB,repaired,state);}
       catch(error){if(error.status!==409 || attempt===2)throw error;}
