@@ -23,10 +23,12 @@ Do not seed or load-test the live class. Test Cloudflare response times using a 
 ## Integrity and operations
 
 - D1 batch transactions update only changed 192K-character chunks and compare versions atomically. Chunk boundaries preserve Unicode surrogate pairs. Two writers cannot overwrite one another silently.
+- Writes over 2 MB first upload changed chunks to `league_pending_chunks` in bounded batches, then copy them into the active board and advance its version in one transaction. Failed uploads never become visible; concurrent saves still reject stale versions. The staging table is created automatically, completed uploads are deleted, and abandoned uploads expire after 24 hours. Existing board storage and readers remain compatible.
 - Same-request retries return the existing offer. Scheduled cutoff eligibility is checked against server receipt time, so an already-arrived request does not become late while retrying a database conflict.
 - State endpoints and legacy actions use version checks. A conflict remains visible rather than silently publishing stale data.
 - Keep backups configured. After migration, back up D1 through the existing backup button; it reads the active storage backend.
 - `node --test tests/transactional-state.test.mjs` runs the isolated SQL concurrency test. `node --test --test-concurrency=1 tests/*.test.*` runs all checks.
+- `node --test tests/large-settings-save.test.mjs` covers large manual-commit/early-declaree saves through moderation logging, interrupted uploads, competing saves, incomplete requests, and Unicode preservation.
 
 Cloudflare references:
 - https://developers.cloudflare.com/pages/functions/bindings/#d1-databases

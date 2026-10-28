@@ -27,7 +27,8 @@ export async function onRequestPut({ request, env, waitUntil }) {
  try {
   const user=await getCurrentUser(request,env);
   if(!user)return json({ok:false,error:'Sign in before saving.'},{status:401});
-  const body = await request.json().catch(() => ({}));
+  const body = await request.json().catch(() => null);
+  if(!body || typeof body!=='object' || Array.isArray(body) || body.state!==undefined && (!body.state || typeof body.state!=='object' || Array.isArray(body.state)))return json({ok:false,error:'The save request was incomplete. Your draft is preserved; retry Save changes.'},{status:400});
   const incoming = body.state || body;
   const previous = await readLeagueState(env);
   // Only the commissioner removal endpoint can add removal records. Never trust a board snapshot to clear them.
@@ -98,5 +99,10 @@ export async function onRequestPut({ request, env, waitUntil }) {
   const state = await writeLeagueState(env, incoming, previous);
   queueLeagueBackup(env, state, waitUntil, { source: 'league-state-save' });
   return json({ ok: true, state });
- }catch(error){ return json({ok:false,error:error.status===409?error.message:'The board could not save yet. Your draft is preserved; please retry shortly.'},{status:error.status || 503}); }
+ }catch(error){
+  if(error.status===409)return json({ok:false,error:error.message},{status:409});
+  const reference=crypto.randomUUID();
+  console.error('League settings save failed',{reference,name:error.name,message:String(error.message || '').slice(0,1000),cause:String(error.cause?.message || '').slice(0,1000)});
+  return json({ok:false,error:'The board could not save yet. Your draft is preserved; please retry shortly. Reference: '+reference},{status:503});
+ }
 }
