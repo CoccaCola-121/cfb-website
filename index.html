@@ -117,7 +117,7 @@ let UI = { view: 'feed', threadId: null, showSubmitModal: false, submitting: fal
            submitTargetId: null, editOfferTarget: null, editError: null, prospectReturnView: 'feed',
            pendingVisitEdit: null, loginStep: 'account', pendingDiscordUser: null,
            teamLinkQuery: '', unavailableTeamKeys: [], teamLinks: {}, teamSearch: '',
-           teamFilterCoached: false, hideCommittedBoards: false, boardCommitFilter: 'all',
+           teamFilterCoached: false, teamsScrollPosition: null, restoreTeamsScroll: false, hideCommittedBoards: false, boardCommitFilter: 'all',
            teamChangeDiscordId: '', teamChangeTeam: '', teamPending: { unlinks: {}, switches: {}, roles: {} },
            threadSlug: '', teamCommitsTeam: '', teamCommitsSlug: '', teamOffersTeam: '', teamOffersSlug: '', teamCommitsReturn: null,
            brandingStatus: null, brandingError: null, conditionalError: null, conditionalStatus: null,
@@ -296,9 +296,17 @@ function pathForView(view){
   return VIEW_ROUTES[view] || '/prospectboard';
 }
 
+function prepareTeamsScroll(nextView){
+  if (UI.view === 'teams' && nextView !== 'teams') {
+    UI.teamsScrollPosition = { left: window.scrollX || 0, top: window.scrollY || 0, behavior: 'instant' };
+  }
+  UI.restoreTeamsScroll = nextView === 'teams' && UI.view !== 'teams';
+}
+
 function applyRoute(route){
   route = route || routeFromPath(window.location.pathname);
   const nextView = route.view || 'feed';
+  prepareTeamsScroll(nextView);
   const nextThreadId = route.threadId || null;
   if (shouldResetBoardFilters(nextView, nextThreadId)) resetBoardFilters();
   if (UI.view !== nextView && UI.adminActionStatus === 'Team changes saved.') UI.adminActionStatus = null;
@@ -323,6 +331,7 @@ function syncBrowserRoute(replace){
 function navigateTo(view, options){
   options = options || {};
   if (!canLeaveTeamsPage() || !canLeaveSettings(view)) return;
+  prepareTeamsScroll(view);
   const nextThreadId = options.threadId != null ? options.threadId : (view === 'thread' ? UI.threadId : null);
   if (shouldResetBoardFilters(view, nextThreadId)) resetBoardFilters();
   if (UI.view !== view && UI.adminActionStatus === 'Team changes saved.') UI.adminActionStatus = null;
@@ -3440,7 +3449,7 @@ function syncSubmitModalLock(){
 }
 
 function render(){
-  const pagePosition={left:window.scrollX || 0,top:window.scrollY || 0,behavior:'instant'};
+  const pagePosition=(UI.view === 'teams' && UI.restoreTeamsScroll && UI.teamsScrollPosition) || {left:window.scrollX || 0,top:window.scrollY || 0,behavior:'instant'};
   const expandedOffers=new Set(Array.from(document.querySelectorAll('[data-offer-key][open]'),el=>el.getAttribute('data-offer-key')));
   const submitScroll=document.getElementById('rb-submit-dialog')?.scrollTop || 0;
   captureRescindDraft();
@@ -3498,7 +3507,8 @@ function render(){
   html += renderBackTopControl();
   root.innerHTML = html;
   document.querySelectorAll('[data-offer-key]').forEach(el=>{el.open=expandedOffers.has(el.getAttribute('data-offer-key'));});
-  if(UI.pendingSingleRescind && !submitModalLock)window.scrollTo(pagePosition);
+  if((UI.view === 'teams' || UI.pendingSingleRescind) && !submitModalLock)window.scrollTo(pagePosition);
+  UI.restoreTeamsScroll = false;
   const submitDialog=document.getElementById('rb-submit-dialog');
   if(submitDialog)submitDialog.scrollTop=submitScroll;
   const nextNav = document.getElementById('rb-main-nav');
@@ -6774,7 +6784,7 @@ function bindEvents(){
       } else {
         navigateTo('teams');
       }
-      scrollPageTop();
+      if (UI.view !== 'teams') scrollPageTop();
     };
   });
   document.querySelectorAll('[data-open-team-offers]').forEach(function(el){
@@ -6950,6 +6960,8 @@ function bindEvents(){
 let lastOfferWindowLocked = offersLocked();
 setInterval(function(){ const locked = offersLocked(); if (locked !== lastOfferWindowLocked) { lastOfferWindowLocked = locked; if (UI.view !== 'setup' && !UI.showSubmitModal && !UI.editOfferTarget && !UI.headerEdit) render(); } }, 1000);
 
+// Routes render in place, so restore scroll only after the destination exists.
+if ('scrollRestoration' in window.history) window.history.scrollRestoration = 'manual';
 applyRoute(routeFromPath(window.location.pathname));
 render();
 window.addEventListener('scroll', updateBackTopControl, { passive: true });
@@ -6961,7 +6973,7 @@ window.addEventListener('popstate', function(){
   applyRoute(routeFromPath(window.location.pathname));
   render();
   if (UI.view === 'teams') loadTeamAvailability().then(render);
-  scrollPageTop();
+  if (UI.view !== 'teams') scrollPageTop();
 });
 window.addEventListener('beforeunload', function(e){
   if (!hasPendingTeamChanges() && !hasSettingsChanges() && !settingsSaving) return;
