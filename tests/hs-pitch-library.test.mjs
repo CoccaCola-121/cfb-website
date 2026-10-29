@@ -9,6 +9,16 @@ const L=globalThis.NZCFLHSPitchLibrary;
 const p={rank:1,name:'Caspian Maction',position:'DL',rating:'54/90',homestate:'Pennsylvania',values:{proPotential:1,winning:.8,coach:.6,location:.1}};
 const library={paragraphs:{proPotential:'I promise you will be drafted.',winning:'I promise two winning seasons.',coach:'I promise to coach you throughout your career.'}};
 
+test('pitchless walk-on drafts use two lines without values, paragraphs or promises',()=>{
+ const player={rank:596,name:'Patrick Mays'};
+ assert.equal(L.buildPitchless('Hawaii',player).text,'Hawaii offers Patrick Mays\nWalk-On');
+ assert.deepEqual(L.buildPitchless('Hawaii',player).values,[]);
+ assert.equal(L.buildPitchless('Hawaii',player,{coach:true,campus:true}).text,'Hawaii offers Patrick Mays\nWalk-On\n\nCoach Visit\nCampus Visit');
+ assert.equal(L.buildPitchless('Hawaii',player,{},true).text,'Hawaii offers #596 Patrick Mays\nWalk-On');
+ for(const rank of [1,500])assert.throws(()=>L.buildPitchless('Hawaii',{...player,rank}),/1–500/);
+ assert.throws(()=>L.buildPitchless('',player),/Choose/);
+});
+
 test('selected phrases become saved dropdowns and resolve to exact wording',()=>{
  let input={paragraphs:{playingTime:'  I promise you will start by your (freshman, sophomore, junior) year. ',proPotential:'I promise you will be drafted in the first x rounds of the draft.',location:'I promise we will win a game in your home state or an adjacent state.'}};
  for(const [key,phrase,id,options] of [
@@ -55,7 +65,10 @@ test('HS builder assembles the top three values and an editable offer header',()
  const withVisits=L.build('Michigan State',p,library,'scholarship',{}, {coach:true,campus:true,week:'4',opponent:'Ohio State'}).text;
  assert.match(withVisits,/Scholarship\n\nCoach Visit\n\nCampus Visit Week 4 vs\. Ohio State\n\nPro Potential:/);
  assert.deepEqual(L.visitLines({campus:true,week:2}),['Campus Visit Week 2']);
- assert.throws(()=>L.visitLines({campus:true}),/week/);
+ assert.deepEqual(L.visitLines({campus:true}),['Campus Visit']);
+ assert.deepEqual(L.visitLines({campus:true,week:'',opponent:'USC'}),['Campus Visit vs. USC']);
+ assert.deepEqual(L.visitLines({campus:true,week:'12'}),['Campus Visit Week 12']);
+ for(const week of ['0',0,'100','1.5','abc'])assert.throws(()=>L.visitLines({campus:true,week}),/week/);
  assert.throws(()=>L.visitLines({campus:true,week:4,opponent:'Team\nInjected text'}),/one line/);
  for(const type of ['scholarship','walkon']){
   const player={...p,rank:type==='walkon'?501:1};

@@ -34,13 +34,11 @@ export async function onRequestPost({request,env,waitUntil}){
    const error=globalThis.NZCFLTransferRules.pitchLimitError(body.text,p,'hs') || (p && globalThis.NZCFLWalkonLimit.error(state,p,{team:user.team,text:body.text}));
    if(error)return json({ok:false,error},{status:400});
    // Derive visits from text; do not trust a caller to omit them to bypass limits.
-   const campus=body.text.match(/(?:campus|school)\s+visit\s*([^\n\r]*)/i);
-   const visits={coach:/coach\s+visit/i.test(body.text),campus:!!campus,campusLabel:campus?(campus[1] || '').replace(/\(\s*\d+\s*\/\s*17\s*\)/i,'').trim():''};
+   const visits={coach:/coach\s+visit/i.test(body.text),...globalThis.NZCFLVisitRules.campusFromText(body.text)};
    if(visits.campus){
-    const label=visits.campusLabel.replace(/^:\s*/,'').replace(/\s+/g,' ').replace(/\bvs\.?\s*/i,'vs. ');
-    const match=label.match(/^(?:Week\s*)?(\d{1,2})(?:\s+vs\.\s+(.+))?$/i);
-    if(!match)return json({ok:false,error:'Enter the campus visit week, e.g. Week 4. Opponent is optional.'},{status:400});
-    visits.campusLabel='Week '+Number(match[1])+(match[2]?' vs. '+match[2]:'');
+    const normalized=globalThis.NZCFLVisitRules.normalizeCampusLabel(visits.campusLabel);
+    if(!normalized.ok)return json({ok:false,error:'Enter a campus visit week from 1 to 99, or leave it blank for a generic visit. Opponent is optional.'},{status:400});
+    visits.campusLabel=normalized.value;
    }
    const own=Object.values(state.offersByProspect || {}).flat().filter(o=>teamKey(o.team)===teamKey(user.team));
    if(p && visits.coach && own.filter(o=>o.visits?.coach).length>=10)return json({ok:false,error:'Coach visit limit already reached (10/10).'},{status:400});

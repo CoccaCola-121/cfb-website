@@ -2331,11 +2331,8 @@ function detectVisits(text, aiVisits){
   const visits = normalizeVisits(aiVisits);
   const raw = text || '';
   if (/coach\s+visit/i.test(raw)) visits.coach = true;
-  const campusMatch = raw.match(/(?:campus|school)\s+visit\s*([^\n\r]*)/i);
-  if (campusMatch){
-    visits.campus = true;
-    visits.campusLabel = (campusMatch[1] || visits.campusLabel || '').replace(/\(\s*\d+\s*\/\s*17\s*\)/i, '').trim();
-  }
+  const campus = NZCFLVisitRules.campusFromText(raw);
+  if (campus.campus) Object.assign(visits,campus);
   return visits;
 }
 
@@ -2344,24 +2341,8 @@ function campusVisitPhrase(visits){
   return visits.campus ? 'Campus Visit' + (visits.campusLabel ? ' ' + visits.campusLabel : '') : '';
 }
 
-function titleCaseTeamName(name){
-  return String(name || '').trim().split(/\s+/).map(function(part){
-    if (/^[A-Z0-9&.-]{2,}$/.test(part)) return part;
-    return part.split('-').map(function(piece){
-      return piece ? piece.charAt(0).toUpperCase() + piece.slice(1).toLowerCase() : piece;
-    }).join('-');
-  }).join(' ');
-}
-
 function normalizeCampusVisitLabel(label){
-  let raw = String(label || '').trim().replace(/\s+/g, ' ');
-  raw = raw.replace(/^:\s*/, '');
-  raw = raw.replace(/^week\b/i, 'Week');
-  raw = raw.replace(/\bvs\.?/i, 'vs.');
-  raw = raw.replace(/\s+vs\.\s+/i, ' vs. ');
-  const match = raw.match(/^(?:Week\s*)?(\d{1,2})(?:\s+vs\.\s+(.+))?$/i);
-  if (!match) return { ok: false, value: raw };
-  return { ok: true, value: 'Week ' + parseInt(match[1], 10) + (match[2] ? ' vs. ' + titleCaseTeamName(match[2]) : '') };
+  return NZCFLVisitRules.normalizeCampusLabel(label);
 }
 
 function syncCampusVisitText(text, visits){
@@ -2616,9 +2597,11 @@ function addOfferDirect(prospectId, team, coach, text, promises, visits){
   visits = recruitingStage() === 'hs' ? detectVisits(text, visits) : {};
   if (visits.campus){
     const normalizedCampus = normalizeCampusVisitLabel(visits.campusLabel);
-    if (!normalizedCampus.ok) return { ok: false, error: 'Enter the campus visit week, e.g. Week 4. Opponent is optional.' };
+    if (!normalizedCampus.ok) return { ok: false, error: 'Enter a campus visit week from 1 to 99, or leave it blank for a generic visit. Opponent is optional.' };
     visits.campusLabel = normalizedCampus.value;
   }
+  const weekError=NZCFLVisitRules.error(DB,{text,visits});
+  if(weekError)return {ok:false,error:weekError};
   const existingOffer = findOfferForTeam(prospectId, team);
   const errors = visitLimitErrors(team, visits, existingOffer);
   if (errors.length) return { ok: false, error: errors.join(' ') };
@@ -2850,9 +2833,9 @@ async function saveOfferEdit(form, confirmedVisits){
   newVisits.coach = oldVisits.coach || !!(form && form.coach);
   newVisits.campus = oldVisits.campus || !!(form && form.campus);
   if (newVisits.campus){
-    const normalizedCampus = normalizeCampusVisitLabel((form && form.campusLabel) || oldVisits.campusLabel);
+    const normalizedCampus = normalizeCampusVisitLabel(form?.campusLabel ?? oldVisits.campusLabel);
     if (!normalizedCampus.ok){
-      UI.editError = 'Enter the campus visit week, e.g. Week 4. Opponent is optional.';
+      UI.editError = 'Enter a campus visit week from 1 to 99, or leave it blank for a generic visit. Opponent is optional.';
       render(); return;
     }
     newVisits.campusLabel = normalizedCampus.value;
@@ -2941,7 +2924,7 @@ async function saveOfferEdit(form, confirmedVisits){
 
 function findProspectFromOffer(text){
   const raw = text || '';
-  const offerRank = raw.match(/\boffer\s+#\s*(\d+)\b/i);
+  const offerRank = raw.match(/\boffers?\s+#\s*(\d+)\b/i);
   const rank = offerRank ? parseInt(offerRank[1], 10) : null;
   if (recruitingStage() === 'hs' && rank && DB.prospects['r' + rank]) return DB.prospects['r' + rank];
 
@@ -3187,6 +3170,7 @@ async function submitCprOffer(rawText, quickId, quickType){
 }
 
 async function submitHighSchoolOffer(rawText){
+  rawText=syncHSVisitDraft(rawText);
   const key=offerDraftKey();captureOfferDraft();
   const parsed=parseOfferSheet(rawText);
   const prospectId=UI.submitTargetId || (parsed?.rank?'r'+parsed.rank:null);
@@ -3226,7 +3210,7 @@ async function submitHighSchoolOffer(rawText){
     DB.updatedAt=null;
     setStored(DB_KEY,JSON.stringify(DB),true);
     clearOfferDraft(key);
-    Object.assign(UI,{hsLookupFailures:0,hsLookupError:'',hsBuildName:'',hsBuildPosition:'',hsBuildProspect:null,hsChoiceKey:null,hsChoices:{},hsVisitKey:null,hsVisits:null});
+    Object.assign(UI,{hsLookupFailures:0,hsLookupError:'',hsBuildName:'',hsBuildPosition:'',hsBuildProspect:null,hsBuildTypeKey:null,hsChoiceKey:null,hsChoices:{},hsVisitKey:null,hsVisits:null,hsVisitsDirty:false});
     UI.showSubmitModal=false;UI.submitTargetId=null;
     UI.lastSummary={matched:data.offer?1:0,unmatched:data.unmatched?1:0,total:1,dismissAt:Date.now()+6000};
   }catch(error){const node=document.getElementById('rb-submit-error');if(node)node.textContent=error.message;}
@@ -3239,6 +3223,7 @@ async function submitOfferSheet(rawText){
   captureOfferDraft();
   if(apiAvailable() && !UI.leagueVerified){await syncLeagueState(false,{force:true});if(!UI.leagueVerified)throw Error('Refresh the board before posting. Your draft is saved.');}
   if (recruitingStage() === 'cpr') return submitCprOffer(rawText);
+  if(recruitingStage()==='hs' && rawText.trim())rawText=syncHSVisitDraft(rawText);
   if (recruitingStage()==='hs' && apiAvailable() && UI.strongStorage && SESSION && rawText.trim())return submitHighSchoolOffer(rawText);
   if (!SESSION || !rawText.trim()){const error=document.getElementById('rb-submit-error');if(error){error.textContent=!SESSION?'Your session expired. Sign in again; your draft is saved.':'Write or paste your offer before posting.';error.scrollIntoView({block:'nearest'});}return;}
   if (offersLocked()){
@@ -4371,27 +4356,46 @@ function hsBuilderVisits(p){
  const key=offerDraftKey()+':'+(p?.id || '');
  if(UI.hsVisitKey!==key){
   UI.hsVisitKey=key;
+  UI.hsVisitsDirty=false;
   const text=readOfferDraft().text || '',draftPlayer=findProspectFromOffer(text);
   const visits=(!p || UI.submitTargetId===p.id || draftPlayer?.id===p.id)?detectVisits(text,null):{};
-  const match=(visits.campusLabel || '').match(/(?:Week\s*)?(\d+)(?:\s+vs\.?\s+(.+))?/i);
+  const match=(visits.campusLabel || '').replace(/^:\s*/,'').match(/^(?:(?:Week\s*)?(\d+))?(?:\s*vs\.?\s+(.+))?$/i);
   UI.hsVisits={coach:!!visits.coach,campus:!!visits.campus,week:match?.[1] || '',opponent:match?.[2] || ''};
  }
  return UI.hsVisits;
 }
+function readHSVisitControls(p){
+ const visits=hsBuilderVisits(p);
+ for(const [id,key] of [['rb-hs-visit-week','week'],['rb-hs-visit-opponent','opponent']]){
+  const field=document.getElementById(id);if(!field)continue;
+  if(visits.campus && key==='week' && field.validity?.badInput)throw Error('Enter a campus visit week between 1 and 99, or leave it blank for a generic visit.');
+  if(visits[key]!==field.value){visits[key]=field.value;UI.hsVisitsDirty=true;}
+ }
+ return visits;
+}
+function syncHSVisitDraft(text,force=false){
+ if(recruitingStage()!=='hs')return text;
+ const visits=readHSVisitControls(hsBuilderProspect(DB.prospects[UI.submitTargetId]));
+ if(!force && !UI.hsVisitsDirty)return text;
+ const lines=NZCFLHSPitchLibrary.visitLines(visits);
+ const next={coach:visits.coach,...NZCFLVisitRules.campusFromText(lines.join('\n'))};
+ const updated=syncCoachVisitText(syncCampusVisitText(text,next),next);
+ const error=NZCFLVisitRules.error(DB,{text:updated,visits:next});if(error)throw Error(error);
+ const field=document.getElementById('rb-sheet-text');
+ if(field){field.value=updated;captureOfferDraft();}
+ UI.hsVisitsDirty=false;
+ return updated;
+}
 function renderHSVisits(p){
  const v=hsBuilderVisits(p);
- return '<div style="border-top:1px solid var(--hairline);padding-top:12px;"><strong>Visits</strong><div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;"><button type="button" class="rb-btn'+(v.coach?' rb-btn-gold':'')+'" id="rb-hs-coach-visit" aria-pressed="'+v.coach+'">'+(v.coach?'Remove':'Add')+' coach visit</button><button type="button" class="rb-btn'+(v.campus?' rb-btn-gold':'')+'" id="rb-hs-campus-visit" aria-pressed="'+v.campus+'">'+(v.campus?'Remove':'Add')+' campus visit</button></div>'+(v.campus?'<div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:10px;"><label style="flex:1;min-width:100px;">Week<input type="number" min="'+NZCFLVisitRules.current(DB)+'" max="99" class="rb-input" id="rb-hs-visit-week" value="'+escapeHtml(v.week)+'"></label><label style="flex:2;min-width:160px;">Opponent (optional)<input class="rb-input" id="rb-hs-visit-opponent" placeholder="e.g. Ohio State" value="'+escapeHtml(v.opponent)+'"></label></div>':'')+'<p style="font-size:12px;color:var(--slate);">Visits are included when you build the offer. To update an existing draft without replacing your pitch, apply visits below.</p><button type="button" class="rb-btn" id="rb-hs-apply-visits">Apply visits to draft</button></div>';
+ return '<div style="border-top:1px solid var(--hairline);padding-top:12px;"><strong>Visits</strong><div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;"><button type="button" class="rb-btn'+(v.coach?' rb-btn-gold':'')+'" id="rb-hs-coach-visit" aria-pressed="'+v.coach+'">'+(v.coach?'Remove':'Add')+' coach visit</button><button type="button" class="rb-btn'+(v.campus?' rb-btn-gold':'')+'" id="rb-hs-campus-visit" aria-pressed="'+v.campus+'">'+(v.campus?'Remove':'Add')+' campus visit</button></div>'+(v.campus?'<div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:10px;"><label style="flex:1;min-width:100px;">Week (optional)<input type="number" min="'+NZCFLVisitRules.current(DB)+'" max="99" class="rb-input" id="rb-hs-visit-week" placeholder="Generic visit" value="'+escapeHtml(v.week)+'"></label><label style="flex:2;min-width:160px;">Opponent (optional)<input class="rb-input" id="rb-hs-visit-opponent" placeholder="e.g. Ohio State" value="'+escapeHtml(v.opponent)+'"></label></div>':'')+'<p style="font-size:12px;color:var(--slate);">Leave week blank for a generic campus visit. Generic visits count toward your 17-visit allowance. Visit changes are applied when you build or post; use the button below to preview them in your draft.</p><button type="button" class="rb-btn" id="rb-hs-apply-visits">Apply visits to draft</button></div>';
 }
 function applyHSVisits(){
  const field=document.getElementById('rb-sheet-text'),error=document.getElementById('rb-submit-error');
  if(UI.submitting || offersLocked())return;
  try{
   if(!field?.value.trim())throw Error('Build or paste your offer first.');
-  const p=hsBuilderProspect(DB.prospects[UI.submitTargetId]),v=hsBuilderVisits(p);
-  const lines=NZCFLHSPitchLibrary.visitLines(v);
-  const visitError=NZCFLVisitRules.error(DB,{text:lines.join('\n')});if(visitError)throw Error(visitError);
-  const visits={coach:v.coach,campus:v.campus,campusLabel:(lines.find(line=>line.startsWith('Campus Visit ')) || '').replace('Campus Visit ','')};
-  field.value=syncCoachVisitText(syncCampusVisitText(field.value,visits),visits);captureOfferDraft();error.textContent='';
+  syncHSVisitDraft(field.value,true);error.textContent='';
  }catch(e){error.textContent=e.message;}
 }
 function renderHSWording(p,library){
@@ -4424,40 +4428,63 @@ function renderHSPitchBuilder(target){
  const selected=hsBuilderProspect(target);
  const values=NZCFLHSPitchLibrary.topValues(selected);
  const walkon=NZCFLHSPitchLibrary.canWalkon(selected);
- if(!walkon)UI.hsBuildType='scholarship';
+ const type=hsBuilderOfferType(selected),scholarshipTeams=hsScholarshipTeams(selected);
  const options=!target?'<label>Player name<input class="rb-input" id="rb-hs-build-name" placeholder="Enter full name" value="'+escapeHtml(UI.hsBuildName || '')+'" autocomplete="off"></label>'+((UI.hsLookupFailures || 0)>=2?'<label>Position (to distinguish matching names)<input class="rb-input" id="rb-hs-build-position" placeholder="e.g. WR" value="'+escapeHtml(UI.hsBuildPosition || '')+'"></label>':'')+'<button class="rb-btn" id="rb-hs-find-player">Find player</button>'+(UI.hsLookupError?'<p role="alert" style="color:var(--alert);margin:0;">'+escapeHtml(UI.hsLookupError)+'</p>':'')+(selected?'<p style="margin:0;">Found #'+escapeHtml(selected.rank)+' '+escapeHtml([selected.name,selected.position,selected.homestate || selected.hometown].filter(Boolean).join(' · '))+'</p>':''):'';
  return '<details style="border:1px solid var(--hairline);border-radius:8px;padding:12px;margin-bottom:12px;" id="rb-hs-pitch-builder"'+(UI.hsBuilderOpen!==false?' open':'')+'><summary style="cursor:pointer;">Build from my saved pitches</summary><div style="display:grid;gap:10px;margin-top:12px;">'+options+
  '<label>Offer type<select class="rb-input" id="rb-hs-build-type" style="display:block;width:100%;"><option value="scholarship"'+(UI.hsBuildType!=='walkon'?' selected':'')+'>Scholarship</option>'+(walkon?'<option value="walkon"'+(UI.hsBuildType==='walkon'?' selected':'')+'>Walk-On</option>':'')+'</select></label>'+(!walkon?'<p style="font-size:12px;margin:0;color:var(--slate);">Ranks 1–500 are submitted as scholarships, including pasted drafts.</p>':'')+
+ (walkon && scholarshipTeams.length?'<p class="rb-hs-scholarship-warning" role="status">They have scholarship offers from '+escapeHtml(scholarshipTeams.join(', '))+'.</p>':'')+
  '<p style="font-size:12px;margin:0;color:var(--slate);">'+(selected?'Top values: '+escapeHtml(values.map(f=>f.label).join(' · ') || 'Not available'):'Choose a player to see their top values.')+'</p>'+
  (state.draft && JSON.stringify(state.draft)!==JSON.stringify(state.library)?'<p role="status" style="color:var(--gold);">Your pitch library has unsaved changes. Save them to use the new dropdowns.</p><button class="rb-btn" id="rb-hs-save-use"'+(state.saving?' disabled':'')+'>'+(state.saving?'Saving…':'Save &amp; use changes')+'</button>':'')+
  renderHSWording(selected,state.draft || state.library)+
  renderHSVisits(selected)+
  '<p style="font-size:12px;margin:0;">Edit your draft below before posting, including player-specific promises and visits. Manage or import your saved paragraphs in My Offers.</p>'+
  (state.error?'<p role="alert" style="color:var(--alert);">'+escapeHtml(state.error)+' <button class="rb-btn" id="rb-retry-hs-pitches">Retry</button></p>':'')+
- '<button class="rb-btn" id="rb-build-hs-pitch"'+(!state.loaded || state.loading || UI.submitting || offersLocked()?' disabled':'')+'>'+(state.loading?'Loading pitches…':'Build offer draft')+'</button></div></details>';
+ '<button class="rb-btn" id="rb-build-hs-pitch"'+(!state.loaded || state.loading || UI.submitting || offersLocked()?' disabled':'')+'>'+(state.loading?'Loading pitches…':'Build offer draft')+'</button>'+
+ (walkon && type==='walkon'?'<button type="button" class="rb-btn" id="rb-build-hs-pitchless"'+(UI.submitting || offersLocked()?' disabled':'')+'>Build pitchless offer draft</button><p style="font-size:12px;margin:0;color:var(--slate);">Team and player name, then Walk-On. No saved paragraphs or promises. Selected visits are included.</p>':'')+'</div></details>';
+}
+function hsScholarshipTeams(p){
+ if(recruitingStage()!=='hs' || !NZCFLHSPitchLibrary.canWalkon(p))return [];
+ return [...new Map((DB.offersByProspect[p.id] || []).filter(o=>!o.rescinded && NZCFLCprRules.scholarshipOffer(o)).map(o=>[teamKey(o.team),o.team])).values()].sort((a,b)=>a.localeCompare(b));
+}
+function hsBuilderOfferType(p,reset=false){
+ const walkon=NZCFLHSPitchLibrary.canWalkon(p),scholarship=hsScholarshipTeams(p).length>0;
+ const key=offerDraftKey()+':'+(p?.id || '')+':'+(walkon && !scholarship?'walkon':'scholarship');
+ if(reset || UI.hsBuildTypeKey!==key || !walkon){
+  UI.hsBuildTypeKey=key;UI.hsBuildType=walkon && !scholarship?'walkon':'scholarship';
+ }
+ return UI.hsBuildType;
 }
 function findHSPitchPlayer(){
  captureOfferDraft();UI.hsBuilderOpen=true;
  try{
   const p=NZCFLHSPitchLibrary.findPlayer(DB.prospects,UI.hsBuildName,((UI.hsLookupFailures || 0)>=2?UI.hsBuildPosition:'') || '');
   UI.hsBuildProspect=p.id;UI.hsLookupError='';
-  if(!NZCFLHSPitchLibrary.canWalkon(p))UI.hsBuildType='scholarship';
+  hsBuilderOfferType(p,true);
  }catch(e){UI.hsBuildProspect=null;UI.hsLookupFailures=(UI.hsLookupFailures || 0)+1;UI.hsLookupError=e.message;}
  render();
 }
-function buildHSPitchDraft(){
+function buildHSPitchDraft(pitchless=false){
  if(recruitingStage()!=='hs' || UI.submitting || offersLocked())return;
  if(!hsBuilderProspect(DB.prospects[UI.submitTargetId])){findHSPitchPlayer();return;}
  const field=document.getElementById('rb-sheet-text'),error=document.getElementById('rb-submit-error');
  try{
-  const state=currentHSPitches();if(!state.loaded)throw Error('Load your saved pitches first.');
-  if(JSON.stringify(state.draft)!==JSON.stringify(state.library))throw Error('Save your pitch library changes above before building.');
   const p=hsBuilderProspect(DB.prospects[UI.submitTargetId]);
   if(p?.commitTeam)throw Error('This player has already committed.');
-  const built=NZCFLHSPitchLibrary.build(SESSION.team,p,state.library,UI.hsBuildType || 'scholarship',hsChoiceSelections(p),hsBuilderVisits(p));
+  const type=hsBuilderOfferType(p),visits=readHSVisitControls(p);
+  let built;
+  if(pitchless){
+   if(type!=='walkon')throw Error('Choose Walk-On to build a pitchless offer.');
+   built=NZCFLHSPitchLibrary.buildPitchless(SESSION.team,p,visits);
+   // Names shared by two recruits still need an unambiguous submission header.
+   if(findProspectFromOffer(built.text)?.id!==p.id)built=NZCFLHSPitchLibrary.buildPitchless(SESSION.team,p,visits,true);
+  }else{
+   const state=currentHSPitches();if(!state.loaded)throw Error('Load your saved pitches first.');
+   if(JSON.stringify(state.draft)!==JSON.stringify(state.library))throw Error('Save your pitch library changes above before building.');
+   built=NZCFLHSPitchLibrary.build(SESSION.team,p,state.library,type,hsChoiceSelections(p),visits);
+  }
   const visitError=NZCFLVisitRules.error(DB,{text:built.text});if(visitError)throw Error(visitError);
-  if(field.value.trim() && !window.confirm('Replace the current draft with your saved pitches?'))return;
-  field.value=built.text;captureOfferDraft();error.textContent='';field.focus();
+  if(field.value.trim() && !window.confirm(pitchless?'Replace the current draft with a pitchless walk-on offer?':'Replace the current draft with your saved pitches?'))return;
+  field.value=built.text;captureOfferDraft();UI.hsVisitsDirty=false;error.textContent='';field.focus();
  }catch(e){if(error)error.textContent=e.message;}
 }
 function bindHSPitches(){
@@ -4509,10 +4536,10 @@ function bindHSPitches(){
  });
  const saveUse=document.getElementById('rb-hs-save-use');if(saveUse)saveUse.onclick=saveHSPitches;
  for(const [id,key] of [['rb-hs-coach-visit','coach'],['rb-hs-campus-visit','campus']]){
-  const button=document.getElementById(id);if(button)button.onclick=()=>{captureOfferDraft();UI.hsVisits[key]=!UI.hsVisits[key];render();};
+  const button=document.getElementById(id);if(button)button.onclick=()=>{captureOfferDraft();UI.hsVisits[key]=!UI.hsVisits[key];UI.hsVisitsDirty=true;render();};
  }
  for(const [id,key] of [['rb-hs-visit-week','week'],['rb-hs-visit-opponent','opponent']]){
-  const field=document.getElementById(id);if(field)field.oninput=()=>{UI.hsVisits[key]=field.value;};
+  const field=document.getElementById(id);if(field)field.oninput=()=>{UI.hsVisits[key]=field.value;UI.hsVisitsDirty=true;const error=document.getElementById('rb-submit-error');if(error)error.textContent='';};
  }
  const applyVisits=document.getElementById('rb-hs-apply-visits');if(applyVisits)applyVisits.onclick=applyHSVisits;
  const save=document.getElementById('rb-save-hs-pitches');if(save)save.onclick=saveHSPitches;
@@ -4539,8 +4566,9 @@ function bindHSPitches(){
   input.onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();findHSPitchPlayer();}};
  }
  const find=document.getElementById('rb-hs-find-player');if(find)find.onclick=findHSPitchPlayer;
- const type=document.getElementById('rb-hs-build-type');if(type)type.onchange=()=>{UI.hsBuildType=type.value;};
- const build=document.getElementById('rb-build-hs-pitch');if(build)build.onclick=buildHSPitchDraft;
+ const type=document.getElementById('rb-hs-build-type');if(type)type.onchange=()=>{captureOfferDraft();UI.hsBuildType=type.value;render();};
+ const build=document.getElementById('rb-build-hs-pitch');if(build)build.onclick=()=>buildHSPitchDraft();
+ const pitchless=document.getElementById('rb-build-hs-pitchless');if(pitchless)pitchless.onclick=()=>buildHSPitchDraft(true);
 }
 
 function renderMyOffers(){
@@ -4790,6 +4818,7 @@ function renderTeamsPage(){
 }
 
 function renderPitchBadge(p){
+  if (hsScholarshipTeams(p).length) return '<span class="rb-cpr-pitch-badge rb-cpr-scholarship-badge">SCHOLARSHIP RECRUIT</span>';
   if (recruitingStage() !== 'cpr') return '';
   if (isPitchRecruit(p)) return '<span class="rb-cpr-pitch-badge">PITCH RECRUIT</span>';
   return NZCFLCprRules.scholarshipRecruit(p, DB.offersByProspect[p.id] || []) ? '<span class="rb-cpr-pitch-badge rb-cpr-scholarship-badge">SCHOLARSHIP RECRUIT</span>' : '';
@@ -5176,9 +5205,10 @@ function renderProspectBoardCard(pid, searchAttr, context){
     html += '<div class="rb-board-offer-logos" role="list" aria-label="Offering teams">';
     offers.forEach(function(o){
       const inactive=o.rescinded || invalidOffer(p,o);
-      const label = o.team + (o.rescinded ? ' (rescinded)' : invalidOffer(p,o) ? ' (invalid: scholarship required)' : '');
+      const scholarship=!inactive && recruitingStage()==='hs' && NZCFLHSPitchLibrary.canWalkon(p) && NZCFLCprRules.scholarshipOffer(o);
+      const label = o.team + (o.rescinded ? ' (rescinded)' : invalidOffer(p,o) ? ' (invalid: scholarship required)' : scholarship ? ' (scholarship)' : '');
       const brand = getTeamBranding(o.team);
-      html += '<span role="listitem" class="rb-board-offer-logo' + (inactive ? ' rb-board-offer-rescinded' : '') + '" title="' + escapeHtml(label) + '" aria-label="' + escapeHtml(label) + '">' + renderTeamLogo(brand && brand.logoUrl ? brand : {logoUrl:'/nzcfl-free-agent.png'}, 28) + '</span>';
+      html += '<span role="listitem" class="rb-board-offer-logo' + (inactive ? ' rb-board-offer-rescinded' : scholarship ? ' rb-board-offer-scholarship' : '') + '" title="' + escapeHtml(label) + '" aria-label="' + escapeHtml(label) + '">' + renderTeamLogo(brand && brand.logoUrl ? brand : {logoUrl:'/nzcfl-free-agent.png'}, 28) + '</span>';
     });
     html += '</div>';
   }
@@ -5515,7 +5545,7 @@ function renderProspectVisits(offers){
   for(const {offer,visits} of rows){
     if(!visits.campus)continue;
     const week=NZCFLVisitRules.week(visits.campusLabel);
-    const entry={team:offer.team,label:visits.campusLabel || 'Week not specified'};
+    const entry={team:offer.team,label:visits.campusLabel || 'Generic campus visit'};
     if(!week || week>99){unknown.push(entry);continue;}
     if(!weeks.has(week))weeks.set(week,[]);
     weeks.get(week).push(entry);
@@ -5523,7 +5553,7 @@ function renderProspectVisits(offers){
   const names=entries=>entries.slice().sort((a,b)=>a.team.localeCompare(b.team)).map(e=>'<span title="'+escapeHtml(e.label)+'">'+escapeHtml(e.team)+'</span>').join(', ') || '<span style="color:var(--slate);">N/A</span>';
   let campus='';
   for(const week of [...weeks.keys()].sort((a,b)=>a-b))campus+='<span class="rb-visit-week"><strong>Week '+week+':</strong><span class="rb-visit-schools">'+names(weeks.get(week) || [])+'</span></span>';
-  if(unknown.length)campus+='<span class="rb-visit-week"><strong>Unscheduled</strong><span class="rb-visit-schools">'+names(unknown)+'</span></span>';
+  if(unknown.length)campus+='<span class="rb-visit-week"><strong>Generic</strong><span class="rb-visit-schools">'+names(unknown)+'</span></span>';
   return '<section class="rb-card" style="padding:12px 16px;margin-bottom:14px;font-size:13px;line-height:1.5;" aria-label="Visit summary"><div class="rb-coach-summary"><strong>Coach visits</strong> '+(coaches.length?escapeHtml(coaches.join(', ')):'N/A')+'</div><div class="rb-campus-summary"><strong>Campus visits</strong><div class="rb-campus-weeks">'+(campus || '<span>N/A</span>')+'</div></div></section>';
 }
 
@@ -5686,6 +5716,8 @@ function renderOfferBlock(o, opts){
   const brand = getTeamBranding(o.team);
   const offerStyle = '--offer-team-color:' + escapeHtml(teamBorderColor(brand)) + ';';
   const invalid=invalidOffer(opts.prospect,o);
+  const scholarship=!o.rescinded && !invalid && recruitingStage()==='hs' && NZCFLHSPitchLibrary.canWalkon(opts.prospect) && NZCFLCprRules.scholarshipOffer(o);
+  const statusClass=o.rescinded?' rb-offer-rescinded':invalid?' rb-offer-invalid':scholarship?' rb-offer-scholarship':'';
   const badges = visitBadges(o.visits, !!opts.collapsed);
   const wordCount = (recruitingStage() === 'transfer' || (recruitingStage() === 'cpr' && isPitchRecruit(opts.prospect))) && !o.rescinded ? '<span class="rb-offer-word-count">' + NZCFLTransferRules.pitchWordCount(o.text, opts.prospect) + ' / 800 words</span>' : '';
   const rescindedBadge = o.rescinded ? '<span class="rb-rescinded-badge">Rescinded</span>' : invalid ? '<span class="rb-rescinded-badge">Invalid · Scholarship required</span>' : '';
@@ -5698,11 +5730,11 @@ function renderOfferBlock(o, opts){
   '</div>';
   let html = '';
   if (opts.collapsed){
-    html += '<details class="rb-branded-offer' + (o.rescinded ? ' rb-offer-rescinded' : invalid ? ' rb-offer-invalid' : '') + '" data-offer-details="1" data-offer-key="' + escapeHtml(JSON.stringify([opts.prospect?.id || '',o.id])) + '" style="' + offerStyle + 'padding:10px 14px;">';
+    html += '<details class="rb-branded-offer' + statusClass + '" data-offer-details="1" data-offer-key="' + escapeHtml(JSON.stringify([opts.prospect?.id || '',o.id])) + '" style="' + offerStyle + 'padding:10px 14px;">';
     html += '<summary class="rb-offer-summary" style="list-style:none;cursor:pointer;">' + header + '</summary>';
     html += '<div style="margin-top:8px;">';
   } else {
-    html += '<div class="rb-branded-offer' + (o.rescinded ? ' rb-offer-rescinded' : invalid ? ' rb-offer-invalid' : '') + '" style="' + offerStyle + 'padding:14px 16px;">';
+    html += '<div class="rb-branded-offer' + statusClass + '" style="' + offerStyle + 'padding:14px 16px;">';
     if (!opts.hideHeader) html += header;
     else html += wordCount + rescindedBadge;
   }
@@ -5804,7 +5836,7 @@ function renderEditOfferModal(){
     '<div class="rb-card" style="padding:24px;width:560px;max-width:90vw;" onclick="event.stopPropagation()">' +
       '<div class="rb-h" style="font-size:16px;margin-bottom:4px;">Edit visits</div>' +
       '<div class="rb-mono" style="font-size:12px;color:var(--slate);margin-bottom:12px;">' + (recruitNumber(prospect) ? recruitNumber(prospect) + ' ' : '') + renderRecruitName(prospect.name || 'Unknown prospect') + '</div>' +
-      '<div style="font-size:12px;color:var(--slate);margin-bottom:10px;">Enter the campus visit week, e.g. <span class="rb-mono">Week 4</span>. Opponent is optional; abbreviations are accepted.</div>' +
+      '<div style="font-size:12px;color:var(--slate);margin-bottom:10px;">Week and opponent are optional. Leave the field blank for a generic campus visit, or enter <span class="rb-mono">Week 12</span>, <span class="rb-mono">Week 12 vs. USC</span>, or <span class="rb-mono">vs. USC</span>.</div>' +
       '<div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-top:12px;">' +
         '<label style="display:inline-flex;align-items:center;gap:8px;color:' + (locks.coach ? 'var(--slate)' : 'var(--chalk)') + ';font-size:13px;">' +
           '<input type="checkbox" id="rb-edit-coach-visit" ' + (visits.coach ? 'checked' : '') + (locks.coach ? ' disabled' : '') + ' style="accent-color:var(--gold);" /> Coach Visit' +
@@ -5813,7 +5845,7 @@ function renderEditOfferModal(){
           '<input type="checkbox" id="rb-edit-campus-visit" ' + (visits.campus ? 'checked' : '') + (locks.campus ? ' disabled' : '') + ' style="accent-color:var(--gold);" /> Campus Visit' +
         '</label>' +
       '</div>' +
-      '<input class="rb-input" id="rb-edit-campus-label" placeholder="Week 4 (or Week 4 vs. USC)" value="' + escapeHtml(visits.campusLabel || '') + '"' + ((!visits.campus && locks.campus) || (visits.campus && NZCFLVisitRules.week(visits.campusLabel)<NZCFLVisitRules.current(DB)) ? ' disabled' : '') + ' style="margin-top:10px;" />' +
+      '<input class="rb-input" id="rb-edit-campus-label" aria-label="Campus visit week and opponent (optional)" placeholder="Blank for generic, or Week 12 vs. USC" value="' + escapeHtml(visits.campusLabel || '') + '"' + ((!visits.campus && locks.campus) || (visits.campus && NZCFLVisitRules.week(visits.campusLabel)!==null && NZCFLVisitRules.week(visits.campusLabel)<NZCFLVisitRules.current(DB)) ? ' disabled' : '') + ' style="margin-top:10px;" />' +
       '<div id="rb-edit-offer-error" role="alert" style="font-size:12px;color:var(--alert);margin-top:8px;">' + escapeHtml(UI.editError || '') + '</div>' +
       '<div style="display:flex;justify-content:flex-end;gap:8px;margin-top:14px;">' +
         '<button class="rb-btn" data-close-edit-modal="1">Cancel</button>' +

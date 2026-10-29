@@ -9,25 +9,6 @@ import {readLeagueState,writeLeagueState} from '../../_lib/league-state.js';
 import {queueLeagueBackup} from '../../_lib/backup.js';
 function normalizeVisits(v){return {coach:!!v?.coach,campus:!!v?.campus,campusLabel:String(v?.campusLabel || '').trim()};}
 function campusVisitPhrase(v){return v.campus?'Campus Visit'+(v.campusLabel?' '+v.campusLabel:''):'';}
-function titleCaseTeamName(name){
-  return String(name || '').trim().split(/\s+/).map(function(part){
-    if (/^[A-Z0-9&.-]{2,}$/.test(part)) return part;
-    return part.split('-').map(function(piece){
-      return piece ? piece.charAt(0).toUpperCase() + piece.slice(1).toLowerCase() : piece;
-    }).join('-');
-  }).join(' ');
-}
-
-function normalizeCampusVisitLabel(label){
-  let raw = String(label || '').trim().replace(/\s+/g, ' ');
-  raw = raw.replace(/^:\s*/, '');
-  raw = raw.replace(/^week\b/i, 'Week');
-  raw = raw.replace(/\bvs\.?/i, 'vs.');
-  raw = raw.replace(/\s+vs\.\s+/i, ' vs. ');
-  const match = raw.match(/^(?:Week\s*)?(\d{1,2})(?:\s+vs\.\s+(.+))?$/i);
-  if (!match) return { ok: false, value: raw };
-  return { ok: true, value: 'Week ' + parseInt(match[1], 10) + (match[2] ? ' vs. ' + titleCaseTeamName(match[2]) : '') };
-}
 
 function syncCampusVisitText(text, visits){
   let out = String(text || '');
@@ -67,7 +48,7 @@ export async function onRequestPost({request,env,waitUntil}){
    if(state?.recruitingStage!=='hs' || !p || !offer || teamKey(offer.team)!==teamKey(user.team))return json({ok:false,error:'Offer not found for your team.'},{status:403});
    const old=normalizeVisits(offer.visits),next=normalizeVisits(body.visits);
    next.coach=old.coach || next.coach;next.campus=old.campus || next.campus;
-   if(next.campus){const normalized=normalizeCampusVisitLabel(next.campusLabel || old.campusLabel);if(!normalized.ok)return json({ok:false,error:'Enter the campus visit week, e.g. Week 4. Opponent is optional.'},{status:400});next.campusLabel=normalized.value;}else next.campusLabel='';
+   if(next.campus){const normalized=globalThis.NZCFLVisitRules.normalizeCampusLabel(next.campusLabel);if(!normalized.ok)return json({ok:false,error:'Enter a campus visit week from 1 to 99, or leave it blank for a generic visit. Opponent is optional.'},{status:400});next.campusLabel=normalized.value;}else next.campusLabel='';
    // An identical retry succeeds without another write or history entry.
    if(JSON.stringify(old)===JSON.stringify(next))return json({ok:true,prospectId:body.prospectId,offer});
    if(offer.rescinded || p.commitTeam || globalThis.NZCFLOfferWindow.locked(state))return json({ok:false,error:'This offer can no longer be changed.'},{status:403});
@@ -81,10 +62,7 @@ export async function onRequestPost({request,env,waitUntil}){
    const own=Object.values(state.offersByProspect || {}).flat().filter(o=>teamKey(o.team)===teamKey(user.team));
    if(!old.coach && next.coach && own.filter(o=>o.visits?.coach).length>=10)return json({ok:false,error:'Coach visit limit already reached (10/10).'},{status:400});
    if(!old.campus && next.campus && own.filter(o=>o.visits?.campus).length>=17)return json({ok:false,error:'Campus visit limit already reached (17/17).'},{status:400});
-   const changes=[];
-   if(!old.coach && next.coach)changes.push('Added coach visit');
-   if(!old.campus && next.campus)changes.push('Added campus visit: '+next.campusLabel);
-   else if(old.campusLabel!==next.campusLabel)changes.push('Updated campus visit: '+old.campusLabel+' -> '+next.campusLabel);
+   const changes=globalThis.NZCFLOfferAmendments.visitChanges(old,next);
    offer.text=nextText;offer.visits=next;offer.updatedAt=Date.now();
    offer.editHistory=[...(offer.editHistory || []),{id:'eh_'+crypto.randomUUID(),editedAt:offer.updatedAt,editor:user.team,changes}].slice(-20);
    const saved=await writeLeagueState(env,state,state);

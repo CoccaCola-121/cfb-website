@@ -7,6 +7,25 @@ import {onRequestPut} from '../functions/api/league/state.js';
 import {signSession} from '../functions/_lib/auth.js';
 const R=globalThis.NZCFLVisitRules;
 const offer=week=>({id:'o1',team:'Army',text:'Army offers #1 Test Player\nScholarship\nCampus Visit Week '+week+' vs. Navy\nPitch.',visits:{campus:true,campusLabel:'Week '+week+' vs. Navy'}});
+test('generic visits parse without consuming pitch lines and preserve scheduled week restrictions',()=>{
+ for(const ending of ['\n\nTradition:\nOriginal pitch.','\r\nCampus:\r\nOriginal pitch.','\nCoach Visit\nPitch.','']){
+  const text='Army offers #1 Test Player\nScholarship\nCampus Visit'+ending;
+  assert.deepEqual(R.campusFromText(text),{campus:true,campusLabel:''});
+  assert.equal(R.error({currentWeek:12},{text,visits:{campus:true,campusLabel:''}}),'');
+ }
+ assert.deepEqual(R.campusFromText('School Visit (1/17)\nWinning:\nPitch.'),{campus:true,campusLabel:''});
+ for(const [input,expected] of [['',''],['12','Week 12'],['Week 12','Week 12'],['week 12 vs ohio state','Week 12 vs. Ohio State'],['vs. USC','vs. USC']]){
+  assert.deepEqual(R.normalizeCampusLabel(input),{ok:true,value:expected});
+ }
+ const generic={text:'Campus Visit\n\nPitch.',visits:{campus:true,campusLabel:''}};
+ assert.equal(R.error({currentWeek:12},generic,offer(12)),'');
+ assert.match(R.error({currentWeek:12},generic,offer(11)),/locked/);
+ assert.equal(R.error({currentWeek:12},offer(12),generic),'');
+ assert.match(R.error({currentWeek:12},offer(11),generic),/12 or later/);
+ for(const value of ['Week','0','Week 100','12.5','12vs. USC','vs.','Week 12\nPitch']){
+  assert.equal(R.normalizeCampusLabel(value).ok,false,value);
+ }
+});
 test('current week rejects past additions and edits but preserves historical visits',()=>{
  const state={recruitingStage:'hs',currentWeek:2};
  assert.match(R.error(state,offer(1)),/week 2 or later/);

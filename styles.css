@@ -790,6 +790,9 @@ html { scrollbar-gutter: stable; }
 
 .rb-board-offer-logos { display:flex; flex-wrap:wrap; align-items:center; gap:12px; padding:12px 14px; margin-top:12px; border:1px solid var(--hairline); border-radius:6px; background:var(--panel-alt); }
 .rb-board-offer-logo { display:flex; align-items:center; justify-content:center; flex:0 0 36px; }
+.rb-board-offer-scholarship > span { border-color:var(--gold) !important; }
+.rb-branded-offer.rb-offer-scholarship { border-color:var(--gold); }
+.rb-hs-scholarship-warning { margin:0; color:var(--alert); font-size:13px; line-height:1.5; }
 .rb-board-offer-rescinded > span { border-color:var(--alert) !important; }
 .rb-board-offer-rescinded img { opacity:.85; }
 

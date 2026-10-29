@@ -87,10 +87,10 @@
   const lines=[];
   if(visits.coach)lines.push('Coach Visit');
   if(visits.campus){
-   const week=String(visits.week || '').trim(),opponent=String(visits.opponent || '').trim();
-   if(!/^[1-9][0-9]?$/.test(week))throw Error('Enter a campus visit week between 1 and 99.');
+   const week=String(visits.week ?? '').trim(),opponent=String(visits.opponent || '').trim();
+   if(week && !/^[1-9][0-9]?$/.test(week))throw Error('Enter a campus visit week between 1 and 99, or leave it blank for a generic visit.');
    if(opponent.length>120 || /[\r\n]/.test(opponent))throw Error('Enter the opponent on one line.');
-   lines.push('Campus Visit Week '+Number(week)+(opponent?' vs. '+opponent:''));
+   lines.push('Campus Visit'+(week?' Week '+Number(week):'')+(opponent?' vs. '+opponent:''));
   }
   return lines;
  }
@@ -107,5 +107,11 @@
   const text=[header,type==='scholarship'?'Scholarship':'Walk-On',...visitLines(visits),...values.map(f=>f.label+':\n'+stripHeading(resolveParagraph(library,f.key,selected),f))].join('\n\n');
   return {text,values};
  }
- root.NZCFLHSPitchLibrary=Object.freeze({fields,clean,importRows,topValues,build,findPlayer,canWalkon,token,addChoice,visitLines});
+ function buildPitchless(team,prospect,visits={},includeRank=false){
+  if(!team || !prospect?.name)throw Error('Choose a High School player first.');
+  if(!canWalkon(prospect))throw Error('High School recruits ranked 1–500 require a scholarship offer.');
+  const lines=visitLines(visits);
+  return {text:team+' offers '+(includeRank?'#'+prospect.rank+' ':'')+prospect.name+'\nWalk-On'+(lines.length?'\n\n'+lines.join('\n'):''),values:[]};
+ }
+ root.NZCFLHSPitchLibrary=Object.freeze({fields,clean,importRows,topValues,build,buildPitchless,findPlayer,canWalkon,token,addChoice,visitLines});
 })(globalThis);

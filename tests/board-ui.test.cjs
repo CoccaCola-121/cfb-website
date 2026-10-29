@@ -13,7 +13,7 @@ const source = script.slice(0, boot) + `
   globalThis.app = { DB, UI, importEarlyDeclarees, renderEarlyDeclareesSettings, expireSuspendedRequests, saveSuspendedOffer, restoreSuspendedOffer, renderProspectDetail, renderProspectVisits, syncLeagueState, syncSubmitModalLock, offerRequest, watchlistNumbers, renderWatchlist, submitHighSchoolOffer, ownOfferTypeBadge, renderOwnTypeFilter, mergeLeagueState, renderOfferAmendments, captureOfferDraft, readOfferDraft, clearOfferDraft, offerDraftKey, applyConditionalRescinds, readRescindRuleForm, validateRescindRuleDraft, requestQuickWalkon, renderQuickWalkonConfirm, canQuickOfferWalkon, quickOfferWalkon, renderQuickWalkon, renderProspectBoardCard, scheduleSummaryCountdown, dismissSummaryBanner, bindFloatingSubmit, extractPromises, cleanDisplayPromises, readCprBoard, updateBucksEntries, renderBucksSettings, renderCprProfile, cprPreviousSchool, ensureCprScholarshipThreads, renderAutoCommitSettings, stageAutoCommits, readScholarshipCapacity, buildPromiseArchive, parseCsvRows, offerCountForProspect, refreshScholarshipHistory, submitCprOffer, renderSubmitModal, createCprPlayer, loadClassData, resetOfferWindow, setOffersLocked, offersLocked, pendingCommitChanges, restoreSettingsDraft, renderOfferBlock, renderRescindFilterFields, renderVisitLedger, visibleBoardProspectIds, setRecruitingStage, requestReset, approveDangerReset, beginSettingsDraft, hasSettingsChanges, canLeaveSettings, saveSettingsChanges, saveDBNow, leagueStatePayload, mergeSettingsValue, updateCommitsFromSheet, runBackupNow, setTransferFilter, renderTransferFilters, renderClassSetup, requestManualCommitOverride, applyManualCommitOverride, requestClearCommit, clearManualCommitOverride, applyManualCommitOverrides, clearRecruitingBoard, findProspectFromSheetRow, transferCardStyle, parseFullClass, prospectFromRosterRow, confirmTransferImport, releaseSingleStageBoard, addOfferDirect, render, renderNav, navigateTo, applyRoute, setReady(){ dbReady = true; sessionReady = true; }, renderFeed, renderBoardSearchResults, renderTeamsPage,
     renderThreadProspectList, renderProspectDetail, builtInTeamBranding, getTeamBranding, activeTeamBrands,
     mobileRecruitName, renderRecruitName, renderMyOffers, renderCommitsForTeam, renderTeamOffers, renderConditionalRescinds, renderRecruitValues, teamBorderColor, bindEvents, applyDefaultClassData, releaseWave1, releaseWave2,
-    currentHSPitches, findHSPitchPlayer, renderHSPitchEditor, renderHSPitchBuilder, buildHSPitchDraft, applyHSVisits, hsBuilderVisits, parseOfferSheet, bindHSPitches, fitHSPitchOptions,
+    syncHSVisitDraft, renderEditOfferModal, saveOfferEdit, currentHSPitches, findHSPitchPlayer, renderHSPitchEditor, renderHSPitchBuilder, buildHSPitchDraft, applyHSVisits, hsBuilderVisits, parseOfferSheet, bindHSPitches, fitHSPitchOptions,
     setSession(value){ SESSION = value; } };
 })();`;
 
@@ -1146,6 +1146,90 @@ test('HS builder detects pasted drafts, shows unsaved dropdowns, and applies vis
  assert.doesNotMatch(elements['rb-sheet-text'].value,/Coach Visit|Campus Visit/);
 });
 
+test('HS scholarship badges and gold borders apply to active offers on 2-star, 1-star and unranked recruits',()=>{
+ const {app}=harness();app.DB.recruitingStage='hs';
+ const scholarship={id:'schol',team:'Alabama',text:'Alabama offers Morgan Baker\nScholarship'};
+ const walkon={id:'walkon',team:'Hawaii',text:'Hawaii offers Morgan Baker\nWalk-On\nWe value your scholarship.'};
+ const rescinded={...scholarship,id:'rescinded',team:'USC',rescinded:true};
+ for(const [rank,stars] of [[501,2],[900,2],[901,1],[1700,1],[1701,0]]){
+  Object.assign(app.DB.prospects.r2,{rank,stars});app.DB.offersByProspect.r2=[scholarship,walkon,rescinded];
+  const html=app.renderProspectBoardCard('r2');
+  assert.match(html,/rb-cpr-pitch-badge rb-cpr-scholarship-badge">SCHOLARSHIP RECRUIT/);
+  assert.match(html,/rb-board-offer-scholarship" title="Alabama \(scholarship\)"/);
+  assert.match(html,/rb-board-offer-rescinded" title="USC \(rescinded\)"/);
+  assert.match(html,/rb-board-offer-logo" title="Hawaii"/);
+  for(const collapsed of [false,true]){
+   assert.match(app.renderOfferBlock(scholarship,{prospect:app.DB.prospects.r2,collapsed}),/rb-offer-scholarship/);
+   assert.doesNotMatch(app.renderOfferBlock(rescinded,{prospect:app.DB.prospects.r2,collapsed}),/rb-offer-scholarship/);
+  }
+ }
+ app.UI.prospectId='r2';assert.match(app.renderProspectDetail(),/SCHOLARSHIP RECRUIT/);
+ app.DB.offersByProspect.r2=[walkon,rescinded];assert.doesNotMatch(app.renderProspectBoardCard('r2'),/SCHOLARSHIP RECRUIT|rb-board-offer-scholarship/);
+ app.DB.offersByProspect.r2=[scholarship];app.DB.prospects.r2.rank=500;
+ assert.doesNotMatch(app.renderProspectBoardCard('r2'),/SCHOLARSHIP RECRUIT|rb-board-offer-scholarship/);
+ app.DB.recruitingStage='cpr';assert.match(app.renderProspectBoardCard('r2'),/SCHOLARSHIP RECRUIT/);
+});
+
+test('HS offer type defaults by selected recruit and active scholarship offers, with escaped team warning',()=>{
+ const {app,context,elements}=harness();app.DB.recruitingStage='hs';
+ const library=context.NZCFLHSPitchLibrary.clean({});Object.assign(app.currentHSPitches(),{loaded:true,library,draft:library});
+ Object.assign(app.DB.prospects.r2,{rank:596,name:'Patrick Mays'});
+ app.UI.hsBuildName='Patrick Mays';app.findHSPitchPlayer();
+ assert.equal(app.UI.hsBuildType,'walkon');assert.match(app.renderHSPitchBuilder(),/value="walkon" selected/);
+ assert.match(app.renderHSPitchBuilder(),/Build pitchless offer draft/);
+ // An explicit selection survives a normal rerender; another lookup picks a fresh default.
+ app.UI.hsBuildType='scholarship';assert.match(app.renderHSPitchBuilder(),/value="scholarship" selected/);
+ app.findHSPitchPlayer();assert.equal(app.UI.hsBuildType,'walkon');
+ app.DB.offersByProspect.r2=[{team:'Alabama',text:'Scholarship'},{team:'Alabama',text:'Scholarship'},{team:'<Test & Team>',text:'Scholarship'},{team:'USC',text:'Scholarship',rescinded:true},{team:'Hawaii',text:'Walk-On'}];
+ const warned=app.renderHSPitchBuilder();
+ assert.equal(app.UI.hsBuildType,'scholarship');assert.match(warned,/rb-hs-scholarship-warning/);
+ assert.match(warned,/They have scholarship offers from &lt;Test &amp; Team&gt;, Alabama\./);
+ assert.doesNotMatch(warned,/<Test|Build pitchless offer draft/);
+ app.UI.hsBuildName=app.DB.prospects.r3.name;app.findHSPitchPlayer();assert.equal(app.UI.hsBuildType,'scholarship');
+ // Opening the recruit directly gets the same default without a name lookup.
+ app.UI.submitTargetId='r2';app.DB.offersByProspect.r2=[];
+ assert.match(app.renderHSPitchBuilder(app.DB.prospects.r2),/value="walkon" selected/);
+ elements['rb-sheet-text']={value:'Keep my draft'};elements['rb-hs-build-type']={value:'scholarship'};
+ app.bindHSPitches();elements['rb-hs-build-type'].onchange();
+ assert.equal(app.readOfferDraft().text,'Keep my draft');assert.equal(app.UI.hsBuildType,'scholarship');
+});
+
+test('HS pitchless draft builds without a pitch library and preserves selected visits and existing drafts',()=>{
+ const {app,context,elements}=harness();app.DB.recruitingStage='hs';
+ Object.assign(app.DB.prospects.r2,{rank:596,name:'Patrick Mays',values:{}});app.UI.submitTargetId='r2';
+ Object.assign(app.currentHSPitches(),{loading:false,loaded:false,error:'Offline'});
+ elements['rb-sheet-text']={value:'',focus(){}};elements['rb-submit-error']={textContent:''};
+ const html=app.renderHSPitchBuilder(app.DB.prospects.r2);
+ assert.match(html,/id="rb-build-hs-pitchless">/);
+ app.buildHSPitchDraft(true);
+ assert.equal(elements['rb-sheet-text'].value,'Michigan State offers Patrick Mays\nWalk-On');
+ assert.equal(app.readOfferDraft().text,elements['rb-sheet-text'].value);
+ assert.equal(app.extractPromises(elements['rb-sheet-text'].value).length,0);
+ assert.equal(app.parseOfferSheet(elements['rb-sheet-text'].value).rank,596);
+ assert.equal(app.DB.offersByProspect.r2,undefined);
+ context.window.confirm=()=>false;elements['rb-sheet-text'].value='Personalized text';app.buildHSPitchDraft(true);
+ assert.equal(elements['rb-sheet-text'].value,'Personalized text');
+ context.window.confirm=()=>true;app.UI.hsVisits={coach:true,campus:true,week:'12',opponent:''};app.buildHSPitchDraft(true);
+ assert.match(elements['rb-sheet-text'].value,/Walk-On\n\nCoach Visit\nCampus Visit Week 12$/);
+ assert.equal(app.UI.hsVisitsDirty,false);
+ app.DB.prospects.r2.rank=500;app.buildHSPitchDraft(true);assert.match(elements['rb-submit-error'].textContent,/Choose Walk-On/);
+ app.DB.prospects.r2.rank=596;app.DB.prospects.r2.commitTeam='Hawaii';app.buildHSPitchDraft(true);assert.match(elements['rb-submit-error'].textContent,/already committed/);
+});
+
+test('HS pitchless drafts disambiguate shared names and normal build clicks still use saved paragraphs',()=>{
+ const {app,context,elements}=harness();app.DB.recruitingStage='hs';
+ app.DB.prospects={r596:{id:'r596',rank:596,name:'Patrick Mays',position:'CB',values:{coach:1,winning:.8,campus:.6}},r900:{id:'r900',rank:900,name:'Patrick Mays',position:'QB'}};
+ app.UI.hsBuildName='Patrick Mays';app.UI.hsBuildPosition='CB';app.UI.hsLookupFailures=2;app.findHSPitchPlayer();
+ elements['rb-sheet-text']={value:'',focus(){}};elements['rb-submit-error']={textContent:''};
+ app.buildHSPitchDraft(true);assert.equal(elements['rb-sheet-text'].value,'Michigan State offers #596 Patrick Mays\nWalk-On');
+ assert.equal(app.parseOfferSheet(elements['rb-sheet-text'].value).rank,596);
+ const library=context.NZCFLHSPitchLibrary.clean({paragraphs:{coach:'Coach pitch.',winning:'Winning pitch.',campus:'Campus pitch.'}});
+ Object.assign(app.currentHSPitches(),{loaded:true,library,draft:library});
+ elements['rb-build-hs-pitch']={};elements['rb-build-hs-pitchless']={};context.window.confirm=()=>true;
+ app.bindHSPitches();elements['rb-build-hs-pitch'].onclick({type:'click'});assert.match(elements['rb-sheet-text'].value,/Coach:\nCoach pitch\./);
+ elements['rb-build-hs-pitchless'].onclick({type:'click'});assert.doesNotMatch(elements['rb-sheet-text'].value,/Coach pitch/);
+});
+
 test('HS phrase dropdowns appear in context and only chosen wording reaches the draft',()=>{
  const {app,context,elements}=harness();app.DB.recruitingStage='hs';
  Object.assign(app.DB.prospects.r1,{commitTeam:'',values:{proPotential:1,winning:.8,coach:.6}});
@@ -1504,6 +1588,67 @@ test('HS pasted top-500 offer submits scholarship with current edited body',asyn
  assert(sent.text.includes('Scholarship'));assert(!sent.text.includes('Walk-On'));assert(sent.text.includes('My latest edited promise.'));
  assert.equal(app.UI.hsLookupFailures,0);assert.equal(app.UI.hsBuildPosition,'');assert.equal(app.UI.hsBuildName,'');assert.equal(app.UI.hsBuildProspect,null);
  assert(!app.renderHSPitchBuilder().includes('Position (to distinguish matching names)'));
+});
+function visitDraftFixture(text='Michigan State offers #2 Morgan Baker\n\nScholarship\n\nCampus Visit\n\nTradition:\nMy unchanged custom pitch.'){
+ const h=harness(),{app,context,elements}=h;
+ context.AbortController=AbortController;context.crypto=require('node:crypto').webcrypto;
+ app.DB.recruitingStage='hs';app.DB.currentWeek=12;app.UI.submitTargetId='r2';app.UI.showSubmitModal=true;
+ elements['rb-sheet-text']={value:text,focus(){}};elements['rb-submit-error']={textContent:''};
+ app.captureOfferDraft();const visits=app.hsBuilderVisits(app.DB.prospects.r2);
+ elements['rb-hs-visit-week']={value:visits.week};elements['rb-hs-visit-opponent']={value:visits.opponent};
+ app.bindHSPitches();
+ let sent;
+ context.fetch=async(url,options)=>{sent=JSON.parse(options.body);return {ok:true,json:async()=>({ok:true,prospectId:'r2',offer:{id:'saved',team:'Michigan State',text:sent.text}})};};
+ return {...h,sent:()=>sent};
+}
+test('Post offer uses the visible week 12 without requiring Apply visits or rebuilding the pitch',async()=>{
+ for(const inputEvent of [true,false]){
+  const h=visitDraftFixture(),{app,elements}=h;
+  elements['rb-submit-error'].textContent='Enter the campus visit week';
+  elements['rb-hs-visit-week'].value='12';if(inputEvent)elements['rb-hs-visit-week'].oninput();
+  if(inputEvent)assert.equal(elements['rb-submit-error'].textContent,'');
+  await app.submitHighSchoolOffer(elements['rb-sheet-text'].value);
+  assert.match(h.sent().text,/Campus Visit Week 12\n\nTradition:/);
+  assert.ok(h.sent().text.endsWith('My unchanged custom pitch.'));
+  assert.equal(app.UI.hsVisitsDirty,false);
+ }
+});
+test('generic campus visits post after the current week without absorbing the next pitch heading',async()=>{
+ const h=visitDraftFixture(),{app,elements}=h;app.DB.currentWeek=15;
+ const before=elements['rb-sheet-text'].value;
+ assert.match(app.renderHSPitchBuilder(app.DB.prospects.r2),/Week \(optional\)/);
+ assert.match(app.renderHSPitchBuilder(app.DB.prospects.r2),/generic campus visit/);
+ await app.submitHighSchoolOffer(before);
+ assert.equal(h.sent().text,before);
+ const visits=app.parseOfferSheet(h.sent().text).visits;
+ assert.equal(visits.campus,true);assert.equal(visits.campusLabel,'');
+ const summary=app.renderProspectVisits([{team:'Michigan State',text:before}]);
+ assert.match(summary,/Generic<\/strong>/);assert.doesNotMatch(summary,/title="Tradition/);
+});
+test('visits typed directly into the offer remain authoritative when builder controls are unchanged',async()=>{
+ const text='Michigan State offers #2 Morgan Baker\n\nScholarship\n\nCampus Visit Week 12\n\nMy original pitch.';
+ const h=visitDraftFixture(text),{app,elements}=h;
+ elements['rb-sheet-text'].value=text.replace('Week 12','Week 13');app.captureOfferDraft();
+ await app.submitHighSchoolOffer(elements['rb-sheet-text'].value);
+ assert.match(h.sent().text,/Campus Visit Week 13/);
+});
+test('generic visit controls support opponent-only visits and reject invalid number input',()=>{
+ const {app,elements}=visitDraftFixture();
+ elements['rb-hs-visit-opponent'].value='USC';elements['rb-hs-visit-opponent'].oninput();
+ app.applyHSVisits();assert.match(elements['rb-sheet-text'].value,/Campus Visit vs\. USC\n\nTradition:/);
+ elements['rb-hs-visit-week'].validity={badInput:true};
+ const before=elements['rb-sheet-text'].value;app.applyHSVisits();
+ assert.match(elements['rb-submit-error'].textContent,/between 1 and 99/);assert.equal(elements['rb-sheet-text'].value,before);
+});
+test('generic campus visit edit stays enabled and a future scheduled week can be cleared',async()=>{
+ const {app}=harness();app.DB.recruitingStage='hs';app.DB.currentWeek=12;
+ app.DB.offersByProspect.r2=[{id:'o1',team:'Michigan State',text:'Scholarship\nCampus Visit\n\nPitch.',visits:{campus:true,campusLabel:''}}];
+ app.UI.editOfferTarget={prospectId:'r2',offerId:'o1'};
+ const html=app.renderEditOfferModal();assert.match(html,/Week and opponent are optional/);
+ assert.doesNotMatch(html.match(/<input[^>]+id="rb-edit-campus-label"[^>]*>/)[0],/disabled/);
+ const o=app.DB.offersByProspect.r2[0];o.visits.campusLabel='Week 12';o.text='Scholarship\nCampus Visit Week 12\n\nPitch.';
+ await app.saveOfferEdit({campus:true,coach:false,campusLabel:''},{campus:true});
+ assert.equal(o.visits.campus,true);assert.equal(o.visits.campusLabel,'');assert.match(o.text,/Campus Visit\n\nPitch\./);
 });
 test('request timeout covers a stalled response body',async()=>{
  const {app,context}=harness();context.AbortController=AbortController;context.setTimeout=setTimeout;context.clearTimeout=clearTimeout;
