@@ -3040,7 +3040,7 @@ async function readCprBoard(){
 function canQuickOfferWalkon(p){
   if (!SESSION?.team || !p || !DB.prospects[p.id] || p.commitTeam ||
     !DB.threads.some(t=>(t.prospectIds || []).includes(p.id)) || findAnyOfferForTeam(p.id, SESSION.team)) return false;
-  if (recruitingStage() === 'hs') return Number(p.rank)>500 && !hsScholarshipTeams(p).length;
+  if (recruitingStage() === 'hs') return Number(p.rank)>500;
   return recruitingStage() === 'cpr' && !isPitchRecruit(p) && !NZCFLCprRules.scholarshipRecruit(p, DB.offersByProspect[p.id] || []);
 }
 function quickWalkonText(p){

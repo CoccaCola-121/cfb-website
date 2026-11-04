@@ -32,8 +32,7 @@ export async function onRequestPost({request,env,waitUntil}){
    if(pid && !p)return json({ok:false,error:'This player is no longer on the board.'},{status:400});
    if(p?.commitTeam)return json({ok:false,error:'This player has committed.'},{status:400});
    if(p && (state.offersByProspect?.[pid] || []).some(o=>teamKey(o.team)===teamKey(user.team)))return json({ok:false,error:'Your team already offered this player.'},{status:400});
-   if(body.quick && (!p || !(Number(p.rank)>500) || !(state.threads || []).some(t=>(t.prospectIds || []).includes(pid)) ||
-    (state.offersByProspect?.[pid] || []).some(o=>!o.rescinded && globalThis.NZCFLCprRules.scholarshipOffer(o))))return json({ok:false,error:'This player is no longer eligible for a quick walk-on offer. Refresh the player to review their offers.'},{status:409});
+   if(body.quick && (!p || !(Number(p.rank)>500) || !(state.threads || []).some(t=>(t.prospectIds || []).includes(pid))))return json({ok:false,error:'This player is no longer eligible for a quick walk-on offer. Refresh the player to review their offers.'},{status:409});
    const text=body.quick?globalThis.NZCFLHSPitchLibrary.buildPitchless(user.team,p).text:body.text;
    const error=globalThis.NZCFLTransferRules.pitchLimitError(text,p,'hs') || (p && globalThis.NZCFLWalkonLimit.error(state,p,{team:user.team,text}));
    if(error)return json({ok:false,error},{status:400});

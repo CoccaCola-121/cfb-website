@@ -1432,8 +1432,10 @@ test('quick HS walk-ons confirm a numbered offer, preserve unrelated drafts, and
  app.UI.submitTargetId='r3';elements['rb-sheet-text']={value:'Keep my separate draft'};app.captureOfferDraft();
  app.UI.hsVisitsDirty=true;app.UI.hsVisits={campus:true,week:'12'};
  assert.equal(app.canQuickOfferWalkon(app.DB.prospects.r2),true);
- app.DB.offersByProspect.r2=[{team:'USC',text:'Scholarship'}];assert.equal(app.canQuickOfferWalkon(app.DB.prospects.r2),false);
+ app.DB.offersByProspect.r2=[{team:'USC',text:'Scholarship'}];assert.equal(app.canQuickOfferWalkon(app.DB.prospects.r2),true);
+ assert.match(app.renderProspectBoardCard('r2'),/SCHOLARSHIP RECRUIT/);assert.match(app.renderQuickWalkon(app.DB.prospects.r2),/data-quick-walkon="r2"/);
  app.DB.offersByProspect.r2[0].rescinded=true;assert.equal(app.canQuickOfferWalkon(app.DB.prospects.r2),true);
+ app.DB.offersByProspect.r2[0].rescinded=false;
  app.requestQuickWalkon('r2');assert.match(app.renderQuickWalkonConfirm(),/Michigan State offers #596 Patrick Mays/);
  let sent;
  context.fetch=async(url,options)=>{sent=JSON.parse(options.body);assert.equal(url,'/api/offers/high-school');return {ok:true,json:async()=>({ok:true,prospectId:'r2',offer:{id:'saved',team:'Michigan State',text:sent.text,offerType:'walkon'}})};};
@@ -1442,8 +1444,8 @@ test('quick HS walk-ons confirm a numbered offer, preserve unrelated drafts, and
  assert.deepEqual(sent.promises,[]);assert.equal(app.UI.submitTargetId,'r3');assert.equal(app.UI.hsVisitsDirty,true);
  assert.equal(app.readOfferDraft().text,'Keep my separate draft');assert.equal(app.canQuickOfferWalkon(app.DB.prospects.r2),false);
  app.DB.offersByProspect.r2=[];
- context.fetch=async()=>({ok:false,status:409,json:async()=>({ok:false,error:'Player now has scholarship offers.'})});
- await app.quickOfferWalkon('r2');assert.match(app.UI.lastSummary.errorText,/scholarship offers/);assert.equal(app.UI.submitting,false);
+ context.fetch=async()=>({ok:false,status:409,json:async()=>({ok:false,error:'This player has committed.'})});
+ await app.quickOfferWalkon('r2');assert.match(app.UI.lastSummary.errorText,/committed/);assert.equal(app.UI.submitting,false);
  app.DB.prospects.r2.rank=500;assert.equal(app.canQuickOfferWalkon(app.DB.prospects.r2),false);
 });
 

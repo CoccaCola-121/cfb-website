@@ -60,11 +60,10 @@ test('quick HS offers use the authoritative numbered header, omit injected visit
  assert.equal((await f.submit('Untrusted header',payload)).status,200);
  assert.equal((await f.read()).offersByProspect.r71.length,1);
 });
-test('quick HS offers reject scholarships, hidden players, closed boards, duplicates, commitments and full walk-on classes',async t=>{
+test('quick HS offers enforce rank, release, offer window, duplicate, commitment and walk-on limits',async t=>{
  const scenarios=[
   seed=>{seed.prospects.r71.rank=500;},
   seed=>{seed.threads=[];},
-  seed=>{seed.offersByProspect.r71=[{team:'USC',text:'Scholarship'}];},
   seed=>{seed.offersLocked=true;},
   seed=>{seed.prospects.r71.commitTeam='USC';},
   seed=>{seed.offersByProspect.r71=[{team:'Boston College',text:'Walk-On',rescinded:true}];},
@@ -77,9 +76,15 @@ test('quick HS offers reject scholarships, hidden players, closed boards, duplic
   assert(response.status>=400 && response.status<500,await response.clone().text());
   assert.deepEqual((await f.read()).offersByProspect.r71 || [],before);
  }
- const seed=state();seed.prospects.r71.rank=501;seed.threads=[{id:'two-star',prospectIds:['r71']}];
- seed.offersByProspect.r71=[{team:'USC',text:'Scholarship',rescinded:true}];
- assert.equal((await (await fixture(t,seed)).submit('Walk-On',{quick:true})).status,200);
+ for(const rescinded of [false,true]){
+  const seed=state();seed.prospects.r71.rank=501;seed.threads=[{id:'two-star',prospectIds:['r71']}];
+  const scholarship={id:'usc-scholarship',team:'USC',text:'Scholarship',rescinded};
+  seed.offersByProspect.r71=[scholarship];
+  const f=await fixture(t,seed),response=await f.submit('Walk-On',{quick:true});
+  assert.equal(response.status,200,await response.clone().text());
+  const saved=(await f.read()).offersByProspect.r71;
+  assert.deepEqual(saved[0],scholarship);assert.equal(saved[1].offerType,'walkon');assert.equal(saved[1].rescinded,undefined);
+ }
 });
 test('visit editor adds a generic visit, can schedule or clear a future week, and does not refund usage',async t=>{
  const seed=state();seed.offersByProspect.r71=[{id:'o1',team:'Boston College',text:text('').replace(/\n{3,}/g,'\n\n'),visits:{coach:false,campus:false,campusLabel:''}}];
