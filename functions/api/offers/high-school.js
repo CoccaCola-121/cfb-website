@@ -3,6 +3,7 @@ import '../../../offer-window.js';
 import '../../../walkon-limit.js';
 import '../../../transfer-rules.js';
 import '../../../visit-rules.js';
+import '../../../hs-pitch-library.js';
 import {json,getCurrentUser} from '../../_lib/auth.js';
 import {teamKey} from '../../_lib/teams-util.js';
 import {readLeagueState,writeLeagueState} from '../../_lib/league-state.js';
@@ -31,10 +32,13 @@ export async function onRequestPost({request,env,waitUntil}){
    if(pid && !p)return json({ok:false,error:'This player is no longer on the board.'},{status:400});
    if(p?.commitTeam)return json({ok:false,error:'This player has committed.'},{status:400});
    if(p && (state.offersByProspect?.[pid] || []).some(o=>teamKey(o.team)===teamKey(user.team)))return json({ok:false,error:'Your team already offered this player.'},{status:400});
-   const error=globalThis.NZCFLTransferRules.pitchLimitError(body.text,p,'hs') || (p && globalThis.NZCFLWalkonLimit.error(state,p,{team:user.team,text:body.text}));
+   if(body.quick && (!p || !(Number(p.rank)>500) || !(state.threads || []).some(t=>(t.prospectIds || []).includes(pid)) ||
+    (state.offersByProspect?.[pid] || []).some(o=>!o.rescinded && globalThis.NZCFLCprRules.scholarshipOffer(o))))return json({ok:false,error:'This player is no longer eligible for a quick walk-on offer. Refresh the player to review their offers.'},{status:409});
+   const text=body.quick?globalThis.NZCFLHSPitchLibrary.buildPitchless(user.team,p).text:body.text;
+   const error=globalThis.NZCFLTransferRules.pitchLimitError(text,p,'hs') || (p && globalThis.NZCFLWalkonLimit.error(state,p,{team:user.team,text}));
    if(error)return json({ok:false,error},{status:400});
    // Derive visits from text; do not trust a caller to omit them to bypass limits.
-   const visits={coach:/coach\s+visit/i.test(body.text),...globalThis.NZCFLVisitRules.campusFromText(body.text)};
+   const visits={coach:/coach\s+visit/i.test(text),...globalThis.NZCFLVisitRules.campusFromText(text)};
    if(visits.campus){
     const normalized=globalThis.NZCFLVisitRules.normalizeCampusLabel(visits.campusLabel);
     if(!normalized.ok)return json({ok:false,error:'Enter a campus visit week from 1 to 99, or leave it blank for a generic visit. Opponent is optional.'},{status:400});
@@ -43,8 +47,9 @@ export async function onRequestPost({request,env,waitUntil}){
    const own=Object.values(state.offersByProspect || {}).flat().filter(o=>teamKey(o.team)===teamKey(user.team));
    if(p && visits.coach && own.filter(o=>o.visits?.coach).length>=10)return json({ok:false,error:'Coach visit limit already reached (10/10).'},{status:400});
    if(p && visits.campus && own.filter(o=>o.visits?.campus).length>=17)return json({ok:false,error:'Campus visit limit already reached (17/17).'},{status:400});
-   const promises=(Array.isArray(body.promises)?body.promises:[]).slice(0,3).map((v,i)=>({id:id+'_pr'+i,text:String(v?.text || ''),title:String(v?.title || v?.category || 'other'),category:String(v?.category || v?.title || 'other')}));
-   const offer={id,requestId:body.requestId,team:user.team,coach:user.displayName || user.username || '',text:body.text,promises,visits,createdAt:receivedAt};
+   const promises=(!body.quick && Array.isArray(body.promises)?body.promises:[]).slice(0,3).map((v,i)=>({id:id+'_pr'+i,text:String(v?.text || ''),title:String(v?.title || v?.category || 'other'),category:String(v?.category || v?.title || 'other')}));
+   const offer={id,requestId:body.requestId,team:user.team,coach:user.displayName || user.username || '',text,promises,visits,createdAt:receivedAt};
+   if(body.quick)offer.offerType='walkon';
    const visitError=globalThis.NZCFLVisitRules.error(state,offer);
    if(visitError)return json({ok:false,error:visitError},{status:400});
    let unmatched;

@@ -35,11 +35,15 @@ export async function onRequestPost({request,env,waitUntil}){
   const p=state?.prospects?.[body.prospectId];
   const offer=state?.offersByProspect?.[body.prospectId]?.find(o=>o.id===body.offerId);
   if(!p || !offer || teamKey(offer.team)!==teamKey(user.team))return json({ok:false,error:'Offer not found for your team.'},{status:403});
-  if(offer.rescinded || p.commitTeam || globalThis.NZCFLOfferWindow.locked(state))return json({ok:false,error:'This offer can no longer be changed.'},{status:409});
+  // A number-only correction cannot change the offer's terms or eligibility.
+  if(body.action!=='fix-number' && (offer.rescinded || p.commitTeam || globalThis.NZCFLOfferWindow.locked(state)))return json({ok:false,error:'This offer can no longer be changed.'},{status:409});
   if(offer.text!==body.expectedText)return json({ok:false,error:'This offer changed. Refresh it before trying again.'},{status:409});
   let changes;
   const beforeText=offer.text;
-  if(body.action==='correct-body'){
+  if(body.action==='fix-number'){
+    offer.text=globalThis.NZCFLOfferAmendments.fixMissingNumber(offer,p,state.recruitingStage);
+    changes=['Added missing recruit number #'+p.rank+' to the offer header.'];
+  }else if(body.action==='correct-body'){
     if(user.discordId!=='155841820696248320')return json({ok:false,error:'Only this offer’s coach can use this correction.'},{status:403});
     offer.text=globalThis.NZCFLOfferAmendments.correctBody(offer,p,state.recruitingStage,body.pitch);
     if(offer.text===beforeText)throw Error('No pitch changes to save.');

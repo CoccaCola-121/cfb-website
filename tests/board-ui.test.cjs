@@ -13,7 +13,7 @@ const source = script.slice(0, boot) + `
   globalThis.app = { DB, UI, importEarlyDeclarees, renderEarlyDeclareesSettings, expireSuspendedRequests, saveSuspendedOffer, restoreSuspendedOffer, renderProspectDetail, renderProspectVisits, syncLeagueState, syncSubmitModalLock, offerRequest, watchlistNumbers, renderWatchlist, submitHighSchoolOffer, ownOfferTypeBadge, renderOwnTypeFilter, mergeLeagueState, renderOfferAmendments, captureOfferDraft, readOfferDraft, clearOfferDraft, offerDraftKey, applyConditionalRescinds, readRescindRuleForm, validateRescindRuleDraft, requestQuickWalkon, renderQuickWalkonConfirm, canQuickOfferWalkon, quickOfferWalkon, renderQuickWalkon, renderProspectBoardCard, scheduleSummaryCountdown, dismissSummaryBanner, bindFloatingSubmit, extractPromises, cleanDisplayPromises, readCprBoard, updateBucksEntries, renderBucksSettings, renderCprProfile, cprPreviousSchool, ensureCprScholarshipThreads, renderAutoCommitSettings, stageAutoCommits, readScholarshipCapacity, buildPromiseArchive, parseCsvRows, offerCountForProspect, refreshScholarshipHistory, submitCprOffer, renderSubmitModal, createCprPlayer, loadClassData, resetOfferWindow, setOffersLocked, offersLocked, pendingCommitChanges, restoreSettingsDraft, renderOfferBlock, renderRescindFilterFields, renderVisitLedger, visibleBoardProspectIds, setRecruitingStage, requestReset, approveDangerReset, beginSettingsDraft, hasSettingsChanges, canLeaveSettings, saveSettingsChanges, saveDBNow, leagueStatePayload, mergeSettingsValue, updateCommitsFromSheet, runBackupNow, setTransferFilter, renderTransferFilters, renderClassSetup, requestManualCommitOverride, applyManualCommitOverride, requestClearCommit, clearManualCommitOverride, applyManualCommitOverrides, clearRecruitingBoard, findProspectFromSheetRow, transferCardStyle, parseFullClass, prospectFromRosterRow, confirmTransferImport, releaseSingleStageBoard, addOfferDirect, render, renderNav, navigateTo, applyRoute, setReady(){ dbReady = true; sessionReady = true; }, renderFeed, renderBoardSearchResults, renderTeamsPage,
     renderThreadProspectList, renderProspectDetail, builtInTeamBranding, getTeamBranding, activeTeamBrands,
     mobileRecruitName, renderRecruitName, renderMyOffers, renderCommitsForTeam, renderTeamOffers, renderConditionalRescinds, renderRecruitValues, teamBorderColor, bindEvents, applyDefaultClassData, releaseWave1, releaseWave2,
-    syncHSVisitDraft, renderEditOfferModal, saveOfferEdit, currentHSPitches, findHSPitchPlayer, renderHSPitchEditor, renderHSPitchBuilder, buildHSPitchDraft, applyHSVisits, hsBuilderVisits, parseOfferSheet, bindHSPitches, fitHSPitchOptions,
+    openHeaderEdit, renderHeaderEditModal, saveHeaderEdit, syncHSVisitDraft, renderEditOfferModal, saveOfferEdit, currentHSPitches, findHSPitchPlayer, renderHSPitchEditor, renderHSPitchBuilder, buildHSPitchDraft, applyHSVisits, hsBuilderVisits, parseOfferSheet, bindHSPitches, fitHSPitchOptions,
     setSession(value){ SESSION = value; } };
 })();`;
 
@@ -1202,7 +1202,7 @@ test('HS pitchless draft builds without a pitch library and preserves selected v
  const html=app.renderHSPitchBuilder(app.DB.prospects.r2);
  assert.match(html,/id="rb-build-hs-pitchless">/);
  app.buildHSPitchDraft(true);
- assert.equal(elements['rb-sheet-text'].value,'Michigan State offers Patrick Mays\nWalk-On');
+ assert.equal(elements['rb-sheet-text'].value,'Michigan State offers #596 Patrick Mays\nWalk-On');
  assert.equal(app.readOfferDraft().text,elements['rb-sheet-text'].value);
  assert.equal(app.extractPromises(elements['rb-sheet-text'].value).length,0);
  assert.equal(app.parseOfferSheet(elements['rb-sheet-text'].value).rank,596);
@@ -1424,6 +1424,43 @@ test('quick walk-on offers use the exact format and only existing eligible CPR t
   assert.equal(app.DB.threads.length,2);
 });
 
+
+test('quick HS walk-ons confirm a numbered offer, preserve unrelated drafts, and surface server eligibility changes',async()=>{
+ const {app,context,elements}=harness();app.DB.recruitingStage='hs';
+ Object.assign(app.DB.prospects.r2,{rank:596,name:'Patrick Mays'});
+ context.window.location.protocol='https:';context.AbortController=AbortController;context.crypto=require('node:crypto').webcrypto;
+ app.UI.submitTargetId='r3';elements['rb-sheet-text']={value:'Keep my separate draft'};app.captureOfferDraft();
+ app.UI.hsVisitsDirty=true;app.UI.hsVisits={campus:true,week:'12'};
+ assert.equal(app.canQuickOfferWalkon(app.DB.prospects.r2),true);
+ app.DB.offersByProspect.r2=[{team:'USC',text:'Scholarship'}];assert.equal(app.canQuickOfferWalkon(app.DB.prospects.r2),false);
+ app.DB.offersByProspect.r2[0].rescinded=true;assert.equal(app.canQuickOfferWalkon(app.DB.prospects.r2),true);
+ app.requestQuickWalkon('r2');assert.match(app.renderQuickWalkonConfirm(),/Michigan State offers #596 Patrick Mays/);
+ let sent;
+ context.fetch=async(url,options)=>{sent=JSON.parse(options.body);assert.equal(url,'/api/offers/high-school');return {ok:true,json:async()=>({ok:true,prospectId:'r2',offer:{id:'saved',team:'Michigan State',text:sent.text,offerType:'walkon'}})};};
+ app.UI.pendingQuickWalkon=null;await app.quickOfferWalkon('r2');
+ assert.equal(sent.prospectId,'r2');assert.equal(sent.quick,true);assert.equal(sent.text,'Michigan State offers #596 Patrick Mays\nWalk-On');
+ assert.deepEqual(sent.promises,[]);assert.equal(app.UI.submitTargetId,'r3');assert.equal(app.UI.hsVisitsDirty,true);
+ assert.equal(app.readOfferDraft().text,'Keep my separate draft');assert.equal(app.canQuickOfferWalkon(app.DB.prospects.r2),false);
+ app.DB.offersByProspect.r2=[];
+ context.fetch=async()=>({ok:false,status:409,json:async()=>({ok:false,error:'Player now has scholarship offers.'})});
+ await app.quickOfferWalkon('r2');assert.match(app.UI.lastSummary.errorText,/scholarship offers/);assert.equal(app.UI.submitting,false);
+ app.DB.prospects.r2.rank=500;assert.equal(app.canQuickOfferWalkon(app.DB.prospects.r2),false);
+});
+
+test('Edit Header offers the number-only repair even after commitment and posts the narrow correction action',async()=>{
+ const {app,context,elements}=harness();app.DB.recruitingStage='hs';
+ const p=app.DB.prospects.r2;Object.assign(p,{rank:596,commitTeam:'Michigan State'});
+ const offer={id:'missing',team:'Michigan State',text:'Michigan State offers Morgan Baker\nWalk-On\n\nOriginal pitch.'};
+ app.DB.offersByProspect.r2=[offer];app.DB.offersLocked=true;
+ assert.match(app.renderOfferAmendments(offer,p),/Edit offer header/);
+ app.openHeaderEdit('r2','missing');const html=app.renderHeaderEditModal();
+ assert.match(html,/Fix missing number/);assert.match(html,/offers #596 Morgan Baker/);assert.match(html,/readonly/);assert.doesNotMatch(html,/id="rb-save-header-edit"/);
+ elements['rb-fix-header-number']={};app.bindEvents();
+ let sent;context.fetch=async(url,options)=>{sent=JSON.parse(options.body);return {ok:true,json:async()=>({ok:true,state:{...app.DB,offersByProspect:{r2:[{...offer,text:offer.text.replace('offers Morgan','offers #596 Morgan')}]}}})};};
+ await elements['rb-fix-header-number'].onclick();
+ assert.equal(sent.action,'fix-number');assert.equal(sent.expectedText,offer.text);assert.equal(app.UI.headerEdit,null);
+ assert.doesNotMatch(app.renderOfferAmendments(app.DB.offersByProspect.r2[0],p),/Edit offer header/);
+});
 
 test('relative overall rules save without a number and use lowest commit in the browser', () => {
  const {app,elements}=harness();

@@ -107,11 +107,11 @@
   const text=[header,type==='scholarship'?'Scholarship':'Walk-On',...visitLines(visits),...values.map(f=>f.label+':\n'+stripHeading(resolveParagraph(library,f.key,selected),f))].join('\n\n');
   return {text,values};
  }
- function buildPitchless(team,prospect,visits={},includeRank=false){
+ function buildPitchless(team,prospect,visits={}){
   if(!team || !prospect?.name)throw Error('Choose a High School player first.');
   if(!canWalkon(prospect))throw Error('High School recruits ranked 1–500 require a scholarship offer.');
   const lines=visitLines(visits);
-  return {text:team+' offers '+(includeRank?'#'+prospect.rank+' ':'')+prospect.name+'\nWalk-On'+(lines.length?'\n\n'+lines.join('\n'):''),values:[]};
+  return {text:team+' offers #'+prospect.rank+' '+prospect.name+'\nWalk-On'+(lines.length?'\n\n'+lines.join('\n'):''),values:[]};
  }
  root.NZCFLHSPitchLibrary=Object.freeze({fields,clean,importRows,topValues,build,buildPitchless,findPlayer,canWalkon,token,addChoice,visitLines});
 })(globalThis);

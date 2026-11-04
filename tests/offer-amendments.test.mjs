@@ -4,6 +4,35 @@ import '../offer-amendments.js';
 import {onRequestPost} from '../functions/api/offers/amend.js';
 import {signSession} from '../functions/_lib/auth.js';
 const A=globalThis.NZCFLOfferAmendments,p={id:'r1',name:'James Brooks',position:'DL'};
+test('missing-number correction adds only the authoritative rank and preserves formatting, visits and pitch',()=>{
+ const player={...p,rank:596};
+ for(const prefix of ['', '\r\n']){
+  const text=prefix+'**Delaware offers James Brooks 60/80 DL**\r\n\r\nWalk-On\r\n\r\nCampus Visit Week 12\r\nPitch about #1.\r\n';
+  const expected=text.replace('offers James','offers #596 James');
+  assert.equal(A.fixMissingNumber({text},player,'hs'),expected);
+  assert.equal(A.missingNumberHeader({text:expected},player,'hs'),'');
+ }
+ for(const [text,rank,stage] of [['Delaware offers #596 James Brooks\nWalk-On',596,'hs'],['Delaware offers 596 James Brooks\nWalk-On',596,'hs'],['Delaware offers James Brooks\nScholarship',596,'hs'],['Delaware offers James Brooks\nWalk-On',500,'hs'],['Delaware offers James Brooks\nWalk-On',596,'cpr']]){
+  assert.throws(()=>A.fixMissingNumber({text},{...player,rank},stage),/does not need/);
+ }
+});
+test('number-only repairs work on closed offers, enforce ownership and stale text, and cannot change terms',async()=>{
+ const player={...p,rank:596,commitTeam:'Delaware'},text='Delaware offers James Brooks\r\nWalk-On\r\n\r\nCampus Visit Week 12\r\nOriginal pitch.';
+ const offer={id:'o1',team:'Delaware',text,visits:{campus:true,campusLabel:'Week 12'},promises:[{text:'Keep this promise.'}],createdAt:1};
+ const state={recruitingStage:'hs',offersLocked:true,prospects:{r1:player},offersByProspect:{r1:[offer]}};
+ const data=new Map([['league:state',state],['discord:user:coach',{discordId:'coach',team:'Delaware'}],['discord:user:other',{discordId:'other',team:'USC'}]]);
+ const env={SESSION_SECRET:'test',AUTH_KV:{get:async key=>structuredClone(data.get(key)||null),put:async(key,value)=>data.set(key,JSON.parse(value))}};
+ const call=async(user,extra={})=>onRequestPost({env,waitUntil(){},request:new Request('https://test/api/offers/amend',{method:'POST',headers:{cookie:'nzcfl_session='+await signSession(env,{discordId:user}),'content-type':'application/json'},body:JSON.stringify({prospectId:'r1',offerId:'o1',expectedText:text,action:'fix-number',headerLine:'Injected replacement',pitch:'Injected pitch',...extra})})});
+ assert.equal((await call('other')).status,403);
+ assert.equal((await call('coach',{expectedText:'Old draft'})).status,409);
+ assert.equal((await call('coach',{action:'edit-header'})).status,409);
+ const response=await call('coach');assert.equal(response.status,200,await response.clone().text());
+ const saved=(await response.json()).state.offersByProspect.r1[0];
+ assert.equal(saved.text,text.replace('offers James','offers #596 James'));
+ assert.deepEqual(saved.visits,offer.visits);assert.deepEqual(saved.promises,offer.promises);assert.equal(saved.createdAt,1);
+ assert.equal(saved.editHistory.length,1);assert.match(saved.editHistory[0].changes[0],/#596/);
+ assert.equal((await call('coach',{expectedText:saved.text})).status,400);
+});
 test('headers are only added; pitch text remains byte-for-byte unchanged',()=>{
  const pitch='Playing Time:\r\n\r\nI promise that you will start.\r\n';
  const result=A.amend(pitch,'header','Delaware',p);

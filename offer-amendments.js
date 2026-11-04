@@ -14,6 +14,21 @@
     }
     return {lines,end,offerLine,typeLine,type};
   }
+  function missingNumberHeader(offer,p,stage){
+    if(stage!=='hs' || !Number.isInteger(Number(p?.rank)) || Number(p.rank)<=500 || offer?.offerType==='scholarship')return '';
+    const h=header(offer?.text);
+    if(h.offerLine<0 || h.typeLine<=h.offerLine || h.type!=='walkon')return '';
+    const line=h.lines[h.offerLine],match=/\boffers?\s+/i.exec(line);
+    if(!match || /#\s*\d+\b|^\s*\d+\b/.test(line.slice(match.index+match[0].length)))return '';
+    return line.slice(0,match.index+match[0].length)+'#'+p.rank+' '+line.slice(match.index+match[0].length);
+  }
+  function fixMissingNumber(offer,p,stage){
+    const line=missingNumberHeader(offer,p,stage);
+    if(!line)throw Error('This walk-on offer does not need a recruit number.');
+    const text=String(offer.text),h=header(text);
+    const match=[...text.matchAll(/[^\r\n]*(?:\r\n|\n|\r|$)/g)][h.offerLine];
+    return text.slice(0,match.index)+line+text.slice(match.index+match[0].replace(/(?:\r\n|\n|\r)$/,'').length);
+  }
   function amend(text,action,team,p){
     text=String(text || '');const h=header(text);
     if(action==='header'){
@@ -108,5 +123,5 @@
     const h=header(o.text);
     return h.lines.slice(0,h.end).join('\n')+'\n'+body;
   }
-  root.NZCFLOfferAmendments={canCorrectBody,correctBody,header,amend,allowed,canAddMissingPitch,addMissingPitch,insertVisit,visitChanges,readableEditChange,canFixVisitPlacement,fixVisitPlacement};
+  root.NZCFLOfferAmendments={missingNumberHeader,fixMissingNumber,canCorrectBody,correctBody,header,amend,allowed,canAddMissingPitch,addMissingPitch,insertVisit,visitChanges,readableEditChange,canFixVisitPlacement,fixVisitPlacement};
 })(globalThis);

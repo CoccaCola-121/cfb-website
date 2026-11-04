@@ -117,7 +117,7 @@ let UI = { view: 'feed', threadId: null, showSubmitModal: false, submitting: fal
            submitTargetId: null, editOfferTarget: null, editError: null, prospectReturnView: 'feed',
            pendingVisitEdit: null, loginStep: 'account', pendingDiscordUser: null,
            teamLinkQuery: '', unavailableTeamKeys: [], teamLinks: {}, teamSearch: '',
-           teamFilterCoached: false, teamsScrollPosition: null, restoreTeamsScroll: false, hideCommittedBoards: false, boardCommitFilter: 'all',
+           teamFilterCoached: false, pageScrollPositions: {}, pageSearches: {}, restorePageScroll: false, hideCommittedBoards: false, boardCommitFilter: 'all',
            teamChangeDiscordId: '', teamChangeTeam: '', teamPending: { unlinks: {}, switches: {}, roles: {} },
            threadSlug: '', teamCommitsTeam: '', teamCommitsSlug: '', teamOffersTeam: '', teamOffersSlug: '', teamCommitsReturn: null,
            brandingStatus: null, brandingError: null, conditionalError: null, conditionalStatus: null,
@@ -296,28 +296,36 @@ function pathForView(view){
   return VIEW_ROUTES[view] || '/prospectboard';
 }
 
-function prepareTeamsScroll(nextView){
-  if (UI.view === 'teams' && nextView !== 'teams') {
-    UI.teamsScrollPosition = { left: window.scrollX || 0, top: window.scrollY || 0, behavior: 'instant' };
-  }
-  UI.restoreTeamsScroll = nextView === 'teams' && UI.view !== 'teams';
+function pageScrollKey(){ return recruitingStage()+':'+pathForView(UI.view); }
+function captureListSearches(){
+  const searches=UI.pageSearches[pageScrollKey()] || {};
+  ['rb-my-offer-search','rb-my-commit-search'].forEach(id=>{
+    const input=document.getElementById(id);if(input)searches[id]=input.value;
+  });
+  UI.pageSearches[pageScrollKey()]=searches;
+}
+function preparePageScroll(nextView){
+  captureListSearches();
+  UI.pageScrollPositions[pageScrollKey()]={left:window.scrollX || 0,top:window.scrollY || 0,behavior:'instant'};
+  UI.restorePageScroll=true;
+  if(nextView==='prospect' && UI.view!=='prospect')UI.prospectReturnView=UI.view;
 }
 
 function applyRoute(route){
   route = route || routeFromPath(window.location.pathname);
   const nextView = route.view || 'feed';
-  prepareTeamsScroll(nextView);
+  preparePageScroll(nextView);
   const nextThreadId = route.threadId || null;
   if (shouldResetBoardFilters(nextView, nextThreadId)) resetBoardFilters();
   if (UI.view !== nextView && UI.adminActionStatus === 'Team changes saved.') UI.adminActionStatus = null;
   UI.view = nextView;
-  UI.threadId = nextThreadId;
-  UI.threadSlug = route.threadSlug || '';
+  UI.threadId = nextThreadId || (nextView==='prospect'?UI.threadId:null);
+  UI.threadSlug = route.threadSlug || (nextView==='prospect'?UI.threadSlug:'');
   UI.prospectId = route.prospectId || null;
-  UI.teamCommitsTeam = route.teamCommitsTeam || '';
-  UI.teamCommitsSlug = route.teamCommitsSlug || '';
-  UI.teamOffersTeam = route.teamOffersTeam || '';
-  UI.teamOffersSlug = route.teamOffersSlug || '';
+  UI.teamCommitsTeam = route.teamCommitsTeam || (nextView==='prospect'?UI.teamCommitsTeam:'');
+  UI.teamCommitsSlug = route.teamCommitsSlug || (nextView==='prospect'?UI.teamCommitsSlug:'');
+  UI.teamOffersTeam = route.teamOffersTeam || (nextView==='prospect'?UI.teamOffersTeam:'');
+  UI.teamOffersSlug = route.teamOffersSlug || (nextView==='prospect'?UI.teamOffersSlug:'');
   UI.teamCommitsReturn = null;
 }
 
@@ -331,7 +339,7 @@ function syncBrowserRoute(replace){
 function navigateTo(view, options){
   options = options || {};
   if (!canLeaveTeamsPage() || !canLeaveSettings(view)) return;
-  prepareTeamsScroll(view);
+  preparePageScroll(view);
   const nextThreadId = options.threadId != null ? options.threadId : (view === 'thread' ? UI.threadId : null);
   if (shouldResetBoardFilters(view, nextThreadId)) resetBoardFilters();
   if (UI.view !== view && UI.adminActionStatus === 'Team changes saved.') UI.adminActionStatus = null;
@@ -3030,10 +3038,13 @@ async function readCprBoard(){
 }
 
 function canQuickOfferWalkon(p){
-  return !!(SESSION && SESSION.team && recruitingStage() === 'cpr' && p && DB.prospects[p.id] &&
-    DB.threads.some(t=>(t.prospectIds || []).includes(p.id)) && !p.commitTeam && !isPitchRecruit(p) &&
-    !NZCFLCprRules.scholarshipRecruit(p, DB.offersByProspect[p.id] || []) &&
-    !findAnyOfferForTeam(p.id, SESSION.team));
+  if (!SESSION?.team || !p || !DB.prospects[p.id] || p.commitTeam ||
+    !DB.threads.some(t=>(t.prospectIds || []).includes(p.id)) || findAnyOfferForTeam(p.id, SESSION.team)) return false;
+  if (recruitingStage() === 'hs') return Number(p.rank)>500 && !hsScholarshipTeams(p).length;
+  return recruitingStage() === 'cpr' && !isPitchRecruit(p) && !NZCFLCprRules.scholarshipRecruit(p, DB.offersByProspect[p.id] || []);
+}
+function quickWalkonText(p){
+  return recruitingStage() === 'hs' ? NZCFLHSPitchLibrary.buildPitchless(SESSION.team,p).text : SESSION.team+' offers '+p.position+' '+p.name+'\n\nWalk-On';
 }
 function canQuickOfferScholarship(p){
   return !!(SESSION && SESSION.team && recruitingStage() === 'cpr' && p && DB.prospects[p.id] &&
@@ -3072,14 +3083,18 @@ function requestQuickWalkon(pid){
 function renderQuickWalkonConfirm(){
   const p=DB.prospects[UI.pendingQuickWalkon];
   if (!p || !SESSION) return '';
-  const text=SESSION.team + ' offers ' + p.position + ' ' + p.name + '\n\nWalk-On';
+  const text=quickWalkonText(p);
   return '<div style="position:fixed;inset:0;background:rgba(0,0,0,.72);display:flex;align-items:center;justify-content:center;z-index:65;"><div class="rb-card" role="dialog" aria-modal="true" aria-labelledby="rb-quick-confirm-title" style="padding:24px;width:460px;max-width:90vw;"><div class="rb-h" id="rb-quick-confirm-title" style="font-size:20px;margin-bottom:16px;">Submit walk-on offer?</div><p style="white-space:pre-wrap;margin:0 0 20px;">' + escapeHtml(text) + '</p><div style="display:flex;justify-content:flex-end;gap:8px;flex-wrap:wrap;"><button class="rb-btn" id="rb-cancel-quick-walkon">Cancel</button><button class="rb-btn rb-btn-gold" id="rb-confirm-quick-walkon">Submit offer</button></div></div></div>';
 }
 
 async function quickOfferWalkon(pid){
   const p=DB.prospects[pid];
   if (!canQuickOfferWalkon(p) || offersLocked() || UI.submitting) return;
-  await submitCprOffer(SESSION.team + ' offers ' + p.position + ' ' + p.name + '\n\nWalk-On', pid);
+  if (recruitingStage() === 'hs') {
+    if(!apiAvailable()){UI.lastSummary={errorText:'Reconnect to submit a quick walk-on offer.'};render();return;}
+    return submitHighSchoolOffer(quickWalkonText(p),pid);
+  }
+  await submitCprOffer(quickWalkonText(p), pid);
 }
 
 let lastOfferWriteAt = 0;
@@ -3178,11 +3193,11 @@ async function submitCprOffer(rawText, quickId, quickType){
   }finally{finishOfferSubmission(quickId);}
 }
 
-async function submitHighSchoolOffer(rawText){
-  rawText=syncHSVisitDraft(rawText);
-  const key=offerDraftKey();captureOfferDraft();
+async function submitHighSchoolOffer(rawText,quickId){
+  if(!quickId)rawText=syncHSVisitDraft(rawText);
+  const key=offerDraftKey();if(!quickId)captureOfferDraft();
   const parsed=parseOfferSheet(rawText);
-  const prospectId=UI.submitTargetId || (parsed?.rank?'r'+parsed.rank:null);
+  const prospectId=quickId || UI.submitTargetId || (parsed?.rank?'r'+parsed.rank:null);
   let text=parsed?.offerText || rawText;
   const player=DB.prospects[prospectId];
   if(player && Number(player.rank)>=1 && Number(player.rank)<=500 && !NZCFLCprRules.scholarshipOffer({text})){
@@ -3190,11 +3205,11 @@ async function submitHighSchoolOffer(rawText){
     const editor=document.getElementById('rb-sheet-text');if(editor){editor.value=text;captureOfferDraft();}
   }
   // Reuse the request across automatic and manual retries, including refreshes.
-  const draft=readOfferDraft();
+  const draft=quickId?{}:readOfferDraft();
   const signature=JSON.stringify([prospectId,text]);
   const requestId=draft.requestSignature===signature && draft.requestId?draft.requestId:crypto.randomUUID();
   Object.assign(draft,{requestSignature:signature,requestId});
-  try{window.localStorage.setItem(key,JSON.stringify(draft));}catch(e){}
+  if(!quickId)try{window.localStorage.setItem(key,JSON.stringify(draft));}catch(e){}
   UI.submitting=true;
   const button=document.getElementById('rb-submit-sheet-btn');
   if(button){button.disabled=true;button.textContent='Posting...';}
@@ -3202,7 +3217,7 @@ async function submitHighSchoolOffer(rawText){
     let data;
     for(let attempt=0;attempt<3;attempt++){
       try{
-        const result=await offerRequest('/api/offers/high-school',{method:'POST',credentials:'include',headers:{'content-type':'application/json'},body:JSON.stringify({requestId,prospectId,text,promises:extractPromises(text)})});
+        const result=await offerRequest('/api/offers/high-school',{method:'POST',credentials:'include',headers:{'content-type':'application/json'},body:JSON.stringify({requestId,prospectId,text,quick:!!quickId,promises:quickId?[]:extractPromises(text)})});
         data=result.data;
         if(!result.response.ok || !data.ok){const error=Error(data.error || 'Could not save your offer.');error.retryable=result.response.status>=500 || result.response.status===429;throw error;}
         if(!data.offer && !data.unmatched)throw Error('The server could not confirm your offer. Check My Offers before retrying.');
@@ -3218,11 +3233,13 @@ async function submitHighSchoolOffer(rawText){
     // the authoritative board instead of accepting a misleading 304.
     DB.updatedAt=null;
     setStored(DB_KEY,JSON.stringify(DB),true);
-    clearOfferDraft(key);
-    Object.assign(UI,{hsLookupFailures:0,hsLookupError:'',hsBuildName:'',hsBuildPosition:'',hsBuildProspect:null,hsBuildTypeKey:null,hsChoiceKey:null,hsChoices:{},hsVisitKey:null,hsVisits:null,hsVisitsDirty:false});
-    UI.showSubmitModal=false;UI.submitTargetId=null;
+    if(!quickId){
+      clearOfferDraft(key);
+      Object.assign(UI,{hsLookupFailures:0,hsLookupError:'',hsBuildName:'',hsBuildPosition:'',hsBuildProspect:null,hsBuildTypeKey:null,hsChoiceKey:null,hsChoices:{},hsVisitKey:null,hsVisits:null,hsVisitsDirty:false});
+      UI.showSubmitModal=false;UI.submitTargetId=null;
+    }
     UI.lastSummary={matched:data.offer?1:0,unmatched:data.unmatched?1:0,total:1,dismissAt:Date.now()+6000};
-  }catch(error){const node=document.getElementById('rb-submit-error');if(node)node.textContent=error.message;}
+  }catch(error){if(quickId)UI.lastSummary={errorText:error.message};else{const node=document.getElementById('rb-submit-error');if(node)node.textContent=error.message;}}
   finally{finishOfferSubmission();if(!UI.showSubmitModal)render();}
 }
 
@@ -3449,7 +3466,8 @@ function syncSubmitModalLock(){
 }
 
 function render(){
-  const pagePosition=(UI.view === 'teams' && UI.restoreTeamsScroll && UI.teamsScrollPosition) || {left:window.scrollX || 0,top:window.scrollY || 0,behavior:'instant'};
+  const pagePosition={left:submitModalLock?submitModalLock.x:(window.scrollX || 0),top:submitModalLock?submitModalLock.y:(window.scrollY || 0),behavior:'instant'};
+  if(!UI.restorePageScroll)captureListSearches();
   const expandedOffers=new Set(Array.from(document.querySelectorAll('[data-offer-key][open]'),el=>el.getAttribute('data-offer-key')));
   const submitScroll=document.getElementById('rb-submit-dialog')?.scrollTop || 0;
   captureRescindDraft();
@@ -3507,13 +3525,18 @@ function render(){
   html += renderBackTopControl();
   root.innerHTML = html;
   document.querySelectorAll('[data-offer-key]').forEach(el=>{el.open=expandedOffers.has(el.getAttribute('data-offer-key'));});
-  if((UI.view === 'teams' || UI.pendingSingleRescind) && !submitModalLock)window.scrollTo(pagePosition);
-  UI.restoreTeamsScroll = false;
+  Object.entries(UI.pageSearches[pageScrollKey()] || {}).forEach(([id,value])=>{const input=document.getElementById(id);if(input)input.value=value;});
   const submitDialog=document.getElementById('rb-submit-dialog');
   if(submitDialog)submitDialog.scrollTop=submitScroll;
   const nextNav = document.getElementById('rb-main-nav');
   if (nextNav) nextNav.scrollLeft = navScrollLeft;
+  if((UI.showSubmitModal || UI.pendingSingleRescind) && !submitModalLock)window.scrollTo(pagePosition);
   bindEvents();
+  if(!submitModalLock && (UI.restorePageScroll || UI.pendingSingleRescind || ['feed','thread','prospect','watchlist','myoffers','mycommits','teamoffers','teamcommits','teams'].includes(UI.view))) {
+    window.scrollTo(UI.restorePageScroll ? (UI.pageScrollPositions[pageScrollKey()] || {left:0,top:0,behavior:'instant'}) : pagePosition);
+    updateBackTopControl();
+  }
+  UI.restorePageScroll=false;
   scheduleSummaryCountdown();
 }
 
@@ -4485,8 +4508,6 @@ function buildHSPitchDraft(pitchless=false){
   if(pitchless){
    if(type!=='walkon')throw Error('Choose Walk-On to build a pitchless offer.');
    built=NZCFLHSPitchLibrary.buildPitchless(SESSION.team,p,visits);
-   // Names shared by two recruits still need an unambiguous submission header.
-   if(findProspectFromOffer(built.text)?.id!==p.id)built=NZCFLHSPitchLibrary.buildPitchless(SESSION.team,p,visits,true);
   }else{
    const state=currentHSPitches();if(!state.loaded)throw Error('Load your saved pitches first.');
    if(JSON.stringify(state.draft)!==JSON.stringify(state.library))throw Error('Save your pitch library changes above before building.');
@@ -5615,9 +5636,10 @@ function renderProspectDetail(){
 }
 
 function renderOfferAmendments(o,p,hideUpgrade){
-  if (!p || !SESSION || teamKey(o.team)!==teamKey(SESSION.team) || o.rescinded || p.commitTeam || offersLocked()) return '';
+  if (!p || !SESSION || teamKey(o.team)!==teamKey(SESSION.team)) return '';
   const h=NZCFLOfferAmendments.header(o.text);
   const attrs=' data-amend-prospect="'+escapeHtml(p.id)+'" data-amend-offer="'+escapeHtml(o.id)+'"';
+  if(o.rescinded || p.commitTeam || offersLocked())return NZCFLOfferAmendments.missingNumberHeader(o,p,recruitingStage())?'<div style="margin-top:12px;"><button class="rb-btn" data-edit-offer-header="1"'+attrs+'>Edit offer header</button></div>':'';
   let buttons='';
   if(SESSION.discordId==='959185641613164604' && NZCFLOfferAmendments.canFixVisitPlacement(o,p,recruitingStage()))buttons+='<button class="rb-btn" data-amend-action="fix-visit-placement"'+attrs+'>Move campus visit above pitch</button>';
   if(SESSION.discordId==='155841820696248320' && NZCFLOfferAmendments.canCorrectBody(o,p,recruitingStage()))buttons+='<button class="rb-btn rb-btn-gold" data-add-missing-pitch="1"'+attrs+'>One-time pitch correction</button>';
@@ -5660,32 +5682,36 @@ function renderUpgradeConfirmModal(){
 }
 function openHeaderEdit(pid,oid){
   const p=DB.prospects[pid],o=findOfferById(pid,oid);
-  if(!p || !o || !SESSION || teamKey(o.team)!==teamKey(SESSION.team) || o.rescinded || p.commitTeam || offersLocked())return;
+  if(!p || !o || !SESSION || teamKey(o.team)!==teamKey(SESSION.team))return;
+  const numberOnly=!!(o.rescinded || p.commitTeam || offersLocked());
+  if(numberOnly && !NZCFLOfferAmendments.missingNumberHeader(o,p,recruitingStage()))return;
   const h=NZCFLOfferAmendments.header(o.text);
   if(h.offerLine<0 || h.typeLine<=h.offerLine)return;
-  UI.headerEdit={prospectId:pid,offerId:oid,expectedText:o.text,line:h.lines[h.offerLine],type:h.type,error:''};render();
+  UI.headerEdit={prospectId:pid,offerId:oid,expectedText:o.text,line:h.lines[h.offerLine],type:h.type,numberOnly,error:''};render();
 }
 function renderHeaderEditModal(){
   const edit=UI.headerEdit || {};
+  const corrected=NZCFLOfferAmendments.missingNumberHeader(findOfferById(edit.prospectId,edit.offerId),DB.prospects[edit.prospectId],recruitingStage());
   return '<div style="position:fixed;inset:0;background:rgba(0,0,0,.72);display:flex;align-items:center;justify-content:center;z-index:65;">' +
   '<div class="rb-card" style="padding:24px;width:560px;max-width:92vw;border-color:var(--gold);">' +
   '<div class="rb-h" style="font-size:20px;margin-bottom:8px;">Edit offer header</div>' +
   '<p style="font-size:13px;color:var(--slate);line-height:1.5;">Correct the opening offer line. The offer type and body stay unchanged. Changes are timestamped in edit history.</p>' +
   '<label style="display:block;font-size:12px;margin:12px 0 5px;" for="rb-header-line">Offer line</label>' +
-  '<input id="rb-header-line" class="rb-input" maxlength="120" value="'+escapeHtml(edit.line || '')+'" placeholder="Michigan State offers K John Smith" />' +
+  '<input id="rb-header-line" class="rb-input" maxlength="120" value="'+escapeHtml(edit.line || '')+'" placeholder="Michigan State offers K John Smith"'+(edit.numberOnly?' readonly':'')+' />' +
+  (corrected?'<div style="margin-top:12px;"><p style="font-size:13px;">Corrected header: '+escapeHtml(corrected)+'</p><button class="rb-btn rb-btn-gold" id="rb-fix-header-number"'+(UI.submitting?' disabled':'')+'>Fix missing number</button></div>':'') +
   (edit.error?'<p role="alert" style="font-size:12px;color:var(--alert);">'+escapeHtml(edit.error)+'</p>':'') +
-  '<div style="display:flex;justify-content:flex-end;gap:8px;margin-top:18px;"><button class="rb-btn" id="rb-cancel-header-edit">Cancel</button><button class="rb-btn rb-btn-gold" id="rb-save-header-edit"'+(UI.submitting?' disabled':'')+'>Save header</button></div></div></div>';
+  '<div style="display:flex;justify-content:flex-end;gap:8px;margin-top:18px;"><button class="rb-btn" id="rb-cancel-header-edit">Cancel</button>'+(edit.numberOnly?'':'<button class="rb-btn rb-btn-gold" id="rb-save-header-edit"'+(UI.submitting?' disabled':'')+'>Save header</button>')+'</div></div></div>';
 }
-async function saveHeaderEdit(){
+async function saveHeaderEdit(fixNumber=false){
  const edit=UI.headerEdit;if(!edit || UI.submitting)return;
- const line=document.getElementById('rb-header-line').value.trim();
+ const line=fixNumber?NZCFLOfferAmendments.missingNumberHeader(findOfferById(edit.prospectId,edit.offerId),DB.prospects[edit.prospectId],recruitingStage()):document.getElementById('rb-header-line').value.trim();
  edit.line=line;
  if(!/^.{1,120}\boffers?\s+\S.+$/i.test(line) || /[\r\n]/.test(line)){edit.error='Enter a single offer line such as Michigan State offers K John Smith.';render();return;}
  const offer=findOfferById(edit.prospectId,edit.offerId);
  if(!offer || offer.text!==edit.expectedText){edit.error='This offer changed. Refresh and try again.';render();return;}
  UI.submitting=true;
  try{
-  const response=await fetch('/api/offers/amend',{method:'POST',credentials:'include',headers:{'content-type':'application/json'},body:JSON.stringify({prospectId:edit.prospectId,offerId:edit.offerId,action:'edit-header',expectedText:edit.expectedText,headerLine:line})});
+  const response=await fetch('/api/offers/amend',{method:'POST',credentials:'include',headers:{'content-type':'application/json'},body:JSON.stringify({prospectId:edit.prospectId,offerId:edit.offerId,action:fixNumber?'fix-number':'edit-header',expectedText:edit.expectedText,headerLine:line})});
   const data=await response.json().catch(function(){throw Error('The server is temporarily unavailable. Your changes were not confirmed; please retry.');});if(!response.ok || !data.ok)throw Error(data.error || 'Could not update the offer header.');
   mergeLeagueState(data.state);UI.headerEdit=null;UI.lastSummary={errorText:'Offer header updated. The body was not changed.',dismissAt:Date.now()+6000};
  }catch(error){edit.error=error.message || 'Could not save header.';}
@@ -6162,7 +6188,8 @@ function bindEvents(){
   const confirmUpgrade=document.getElementById('rb-confirm-upgrade');if(confirmUpgrade)confirmUpgrade.onclick=function(){const pending=UI.pendingUpgrade;UI.pendingUpgrade=null;if(pending)amendOwnOfferConfirmedUpgrade(pending.prospectId,pending.offerId);};
   const cancelHeader=document.getElementById('rb-cancel-header-edit');if(cancelHeader)cancelHeader.onclick=function(){UI.headerEdit=null;render();};
   const headerLine=document.getElementById('rb-header-line');if(headerLine)headerLine.oninput=function(){if(UI.headerEdit)UI.headerEdit.line=headerLine.value;};
-  const saveHeader=document.getElementById('rb-save-header-edit');if(saveHeader)saveHeader.onclick=saveHeaderEdit;
+  const saveHeader=document.getElementById('rb-save-header-edit');if(saveHeader)saveHeader.onclick=()=>saveHeaderEdit();
+  const fixHeaderNumber=document.getElementById('rb-fix-header-number');if(fixHeaderNumber)fixHeaderNumber.onclick=()=>saveHeaderEdit(true);
   document.querySelectorAll('[data-add-missing-pitch]').forEach(button=>{button.onclick=function(e){e.preventDefault();e.stopPropagation();openMissingPitch(button.getAttribute('data-amend-prospect'),button.getAttribute('data-amend-offer'));};});
   const missingPitchText=document.getElementById('rb-missing-pitch-text');if(missingPitchText)missingPitchText.oninput=()=>{if(UI.missingPitchEdit)UI.missingPitchEdit.text=missingPitchText.value;};
   const cancelMissingPitch=document.getElementById('rb-cancel-missing-pitch');if(cancelMissingPitch)cancelMissingPitch.onclick=()=>{if(!UI.submitting){UI.missingPitchEdit=null;render();}};
@@ -6312,7 +6339,6 @@ function bindEvents(){
   document.querySelectorAll('[data-open-thread]').forEach(function(el){
     el.onclick = function(){
       navigateTo('thread', { threadId: el.getAttribute('data-open-thread') });
-      scrollPageTop();
     };
   });
   document.querySelectorAll('[data-watchlist-flag]').forEach(function(el){ el.onclick=function(e){ e.preventDefault(); e.stopPropagation(); toggleWatchlist(el.getAttribute('data-watchlist-flag')); }; });
@@ -6345,7 +6371,6 @@ function bindEvents(){
       e.stopPropagation();
       UI.prospectReturnView = UI.view === 'watchlist' || UI.view === 'myoffers' || UI.view === 'mycommits' || UI.view === 'teamcommits' || UI.view === 'teamoffers' || UI.view === 'thread' ? UI.view : 'feed';
       navigateTo('prospect', { prospectId: el.getAttribute('data-open-prospect') });
-      scrollPageTop();
     };
   });
   document.querySelectorAll('[data-close-modal]').forEach(function(el){
@@ -6765,7 +6790,6 @@ function bindEvents(){
         threadId: el.getAttribute('data-team-commits-return-thread') || ''
       };
       navigateTo('teamcommits', { teamCommitsTeam: el.getAttribute('data-open-team-commits') || '', teamCommitsReturn: returnContext });
-      scrollPageTop();
     };
   });
   document.querySelectorAll('[data-team-commits-back]').forEach(function(el){
@@ -6784,7 +6808,6 @@ function bindEvents(){
       } else {
         navigateTo('teams');
       }
-      if (UI.view !== 'teams') scrollPageTop();
     };
   });
   document.querySelectorAll('[data-open-team-offers]').forEach(function(el){
@@ -6794,7 +6817,6 @@ function bindEvents(){
         e.stopPropagation();
       }
       navigateTo('teamoffers', { teamOffersTeam: el.getAttribute('data-open-team-offers') || '' });
-      scrollPageTop();
     };
   });
   document.querySelectorAll('[data-open-team-commits-button]').forEach(function(el){
@@ -6804,7 +6826,6 @@ function bindEvents(){
         e.stopPropagation();
       }
       navigateTo('teamcommits', { teamCommitsTeam: el.getAttribute('data-open-team-commits-button') || '', teamCommitsReturn: { view: 'teams', label: 'Teams' } });
-      scrollPageTop();
     };
   });
   document.querySelectorAll('[data-admin-unlink-team]').forEach(function(el){
@@ -6973,7 +6994,6 @@ window.addEventListener('popstate', function(){
   applyRoute(routeFromPath(window.location.pathname));
   render();
   if (UI.view === 'teams') loadTeamAvailability().then(render);
-  if (UI.view !== 'teams') scrollPageTop();
 });
 window.addEventListener('beforeunload', function(e){
   if (!hasPendingTeamChanges() && !hasSettingsChanges() && !settingsSaving) return;

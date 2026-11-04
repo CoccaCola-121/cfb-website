@@ -48,6 +48,39 @@ test('pitchless HS walk-on drafts save without paragraphs or promises and remain
  assert.equal(offer.text,value);assert.deepEqual(offer.promises,[]);assert.deepEqual(offer.visits,{coach:false,campus:false,campusLabel:''});
  assert.equal((await f.submit(value)).status,200);assert.equal((await f.read()).offersByProspect.r71.length,1);
 });
+test('quick HS offers use the authoritative numbered header, omit injected visits and promises, and retry once',async t=>{
+ const seed=state();seed.prospects.r71.rank=596;seed.threads=[{id:'two-star',prospectIds:['r71']}];
+ const f=await fixture(t,seed),payload={quick:true,promises:[{text:'Injected promise'}]};
+ const response=await f.submit('Untrusted header\nScholarship\nCampus Visit Week 12',payload);
+ assert.equal(response.status,200,await response.clone().text());
+ const offer=(await response.json()).offer;
+ assert.equal(offer.text,'Boston College offers #596 Brian Knowles\nWalk-On');
+ assert.equal(offer.offerType,'walkon');assert.deepEqual(offer.promises,[]);
+ assert.deepEqual(offer.visits,{coach:false,campus:false,campusLabel:''});
+ assert.equal((await f.submit('Untrusted header',payload)).status,200);
+ assert.equal((await f.read()).offersByProspect.r71.length,1);
+});
+test('quick HS offers reject scholarships, hidden players, closed boards, duplicates, commitments and full walk-on classes',async t=>{
+ const scenarios=[
+  seed=>{seed.prospects.r71.rank=500;},
+  seed=>{seed.threads=[];},
+  seed=>{seed.offersByProspect.r71=[{team:'USC',text:'Scholarship'}];},
+  seed=>{seed.offersLocked=true;},
+  seed=>{seed.prospects.r71.commitTeam='USC';},
+  seed=>{seed.offersByProspect.r71=[{team:'Boston College',text:'Walk-On',rescinded:true}];},
+  seed=>{for(let i=0;i<15;i++){seed.prospects['c'+i]={id:'c'+i,rank:1000+i,commitTeam:'Boston College',commitType:'walkon'};}}
+ ];
+ for(const change of scenarios){
+  const seed=state();seed.prospects.r71.rank=501;seed.threads=[{id:'two-star',prospectIds:['r71']}];change(seed);
+  const before=structuredClone(seed.offersByProspect.r71 || []),f=await fixture(t,seed);
+  const response=await f.submit('Boston College offers #501 Brian Knowles\nWalk-On',{quick:true});
+  assert(response.status>=400 && response.status<500,await response.clone().text());
+  assert.deepEqual((await f.read()).offersByProspect.r71 || [],before);
+ }
+ const seed=state();seed.prospects.r71.rank=501;seed.threads=[{id:'two-star',prospectIds:['r71']}];
+ seed.offersByProspect.r71=[{team:'USC',text:'Scholarship',rescinded:true}];
+ assert.equal((await (await fixture(t,seed)).submit('Walk-On',{quick:true})).status,200);
+});
 test('visit editor adds a generic visit, can schedule or clear a future week, and does not refund usage',async t=>{
  const seed=state();seed.offersByProspect.r71=[{id:'o1',team:'Boston College',text:text('').replace(/\n{3,}/g,'\n\n'),visits:{coach:false,campus:false,campusLabel:''}}];
  const f=await fixture(t,seed);

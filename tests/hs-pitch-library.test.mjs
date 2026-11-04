@@ -11,10 +11,9 @@ const library={paragraphs:{proPotential:'I promise you will be drafted.',winning
 
 test('pitchless walk-on drafts use two lines without values, paragraphs or promises',()=>{
  const player={rank:596,name:'Patrick Mays'};
- assert.equal(L.buildPitchless('Hawaii',player).text,'Hawaii offers Patrick Mays\nWalk-On');
+ assert.equal(L.buildPitchless('Hawaii',player).text,'Hawaii offers #596 Patrick Mays\nWalk-On');
  assert.deepEqual(L.buildPitchless('Hawaii',player).values,[]);
- assert.equal(L.buildPitchless('Hawaii',player,{coach:true,campus:true}).text,'Hawaii offers Patrick Mays\nWalk-On\n\nCoach Visit\nCampus Visit');
- assert.equal(L.buildPitchless('Hawaii',player,{},true).text,'Hawaii offers #596 Patrick Mays\nWalk-On');
+ assert.equal(L.buildPitchless('Hawaii',player,{coach:true,campus:true}).text,'Hawaii offers #596 Patrick Mays\nWalk-On\n\nCoach Visit\nCampus Visit');
  for(const rank of [1,500])assert.throws(()=>L.buildPitchless('Hawaii',{...player,rank}),/1–500/);
  assert.throws(()=>L.buildPitchless('',player),/Choose/);
 });
