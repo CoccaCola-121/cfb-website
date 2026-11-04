@@ -3465,7 +3465,25 @@ function syncSubmitModalLock(){
   };
 }
 
+function updatePageMarkup(root,html,focusedBoardSearch){
+  const liveSearch=focusedBoardSearch?.closest('.rb-board-search');
+  if(!liveSearch || liveSearch.parentNode!==root){root.innerHTML=html;return;}
+  const next=document.createElement('div');next.innerHTML=html;
+  const nextSearch=next.querySelector('.rb-board-search');
+  if(!nextSearch || nextSearch.parentNode!==next){root.innerHTML=html;return;}
+  // Keep the focused input attached: replacing and refocusing it can dismiss
+  // mobile keyboards and lose a selection or an in-progress composition.
+  while(root.firstChild!==liveSearch)root.firstChild.remove();
+  while(liveSearch.nextSibling)liveSearch.nextSibling.remove();
+  while(next.firstChild!==nextSearch)root.insertBefore(next.firstChild,liveSearch);
+  nextSearch.remove();
+  while(next.firstChild)root.appendChild(next.firstChild);
+}
+
 function render(){
+  const boardSearch=document.getElementById('rb-board-search');
+  const focusedBoardSearch=UI.view==='feed' && !UI.restorePageScroll && boardSearch && document.activeElement===boardSearch ? boardSearch : null;
+  if(focusedBoardSearch)UI.boardSearch=focusedBoardSearch.value;
   const pagePosition={left:submitModalLock?submitModalLock.x:(window.scrollX || 0),top:submitModalLock?submitModalLock.y:(window.scrollY || 0),behavior:'instant'};
   if(!UI.restorePageScroll)captureListSearches();
   const expandedOffers=new Set(Array.from(document.querySelectorAll('[data-offer-key][open]'),el=>el.getAttribute('data-offer-key')));
@@ -3523,7 +3541,7 @@ function render(){
   if (UI.teamAdminModal) html += renderTeamAdminModal();
   if (UI.confirmReset) html += renderResetConfirmModal();
   html += renderBackTopControl();
-  root.innerHTML = html;
+  updatePageMarkup(root,html,focusedBoardSearch);
   document.querySelectorAll('[data-offer-key]').forEach(el=>{el.open=expandedOffers.has(el.getAttribute('data-offer-key'));});
   Object.entries(UI.pageSearches[pageScrollKey()] || {}).forEach(([id,value])=>{const input=document.getElementById(id);if(input)input.value=value;});
   const submitDialog=document.getElementById('rb-submit-dialog');
@@ -6172,13 +6190,14 @@ function bindEvents(){
   if(confirmRemove)confirmRemove.onclick=function(){removePlayerThread(UI.pendingRemovePlayer);};
   // Rebuild saved board-search results before binding their player-card actions.
   const restoredBoardSearch = document.getElementById('rb-board-search');
-  if (restoredBoardSearch && restoredBoardSearch.value.trim()){
+  if (restoredBoardSearch){
+    const q=restoredBoardSearch.value.toLowerCase().trim();
     const boardCards = document.getElementById('rb-board-cards');
     const playerResults = document.getElementById('rb-board-player-results');
-    if (boardCards) boardCards.style.display = 'none';
+    if (boardCards) boardCards.style.display = q ? 'none' : 'flex';
     if (playerResults){
-      playerResults.style.display = 'flex';
-      playerResults.innerHTML = renderBoardSearchResults(restoredBoardSearch.value.toLowerCase().trim());
+      playerResults.style.display = q ? 'flex' : 'none';
+      playerResults.innerHTML = renderBoardSearchResults(q);
     }
   }
   bindFloatingSubmit();
@@ -6557,15 +6576,7 @@ function bindEvents(){
   const boardSearch = document.getElementById('rb-board-search');
   if (boardSearch) boardSearch.oninput = function(){
     UI.boardSearch = boardSearch.value;
-    const q = UI.boardSearch.toLowerCase().trim();
-    const boardCards = document.getElementById('rb-board-cards');
-    const playerResults = document.getElementById('rb-board-player-results');
-    if (boardCards) boardCards.style.display = q ? 'none' : 'flex';
-    if (playerResults){
-      playerResults.style.display = q ? 'flex' : 'none';
-      playerResults.innerHTML = renderBoardSearchResults(q);
-      if (q) bindEvents();
-    }
+    bindEvents();
   };
   document.querySelectorAll('[data-board-commit-filter]').forEach(function(el){
     el.onclick = function(){
