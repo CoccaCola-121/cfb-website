@@ -771,6 +771,13 @@ html { scrollbar-gutter: stable; }
 
 .rb-cpr-scholarship-badge { color:var(--chalk); border-color:var(--slate); background:rgba(160,164,168,.10); }
 
+.rb-my-offer-filters { display:flex; flex-wrap:wrap; align-items:flex-end; gap:12px 20px; margin-bottom:12px; }
+.rb-offer-filter-label { display:block; color:var(--slate); font-size:12px; margin-bottom:6px; }
+.rb-my-offer-filters .rb-own-type-filter { margin:0; }
+.rb-other-scholarship-filter { min-width:0; max-width:100%; }
+.rb-other-scholarship-filter .rb-input { width:100%; box-sizing:border-box; }
+.rb-other-scholarships { color:var(--gold); font-size:12px; line-height:1.5; overflow-wrap:anywhere; }
+
 .rb-transfer-filter-row:has(.rb-cpr-type-filter) { display:grid; grid-template-columns:minmax(220px,1fr) minmax(240px,.8fr) minmax(280px,1fr); gap:24px; }
 .rb-cpr-type-filter { width:100%; max-width:320px; justify-self:center; font-size:11px; color:var(--slate); }
 .rb-cpr-type-filter .rb-segmented { display:grid; grid-template-columns:1fr 1.3fr .8fr; margin-top:6px; }

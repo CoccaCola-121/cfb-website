@@ -10,7 +10,7 @@ const script = page.match(/<script>([\s\S]*?)<\/script>/)[1];
 const boot = script.lastIndexOf('\napplyRoute(routeFromPath(window.location.pathname));');
 assert(boot > 0, 'The app bootstrap must be identifiable without executing network requests.');
 const source = script.slice(0, boot) + `
-  globalThis.app = { DB, UI, importEarlyDeclarees, renderEarlyDeclareesSettings, expireSuspendedRequests, saveSuspendedOffer, restoreSuspendedOffer, renderProspectDetail, renderProspectVisits, syncLeagueState, syncSubmitModalLock, offerRequest, watchlistNumbers, renderWatchlist, submitHighSchoolOffer, ownOfferTypeBadge, renderOwnTypeFilter, mergeLeagueState, renderOfferAmendments, captureOfferDraft, readOfferDraft, clearOfferDraft, offerDraftKey, applyConditionalRescinds, readRescindRuleForm, validateRescindRuleDraft, requestQuickWalkon, renderQuickWalkonConfirm, canQuickOfferWalkon, quickOfferWalkon, renderQuickWalkon, renderProspectBoardCard, scheduleSummaryCountdown, dismissSummaryBanner, bindFloatingSubmit, extractPromises, cleanDisplayPromises, readCprBoard, updateBucksEntries, renderBucksSettings, renderCprProfile, cprPreviousSchool, ensureCprScholarshipThreads, renderAutoCommitSettings, stageAutoCommits, readScholarshipCapacity, buildPromiseArchive, parseCsvRows, offerCountForProspect, refreshScholarshipHistory, submitCprOffer, renderSubmitModal, createCprPlayer, loadClassData, resetOfferWindow, setOffersLocked, offersLocked, pendingCommitChanges, restoreSettingsDraft, renderOfferBlock, renderRescindFilterFields, renderVisitLedger, visibleBoardProspectIds, setRecruitingStage, requestReset, approveDangerReset, beginSettingsDraft, hasSettingsChanges, canLeaveSettings, saveSettingsChanges, saveDBNow, leagueStatePayload, mergeSettingsValue, updateCommitsFromSheet, runBackupNow, setTransferFilter, renderTransferFilters, renderClassSetup, requestManualCommitOverride, applyManualCommitOverride, requestClearCommit, clearManualCommitOverride, applyManualCommitOverrides, clearRecruitingBoard, findProspectFromSheetRow, transferCardStyle, parseFullClass, prospectFromRosterRow, confirmTransferImport, releaseSingleStageBoard, addOfferDirect, render, renderNav, navigateTo, applyRoute, setReady(){ dbReady = true; sessionReady = true; }, renderFeed, renderBoardSearchResults, renderTeamsPage,
+  globalThis.app = { DB, UI, updateConditionalRulePreview, importEarlyDeclarees, renderEarlyDeclareesSettings, expireSuspendedRequests, saveSuspendedOffer, restoreSuspendedOffer, renderProspectDetail, renderProspectVisits, syncLeagueState, syncSubmitModalLock, offerRequest, watchlistNumbers, renderWatchlist, submitHighSchoolOffer, ownOfferTypeBadge, renderOwnTypeFilter, mergeLeagueState, renderOfferAmendments, captureOfferDraft, readOfferDraft, clearOfferDraft, offerDraftKey, applyConditionalRescinds, readRescindRuleForm, validateRescindRuleDraft, requestQuickWalkon, renderQuickWalkonConfirm, canQuickOfferWalkon, quickOfferWalkon, renderQuickWalkon, renderProspectBoardCard, scheduleSummaryCountdown, dismissSummaryBanner, bindFloatingSubmit, extractPromises, cleanDisplayPromises, readCprBoard, updateBucksEntries, renderBucksSettings, renderCprProfile, cprPreviousSchool, ensureCprScholarshipThreads, renderAutoCommitSettings, stageAutoCommits, readScholarshipCapacity, buildPromiseArchive, parseCsvRows, offerCountForProspect, refreshScholarshipHistory, submitCprOffer, renderSubmitModal, createCprPlayer, loadClassData, resetOfferWindow, setOffersLocked, offersLocked, pendingCommitChanges, restoreSettingsDraft, renderOfferBlock, renderRescindFilterFields, renderVisitLedger, visibleBoardProspectIds, setRecruitingStage, requestReset, approveDangerReset, beginSettingsDraft, hasSettingsChanges, canLeaveSettings, saveSettingsChanges, saveDBNow, leagueStatePayload, mergeSettingsValue, updateCommitsFromSheet, runBackupNow, setTransferFilter, renderTransferFilters, renderClassSetup, requestManualCommitOverride, applyManualCommitOverride, requestClearCommit, clearManualCommitOverride, applyManualCommitOverrides, clearRecruitingBoard, findProspectFromSheetRow, transferCardStyle, parseFullClass, prospectFromRosterRow, confirmTransferImport, releaseSingleStageBoard, addOfferDirect, render, renderNav, navigateTo, applyRoute, setReady(){ dbReady = true; sessionReady = true; }, renderFeed, renderBoardSearchResults, renderTeamsPage,
     renderThreadProspectList, renderProspectDetail, builtInTeamBranding, getTeamBranding, activeTeamBrands,
     mobileRecruitName, renderRecruitName, renderMyOffers, renderCommitsForTeam, renderTeamOffers, renderConditionalRescinds, renderRecruitValues, teamBorderColor, bindEvents, applyDefaultClassData, releaseWave1, releaseWave2,
     openHeaderEdit, renderHeaderEditModal, saveHeaderEdit, syncHSVisitDraft, renderEditOfferModal, saveOfferEdit, currentHSPitches, findHSPitchPlayer, renderHSPitchEditor, renderHSPitchBuilder, buildHSPitchDraft, applyHSVisits, hsBuilderVisits, parseOfferSheet, bindHSPitches, fitHSPitchOptions,
@@ -1872,4 +1872,58 @@ test('My Commits search includes promise categories even without category words 
  const html=app.renderCommitsForTeam('Michigan State');
  const search=html.match(/data-my-commit-card="1"[^>]*data-search="([^"]*)"/)[1];
  assert.match(search,/playing time/);assert.match(search,/location/);assert.match(html,/promise type/);
+});
+
+test('My Offers shows only active scholarships from other teams and composes all filters',()=>{
+ const {app,context,elements}=harness();app.UI.view='myoffers';app.DB.recruitingStage='hs';
+ for(const p of Object.values(app.DB.prospects)){p.rank+=500;p.commitTeam='';}
+ app.DB.offersByProspect={
+  r1:[{id:'mine1',team:'Michigan State',text:'Walk-On'},{team:'Alabama',text:'Scholarship'},{team:'Alabama',text:'Scholarship'},{team:'USC',text:'Scholarship',rescinded:true}],
+  r2:[{id:'mine2',team:'Michigan State',text:'Scholarship'},{team:'Michigan-State',text:'Scholarship'},{team:'USC',text:'Walk-On'}],
+  r3:[{id:'mine3',team:'Michigan State',text:'Scholarship'},{team:'Texas & A&M',text:'Scholarship'}]
+ };
+ const html=app.renderMyOffers();
+ assert.match(html,/Other scholarships: Alabama<\/span>/);assert.match(html,/Other scholarships: Texas &amp; A&amp;M/);
+ assert.doesNotMatch(html,/Other scholarships: (?:Michigan|USC)|Alabama, Alabama/);
+ const cards=[...html.matchAll(/<div[^>]+data-my-offer-card="1"[^>]*>/g)].map(m=>element(Object.fromEntries([...m[0].matchAll(/([\w-]+)="([^"]*)"/g)].map(a=>[a[1],a[2]]))));
+ const chip=element({'data-position-filter':'offers:michigan state','data-position-bucket':'QB'});chip.querySelector=()=>null;
+ const walkon=element({'data-own-type-kind':'offers','data-own-type':'walkon'});
+ const all=element({'data-own-type-kind':'offers','data-own-type':''});
+ const query=context.document.querySelectorAll;
+ context.document.querySelectorAll=selector=>selector==='[data-my-offer-card]'?cards:selector==='[data-position-filter]'?[chip]:selector==='[data-own-type-kind]'?[walkon,all]:query(selector);
+ elements['rb-other-scholarship-filter']=element();elements['rb-my-offer-search']=element();
+ app.UI.otherScholarshipFilter='with';app.bindEvents();
+ const visible=()=>cards.map(c=>c.style.display!=='none');
+ assert.deepEqual(visible(),[true,false,true],'Saved scholarship filter applies on render.');
+ walkon.onclick();assert.deepEqual(visible(),[true,false,false]);
+ all.onclick();elements['rb-my-offer-search'].value='casey';elements['rb-my-offer-search'].oninput();assert.deepEqual(visible(),[false,false,true]);
+ elements['rb-my-offer-search'].value='';
+ app.UI.positionFilters={'offers:michigan state':{QB:true}};elements['rb-my-offer-search'].oninput();assert.deepEqual(visible(),[false,false,true]);
+ app.UI.positionFilters={};elements['rb-other-scholarship-filter'].value='without';elements['rb-other-scholarship-filter'].onchange();assert.deepEqual(visible(),[false,true,false]);
+ elements['rb-other-scholarship-filter'].value='';elements['rb-other-scholarship-filter'].onchange();assert.deepEqual(visible(),[true,true,true]);
+});
+
+test('client conditional rescinds keep exceptions for position and explicit target rules',()=>{
+ for(const targetIds of [[],['r2','r3']]){
+  const {app}=harness();
+  for(const p of Object.values(app.DB.prospects)){p.position='QB';p.commitTeam=p.id==='r1'?'Michigan State':'';}
+  app.DB.offersByProspect=Object.fromEntries(Object.keys(app.DB.prospects).map(id=>[id,[{id:'o-'+id,team:'Michigan State',text:'Scholarship'}]]));
+  app.DB.conditionalRescinds=[{id:'rule',team:'Michigan State',enabled:true,count:1,stars:'',positions:['QB'],triggerIds:['r1'],targetIds,excludeIds:['r1','r2']}];
+  const html=app.renderConditionalRescinds();
+  assert.match(html,/Keep offers to \(exceptions\)/);assert.match(html,/keep: Jordan Able, Morgan Baker/);
+  assert.match(html,/data-conditional-players="exclude" value="r2"/);
+  assert.equal(app.applyConditionalRescinds()[0].rescinded,1);
+  assert(!app.DB.offersByProspect.r1[0].rescinded);assert(!app.DB.offersByProspect.r2[0].rescinded);assert(app.DB.offersByProspect.r3[0].rescinded);
+ }
+});
+
+test('conditional rule summary refreshes restored trigger, target and exception selections',()=>{
+ const {app,context,elements}=harness();
+ elements['rb-cond-count']={value:'1'};elements['rb-rule-preview']={};
+ const counts={trigger:{},target:{},exclude:{}};
+ context.document.querySelector=selector=>{const kind=selector.match(/data-rule-count="(\w+)"/);return kind?counts[kind[1]]:null;};
+ context.document.querySelectorAll=selector=>selector.includes(':checked') && !selector.includes('"target"')?[{}]:[];
+ app.updateConditionalRulePreview();
+ assert.equal(counts.trigger.textContent,'1 selected');assert.equal(counts.target.textContent,'Choose players');assert.equal(counts.exclude.textContent,'1 selected');
+ assert.equal(elements['rb-rule-preview'].textContent,'After 1 total commitment from 1 selected recruit, rescind offers matching your filters, keeping 1 selected exception.');
 });

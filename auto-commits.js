@@ -205,6 +205,7 @@
     function conditionalRules(){
       const stars=p=>p.rank<=25?5:p.rank<=250?4:p.rank<=500?3:p.rank<=900?2:p.rank<=1700?1:0;
       function matches(rule,p,o){
+        if(rule.excludedPlayerIds?.includes(p.id))return false;
         const ids=rule.playerIds || rule.triggerIds;
         if(ids?.length)return ids.includes(p.id);
         const positions=Array.isArray(rule.positions)?rule.positions:String(rule.position || '').split(',').map(x=>x.trim()).filter(Boolean);
@@ -256,7 +257,7 @@
   }
   function relativeOverall(mode){ return mode==='belowCommit' || mode==='atMostCommit'; }
   function rescindTargetRule(rule, commits, getOverall=rating){
-    rule={...rule,triggerIds:undefined,playerIds:rule.targetIds || []};
+    rule={...rule,triggerIds:undefined,playerIds:rule.targetIds || [],excludedPlayerIds:rule.excludeIds || []};
     if (!relativeOverall(rule.overallMode)) return rule;
     const values=commits.map(p=>getOverall(p));
     if (!values.length || values.some(v=>v==null || !Number.isFinite(v))) return null;

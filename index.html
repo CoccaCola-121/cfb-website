@@ -2480,6 +2480,7 @@ function normalizeConditionalRules(){
 
 function conditionalRuleMatchesProspect(rule, prospect, offer){
   if (!rule || !prospect) return false;
+  if (rule.excludedPlayerIds?.includes(prospect.id)) return false;
   const selectedPlayers=rule.playerIds || rule.triggerIds;
   if(selectedPlayers?.length)return selectedPlayers.includes(prospect.id);
   const positions = Array.isArray(rule.positions) ? rule.positions.map(function(pos){ return String(pos || '').trim().toUpperCase(); }).filter(Boolean) : String(rule.position || '').split(',').map(function(pos){ return pos.trim().toUpperCase(); }).filter(Boolean);
@@ -3833,6 +3834,7 @@ function conditionalRuleSummary(rule){
   if (rule.scholarship) parts.push(rule.scholarship === 'walkon' ? 'walk-on' : 'scholarship');
   if(rule.triggerIds?.length)parts.push('trigger: '+rule.triggerIds.map(id=>DB.prospects[id]?.name || id).join(', '));
   if(rule.targetIds?.length)parts.push('rescind: '+rule.targetIds.map(id=>DB.prospects[id]?.name || id).join(', '));
+  if(rule.excludeIds?.length)parts.push('keep: '+rule.excludeIds.map(id=>DB.prospects[id]?.name || id).join(', '));
   return parts.join(' · ');
 }
 
@@ -3861,11 +3863,25 @@ function rulesForTeam(team){
   return normalizeConditionalRules().filter(function(rule){ return rule && teamKey(rule.team) === teamKey(team); });
 }
 
+const CONDITIONAL_PLAYER_FIELDS={trigger:'triggerIds',target:'targetIds',exclude:'excludeIds'};
 function renderConditionalPlayers(kind,label){
   const selectedRule=UI.editingConditional && rulesForTeam(SESSION.team).find(r=>r.id===UI.editingConditional.id);
-  const selectedIds=selectedRule?.[kind==='trigger'?'triggerIds':'targetIds'] || [];
+  const selectedIds=selectedRule?.[CONDITIONAL_PLAYER_FIELDS[kind]] || [];
   const rows=getOfferRowsForTeam(SESSION.team).filter(row=>selectedIds.includes(row.prospectId) || !row.offer.rescinded && (!row.prospect.commitTeam || kind==='trigger' && teamKey(row.prospect.commitTeam)===teamKey(SESSION.team))).sort((a,b)=>a.prospect.name.localeCompare(b.prospect.name));
-  return '<details data-rule-panel="'+kind+'"'+(UI.rulePanels?.[kind]?' open':'')+' style="margin-top:8px;border:1px solid var(--hairline);border-radius:6px;padding:10px 12px;"><summary style="cursor:pointer;font-size:14px;"><strong>'+label+'</strong><span data-rule-count="'+kind+'" style="margin-left:10px;color:var(--slate);font-size:12px;" aria-live="polite"></span></summary><p style="font-size:12px;color:var(--slate);margin:10px 0;">'+(kind==='trigger'?'Choose the recruits whose commitments should trigger this rule.':'Choose the offers to withdraw when the rule is met. Committed players are protected.')+'</p><div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px;"><input class="rb-input" data-rule-search="'+kind+'" placeholder="Find a player" aria-label="Search '+kind+' players" style="flex:1;min-width:120px;"><button class="rb-btn" data-rule-select="'+kind+'" data-checked="true">Select all listed</button><button class="rb-btn" data-rule-select="'+kind+'" data-checked="false">Clear list</button></div><div style="max-height:220px;overflow:auto;display:grid;gap:8px;">'+rows.map(row=>'<label data-rule-player-row="'+kind+'" style="display:flex;gap:8px;align-items:center;"><input type="checkbox" data-conditional-players="'+kind+'" value="'+escapeHtml(row.prospectId)+'">'+escapeHtml(row.prospect.name+' · '+row.prospect.position+(row.prospect.commitTeam?' · Already committed to you':''))+'</label>').join('')+'</div></details>';
+  return '<details data-rule-panel="'+kind+'"'+(UI.rulePanels?.[kind]?' open':'')+' style="margin-top:8px;border:1px solid var(--hairline);border-radius:6px;padding:10px 12px;"><summary style="cursor:pointer;font-size:14px;"><strong>'+label+'</strong><span data-rule-count="'+kind+'" style="margin-left:10px;color:var(--slate);font-size:12px;" aria-live="polite"></span></summary><p style="font-size:12px;color:var(--slate);margin:10px 0;">'+(kind==='trigger'?'Choose the recruits whose commitments should trigger this rule.':kind==='exclude'?'This rule will keep these offers, even if the players match your targets or filters. Other rescind rules and roster limits still apply.':'Choose specific offers, or leave this list empty to rescind everyone matching the filters below. Committed players are protected.')+'</p><div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px;"><input class="rb-input" data-rule-search="'+kind+'" placeholder="Find a player" aria-label="'+(kind==='exclude'?'Search players to keep':'Search '+kind+' players')+'" style="flex:1;min-width:120px;"><button class="rb-btn" data-rule-select="'+kind+'" data-checked="true">Select all listed</button><button class="rb-btn" data-rule-select="'+kind+'" data-checked="false">Clear list</button></div><div style="max-height:220px;overflow:auto;display:grid;gap:8px;">'+rows.map(row=>'<label data-rule-player-row="'+kind+'" style="display:flex;gap:8px;align-items:center;"><input type="checkbox" data-conditional-players="'+kind+'" value="'+escapeHtml(row.prospectId)+'">'+escapeHtml(row.prospect.name+' · '+row.prospect.position+(row.prospect.commitTeam?' · Already committed to you':''))+'</label>').join('')+'</div></details>';
+}
+
+function updateConditionalRulePreview(){
+  const counts={};
+  for(const kind of Object.keys(CONDITIONAL_PLAYER_FIELDS)){
+    const selected=document.querySelectorAll('[data-conditional-players="'+kind+'"]:checked').length;
+    counts[kind]=selected;
+    const count=document.querySelector('[data-rule-count="'+kind+'"]');if(count)count.textContent=selected?selected+' selected':'Choose players';
+  }
+  const preview=document.getElementById('rb-rule-preview');
+  if(!preview)return;
+  const n=Number(document.getElementById('rb-cond-count')?.value)||1;
+  preview.textContent='After '+n+' total commitment'+(n===1?'':'s')+' from '+(counts.trigger?counts.trigger+' selected recruit'+(counts.trigger===1?'':'s'):'recruits matching your filters')+', rescind '+(counts.target?counts.target+' selected offer'+(counts.target===1?'':'s'):'offers matching your filters')+(counts.exclude?', keeping '+counts.exclude+' selected exception'+(counts.exclude===1?'':'s'):'')+'.';
 }
 
 function renderConditionalRescinds(){
@@ -3895,7 +3911,8 @@ function renderConditionalRescinds(){
   html += '<label style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:14px;">After<input class="rb-input" id="rb-cond-count" aria-label="Total commitments needed" style="width:72px;" type="number" min="1" max="200" value="1">total commitments</label><p style="font-size:12px;color:var(--slate);margin:6px 0 12px;">Already-committed players count toward this total.</p>';
   html += renderConditionalPlayers('trigger','Count commitments from');
   html += renderConditionalPlayers('target','Rescind offers to');
-  html += '<details data-rule-panel="filters"'+(UI.rulePanels?.filters?' open':'')+' style="margin-top:12px;font-size:12px;color:var(--slate);"><summary style="cursor:pointer;">Use filters instead of picking players</summary><p>Filters apply to either list left empty.</p>'+renderRescindFilterFields('rb-cond', true, true)+'</details>';
+  html += renderConditionalPlayers('exclude','Keep offers to (exceptions)');
+  html += '<details data-rule-panel="filters"'+(UI.rulePanels?.filters?' open':'')+' style="margin-top:12px;font-size:12px;color:var(--slate);"><summary style="cursor:pointer;">Use filters instead of picking players</summary><p>Filters apply to either trigger or target list left empty. To rescind a position except certain players, select the position here, leave the target list empty, and choose your exceptions in Keep offers to.</p>'+renderRescindFilterFields('rb-cond', true, true)+'</details>';
   html += '<p id="rb-rule-preview" style="font-size:13px;margin:12px 0 0;" aria-live="polite"></p>';
   html += '<div style="margin-top:10px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;"><button class="rb-btn rb-btn-gold" id="rb-add-conditional">' + (UI.editingConditional?'Save rule changes':'Save auto rule') + '</button><button class="rb-btn" id="rb-cancel-rule-edit" '+(UI.editingConditional?'':'hidden')+'>Cancel edit</button><span class="rb-mono" style="font-size:11px;color:var(--slate);">' + "You’ll be warned before any immediate rescinds." + '</span></div>';
   if (UI.conditionalError) html += '<div style="font-size:12px;color:var(--alert);margin-top:8px;">' + escapeHtml(UI.conditionalError) + '</div>';
@@ -3962,6 +3979,7 @@ async function addConditionalRule(){
   const draft = readRescindRuleForm('rb-cond', true);
   draft.triggerIds=Array.from(document.querySelectorAll('[data-conditional-players="trigger"]:checked')).map(el=>el.value);
   draft.targetIds=Array.from(document.querySelectorAll('[data-conditional-players="target"]:checked')).map(el=>el.value);
+  draft.excludeIds=Array.from(document.querySelectorAll('[data-conditional-players="exclude"]:checked')).map(el=>el.value);
   const error = draft.triggerIds.length && draft.targetIds.length ? '' : validateRescindRuleDraft(draft, { actionLabel: 'saving a conditional rescind' });
   if (error){
     UI.conditionalError = error;
@@ -3973,6 +3991,7 @@ async function addConditionalRule(){
     id: UI.editingConditional?.id || (UI.conditionalRetry?.key===JSON.stringify(draft) ? UI.conditionalRetry.id : crypto.randomUUID()),
     triggerIds: draft.triggerIds,
     targetIds: draft.targetIds,
+    excludeIds: draft.excludeIds,
     team: SESSION.team,
     enabled: true,
     count: normalized.count,
@@ -4221,6 +4240,10 @@ function visitLineForOffer(row){
 function renderOwnTypeFilter(kind){
   const value=(UI.ownTypeFilters || {})[kind] || '';
   return '<div class="rb-segmented rb-own-type-filter" aria-label="Offer type">'+[['','All'],['walkon','Walk-On'],['scholarship','Scholarship']].map(([type,label])=>'<button type="button" data-own-type-kind="'+kind+'" data-own-type="'+type+'" aria-pressed="'+(value===type)+'">'+label+'</button>').join('')+'</div>';
+}
+function otherScholarshipTeams(p){
+  if(!p || !SESSION?.team)return [];
+  return [...new Map((DB.offersByProspect[p.id] || []).filter(o=>!o.rescinded && teamKey(o.team)!==teamKey(SESSION.team) && NZCFLCprRules.scholarshipOffer(o)).map(o=>[teamKey(o.team),o.team])).values()].sort((a,b)=>a.localeCompare(b));
 }
 function ownOfferTypeBadge(o,p){
   const type=NZCFLAutoCommits.offerKind(DB,p,o);
@@ -4646,7 +4669,7 @@ function renderMyOffers(){
   const walkonCount=rows.filter(row=>NZCFLAutoCommits.offerKind(DB,row.prospect,row.offer)==='walkon').length;
   html += '<p style="font-size:13px;color:var(--slate);">'+walkonCount+' walk-on · '+(rows.length-walkonCount)+' scholarship</p>';
   html += '<p id="rb-auto-preview-status" style="font-size:12px;color:var(--slate);">'+(autoPreview.pending?'Checking current autos…':autoPreview.unavailable?'Auto preview unavailable until scholarship counts and team limits are ready.':'Auto if closed now requires one eligible team with room. Competing active offers prevent the badge.')+'</p>';
-  html += renderOwnTypeFilter('offers');
+  html += '<div class="rb-my-offer-filters"><div><span class="rb-offer-filter-label">Your offer</span>'+renderOwnTypeFilter('offers')+'</div><label class="rb-other-scholarship-filter"><span class="rb-offer-filter-label">Scholarships from other teams</span><select class="rb-input" id="rb-other-scholarship-filter" aria-label="Scholarships from other teams">'+[['','All recruits'],['with','With other scholarships'],['without','No other scholarships']].map(([value,label])=>'<option value="'+value+'"'+((UI.otherScholarshipFilter || '')===value?' selected':'')+'>'+label+'</option>').join('')+'</select></label></div>';
   html += '<input class="rb-input" id="rb-my-offer-search" placeholder="' + (recruitingStage() === 'transfer' ? 'Search offers by player name' : 'Search your offers by recruit name, rank, or hometown') + '" />';
   if (UI.rescindError) html += '<div style="font-size:12px;color:var(--alert);margin-top:8px;">' + escapeHtml(UI.rescindError) + '</div>';
   html += '</div>';
@@ -4659,8 +4682,9 @@ function renderMyOffers(){
       const p = row.prospect || {};
       const o = row.offer;
       const bucket = positionBucket(p.position);
+      const otherScholarships=otherScholarshipTeams(p);
       const searchText = [p.rank, '#' + p.rank, p.name, p.hometown, p.storyline].join(' ').toLowerCase();
-      html += '<div class="rb-card rb-mobile-tight" data-my-offer-card="1" data-own-offer-type="' + NZCFLAutoCommits.offerKind(DB,p,o) + '" data-position-bucket="' + escapeHtml(bucket) + '" data-search="' + escapeHtml(searchText) + '" style="padding:14px 18px;">';
+      html += '<div class="rb-card rb-mobile-tight" data-my-offer-card="1" data-other-scholarships="' + (otherScholarships.length?'true':'false') + '" data-own-offer-type="' + NZCFLAutoCommits.offerKind(DB,p,o) + '" data-position-bucket="' + escapeHtml(bucket) + '" data-search="' + escapeHtml(searchText) + '" style="padding:14px 18px;">';
       html += '<details>';
       html += '<summary class="rb-offer-summary rb-my-offer-summary-grid" style="list-style:none;cursor:pointer;">';
       html += '<span style="min-width:0;display:flex;flex-direction:column;gap:10px;">';
@@ -4671,6 +4695,7 @@ function renderMyOffers(){
         (p.hometown ? '<span class="rb-mono rb-desktop-only" style="color:var(--slate);font-size:13px;flex:0 0 auto;">&middot;</span><span class="rb-mono rb-desktop-only" title="' + escapeHtml(p.hometown) + '" style="color:var(--slate);font-size:13px;overflow:hidden;text-overflow:ellipsis;">' + escapeHtml(shortText(p.hometown, 24)) + '</span>' : '') +
       '</span>';
       html += '<span class="rb-own-offer-type-row">' + ownOfferTypeBadge(o,p) + (o.rescinded?'<span class="rb-tag rb-rescinded-badge">Rescinded</span>':'') + (!o.rescinded && !p.commitTeam ? '<span data-auto-offer="'+escapeHtml(row.prospectId+':'+o.id)+'">'+(autoPreview.offers.has(row.prospectId+':'+o.id)?'<span class="rb-tag" style="font-size:11px;color:#91d6a4;border-color:#477d55;background:rgba(88,191,114,.1);">Auto if closed now</span>':'')+'</span>' : '') + '</span>';
+      if(otherScholarships.length)html += '<span class="rb-other-scholarships">Other scholarships: '+escapeHtml(otherScholarships.join(', '))+'</span>';
       html += '<span class="rb-my-offer-visits" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">' + visitBadges(o.visits, true) + '</span>';
       html += '</span>';
       html += '<span class="rb-my-offer-actions'+(p.commitTeam?' rb-has-commit-status':'')+'" style="display:flex;align-items:center;justify-content:flex-end;gap:8px;white-space:nowrap;">' + (p.commitTeam ? '<span class="rb-offer-commit-status '+(teamKey(p.commitTeam)===teamKey(SESSION.team)?'rb-offer-commit-own':'rb-offer-commit-away')+'">'+(teamKey(p.commitTeam)===teamKey(SESSION.team)?'✓ Committed to you':'Committed to '+escapeHtml(p.commitTeam))+'</span>' : '') + (o.rescinded ? '' : (p.commitTeam ? '' : (recruitingStage() === 'hs' ? '<button class="rb-btn" data-edit-offer="' + escapeHtml(row.prospectId) + ':' + escapeHtml(o.id) + '">Edit</button>' : '') + '<button class="rb-btn" data-rescind-offer="' + escapeHtml(row.prospectId) + ':' + escapeHtml(o.id) + '">Rescind</button>')) + '</span>';
@@ -6166,8 +6191,8 @@ function bindEvents(){
    UI.editingConditional={id:rule.id,version:rule.updatedAt || rule.createdAt};UI.conditionalError=null;UI.conditionalStatus='Editing rule. Existing rescinds will not be undone.';render();
    for(const [key,value] of Object.entries({count:rule.count,stars:rule.stars,'overall-mode':rule.overallMode,'overall-value':rule.overallValue,scholarship:rule.scholarship})){const el=document.getElementById('rb-cond-'+key);if(el)el.value=value ?? '';}
    document.querySelectorAll('[data-position-prefix="rb-cond"]').forEach(el=>el.checked=(rule.positions || []).includes(el.value));
-   document.querySelectorAll('[data-conditional-players]').forEach(el=>el.checked=(rule[el.dataset.conditionalPlayers==='trigger'?'triggerIds':'targetIds'] || []).includes(el.value));
-   captureRescindDraft();restoreRescindDraft();document.getElementById('rb-cond-count')?.focus();
+   document.querySelectorAll('[data-conditional-players]').forEach(el=>el.checked=(rule[CONDITIONAL_PLAYER_FIELDS[el.dataset.conditionalPlayers]] || []).includes(el.value));
+   captureRescindDraft();restoreRescindDraft();updateConditionalRulePreview();document.getElementById('rb-cond-count')?.focus();
   });
   const cancelRule=document.getElementById('rb-cancel-rule-edit');if(cancelRule)cancelRule.onclick=()=>{if(UI.submitting)return;UI.editingConditional=null;UI.clearConditionalDraft=true;UI.conditionalStatus=null;render();};
 
@@ -6492,18 +6517,11 @@ function bindEvents(){
   const cancelSingleRescindBtn = document.getElementById('rb-cancel-single-rescind');
   if (cancelSingleRescindBtn) cancelSingleRescindBtn.onclick = cancelSingleRescind;
 
-  const updateRuleCount=kind=>{
-    const selected=document.querySelectorAll('[data-conditional-players="'+kind+'"]:checked').length;
-    const count=document.querySelector('[data-rule-count="'+kind+'"]');if(count)count.textContent=selected?selected+' selected':'Choose players';
-    const preview=document.getElementById('rb-rule-preview');
-    if(preview){const triggers=document.querySelectorAll('[data-conditional-players="trigger"]:checked').length,targets=document.querySelectorAll('[data-conditional-players="target"]:checked').length,n=Number(document.getElementById('rb-cond-count')?.value)||1;
-      preview.textContent='After '+n+' total commitment'+(n===1?'':'s')+' from '+(triggers?triggers+' selected recruits':'recruits matching your filters')+', rescind '+(targets?targets+' selected offers':'offers matching your filters')+'.';}
-  };
   document.querySelectorAll('[data-rule-panel]').forEach(panel=>panel.ontoggle=()=>{UI.rulePanels ||= {};UI.rulePanels[panel.dataset.rulePanel]=panel.open;});
-  const ruleCount=document.getElementById('rb-cond-count');if(ruleCount)ruleCount.oninput=()=>updateRuleCount('trigger');
-  for(const kind of ['trigger','target'])updateRuleCount(kind);
-  document.querySelectorAll('[data-conditional-players]').forEach(el=>el.onchange=()=>updateRuleCount(el.dataset.conditionalPlayers));
-  document.querySelectorAll('[data-rule-select]').forEach(button=>button.onclick=()=>{const kind=button.dataset.ruleSelect;document.querySelectorAll('[data-conditional-players="'+kind+'"]').forEach(el=>el.checked=button.dataset.checked==='true');updateRuleCount(kind);});
+  const ruleCount=document.getElementById('rb-cond-count');if(ruleCount)ruleCount.oninput=updateConditionalRulePreview;
+  updateConditionalRulePreview();
+  document.querySelectorAll('[data-conditional-players]').forEach(el=>el.onchange=updateConditionalRulePreview);
+  document.querySelectorAll('[data-rule-select]').forEach(button=>button.onclick=()=>{const kind=button.dataset.ruleSelect;document.querySelectorAll('[data-conditional-players="'+kind+'"]').forEach(el=>el.checked=button.dataset.checked==='true');updateConditionalRulePreview();});
   document.querySelectorAll('[data-rule-search]').forEach(input=>input.oninput=()=>{document.querySelectorAll('[data-rule-player-row="'+input.dataset.ruleSearch+'"]').forEach(row=>row.style.display=row.textContent.toLowerCase().includes(input.value.toLowerCase().trim())?'flex':'none');});
   const addConditionalBtn = document.getElementById('rb-add-conditional');
   if (addConditionalBtn) addConditionalBtn.onclick = addConditionalRule;
@@ -6597,6 +6615,8 @@ function bindEvents(){
     document.querySelectorAll('[data-own-type-kind]').forEach(function(item){if(item.getAttribute('data-own-type-kind')===kind)item.setAttribute('aria-pressed',String(item===button));});
     applyPositionListFilters(kind);
   };});
+  const otherScholarshipFilter=document.getElementById('rb-other-scholarship-filter');
+  if(otherScholarshipFilter)otherScholarshipFilter.onchange=function(){UI.otherScholarshipFilter=otherScholarshipFilter.value;applyPositionListFilters('offers');};
   function applyPositionListFilters(kind, filterKey){
     const search = kind === 'commits' ? document.getElementById('rb-my-commit-search') : (kind === 'board' ? document.querySelector('[data-thread-search]') : document.getElementById('rb-my-offer-search'));
     const q = search ? search.value.toLowerCase().trim() : '';
@@ -6622,7 +6642,9 @@ function bindEvents(){
       const recruitType = p && (isPitchRecruit(p) ? 'pitch' : (NZCFLCprRules.scholarshipRecruit(p, DB.offersByProspect[p.id] || []) ? 'scholarship' : 'walkon'));
       const matchesType = recruitingStage() !== 'cpr' || !p || !UI.cprTypeFilter || recruitType === UI.cprTypeFilter;
       const ownType=(UI.ownTypeFilters || {})[kind];
-      const matches = (!q || haystack.indexOf(q) !== -1) && eligible && matchesType && (!ownType || card.getAttribute('data-own-offer-type')===ownType);
+      const otherScholarships=kind==='offers' && UI.otherScholarshipFilter;
+      const matchesOtherScholarships=!otherScholarships || (card.getAttribute('data-other-scholarships')==='true')===(otherScholarships==='with');
+      const matches = (!q || haystack.indexOf(q) !== -1) && eligible && matchesType && matchesOtherScholarships && (!ownType || card.getAttribute('data-own-offer-type')===ownType);
       if (matches) filteredCounts[bucket] = (filteredCounts[bucket] || 0) + 1;
       card.style.display = matches && !hiddenByPosition ? '' : 'none';
       if (matches && !hiddenByPosition) visibleCount++;
@@ -6731,8 +6753,7 @@ function bindEvents(){
   if (myCommitSearch) myCommitSearch.oninput = function(){
     applyPositionListFilters('commits');
   };
-  applyPositionListFilters('offers');
-  applyPositionListFilters('teamoffers');
+  applyPositionListFilters(UI.view==='teamoffers'?'teamoffers':'offers');
   applyPositionListFilters('commits');
   applyPositionListFilters('board');
 

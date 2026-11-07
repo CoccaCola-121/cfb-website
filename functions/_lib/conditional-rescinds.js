@@ -22,6 +22,7 @@ function starsForRank(rank) {
 
 function ruleMatchesProspect(rule, prospect, offer) {
   if (!rule || !prospect) return false;
+  if (rule.excludedPlayerIds?.includes(prospect.id)) return false;
   const selectedPlayers=rule.playerIds || rule.triggerIds;
   if(selectedPlayers?.length)return selectedPlayers.includes(prospect.id);
   const positions = Array.isArray(rule.positions)

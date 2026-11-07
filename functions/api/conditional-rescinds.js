@@ -13,13 +13,13 @@ function cleanRule(input,user,state,old){
  if(!['','below','atMost','atLeast','belowCommit','atMostCommit'].includes(input.overallMode || ''))throw Error('Invalid overall filter.');
  for(const field of ['overallValue','rankValue','stars'])if(input[field]!=='' && input[field]!=null && (!Number.isFinite(Number(input[field])) || Number(input[field])<0))throw Error('Invalid rule filter.');
  const ids=field=>{
-  const values=input[field] || [];if(!Array.isArray(values) || values.length>1500)throw Error('Invalid player list.');
+  const values=input[field] ?? (field==='excludeIds'?old?.excludeIds:[]) ?? [];if(!Array.isArray(values) || values.length>1500)throw Error('Invalid player list.');
   if(values.some(id=>!(old?.[field] || []).includes(id) && (!state.prospects?.[id] || !(state.offersByProspect?.[id] || []).some(o=>!o.rescinded && teamKey(o.team)===teamKey(user.team)))))throw Error('Choose players with active offers from your team.');
   return [...new Set(values)];
  };
- const triggerIds=ids('triggerIds'),targetIds=ids('targetIds');
+ const triggerIds=ids('triggerIds'),targetIds=ids('targetIds'),excludeIds=ids('excludeIds');
  if(!positions.length && !input.overallValue && !['belowCommit','atMostCommit'].includes(input.overallMode) && !input.scholarship && (input.stars==='' || input.stars==null) && !(triggerIds.length && targetIds.length))throw Error('Choose filters or both custom player lists.');
- return {id:input.id,team:user.team,enabled:true,count:input.count,positions,position:'',stars:input.stars ?? '',rankMode:input.rankMode || '',rankValue:input.rankValue || '',overallMode:input.overallMode || 'atLeast',overallValue:input.overallValue || '',scholarship:input.scholarship || '',triggerIds,targetIds,name:String(input.name || 'Conditional rule').slice(0,1000),createdAt:Date.now()};
+ return {id:input.id,team:user.team,enabled:true,count:input.count,positions,position:'',stars:input.stars ?? '',rankMode:input.rankMode || '',rankValue:input.rankValue || '',overallMode:input.overallMode || 'atLeast',overallValue:input.overallValue || '',scholarship:input.scholarship || '',triggerIds,targetIds,excludeIds,name:String(input.name || 'Conditional rule').slice(0,1000),createdAt:Date.now()};
 }
 export async function onRequestPost({request,env,waitUntil}){
  const user=await getCurrentUser(request,env);
