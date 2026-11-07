@@ -1640,6 +1640,37 @@ function visitDraftFixture(text='Michigan State offers #2 Morgan Baker\n\nSchola
  context.fetch=async(url,options)=>{sent=JSON.parse(options.body);return {ok:true,json:async()=>({ok:true,prospectId:'r2',offer:{id:'saved',team:'Michigan State',text:sent.text}})};};
  return {...h,sent:()=>sent};
 }
+test('blank and week 12 visits build an editable draft and only Post offer submits the final edits',async()=>{
+ for(const week of ['', '12']){
+  const h=visitDraftFixture(''),{app,context,elements}=h;
+  context.window.location.protocol='https:';app.UI.leagueVerified=true;app.UI.strongStorage=true;
+  const library=context.NZCFLHSPitchLibrary.clean({paragraphs:{tradition:'Our tradition.',campus:'Our campus.',coach:'Our coach.'}});
+  Object.assign(app.currentHSPitches(),{loaded:true,library,draft:library});
+  app.DB.prospects.r2.values={tradition:1,campus:.8,coach:.6};
+  Object.assign(app.UI.hsVisits,{coach:true,campus:true,week});
+  elements['rb-hs-visit-week'].value=week;
+  elements['rb-build-hs-pitch']={};elements['rb-submit-sheet-btn']={};
+  elements['rb-hs-pitch-builder']={open:true};
+  app.bindEvents();
+  elements['rb-build-hs-pitch'].onclick();
+  assert.equal(elements['rb-submit-error'].textContent,'');
+  assert.match(elements['rb-sheet-text'].value,/Coach Visit/);
+  assert.ok(elements['rb-sheet-text'].value.includes('Campus Visit'+(week?' Week 12':'')+'\n\n'));
+  assert.equal(elements['rb-hs-pitch-builder'].open,false);
+  assert.equal(app.UI.showSubmitModal,true);
+  assert.equal(h.sent(),undefined,'Building must not post an offer.');
+  assert.equal(app.DB.offersByProspect.r2,undefined);
+  elements['rb-sheet-text'].value=elements['rb-sheet-text'].value.replace('Our coach.','My personalized promise.');
+  elements['rb-sheet-text'].oninput();
+  assert.equal(h.sent(),undefined,'Editing must not post an offer.');
+  assert.match(app.readOfferDraft().text,/My personalized promise/);
+  await elements['rb-submit-sheet-btn'].onclick();
+  assert.match(h.sent().text,/My personalized promise/);
+  assert.doesNotMatch(h.sent().text,/Our coach/);
+  assert.equal(app.UI.showSubmitModal,false);
+  assert.equal(app.UI.submitting,false);
+ }
+});
 test('Post offer uses the visible week 12 without requiring Apply visits or rebuilding the pitch',async()=>{
  for(const inputEvent of [true,false]){
   const h=visitDraftFixture(),{app,elements}=h;

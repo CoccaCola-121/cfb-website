@@ -788,6 +788,14 @@ html { scrollbar-gutter: stable; }
 .rb-board-filter-top > :first-child { flex:1 1 auto; min-width:0; }
 #rb-board-result-count { color:var(--slate); font-size:11px; white-space:nowrap; margin-left:auto; padding-bottom:10px; }
 
+.rb-prospect-card-header { display:flex; flex-wrap:wrap; align-items:center; gap:10px 16px; }
+.rb-prospect-card-header > .rb-list-identity { flex:1 1 280px; }
+.rb-prospect-card-actions { display:flex; flex-wrap:wrap; align-items:center; gap:8px; max-width:100%; }
+@media(max-width:720px) {
+ .rb-prospect-card-header > .rb-list-identity { flex-basis:100%; }
+ .rb-prospect-card-header > .rb-list-identity > span[title],
+ .rb-prospect-card-header > .rb-list-identity > a { flex:1 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+}
 .rb-board-offer-logos { display:flex; flex-wrap:wrap; align-items:center; gap:12px; padding:12px 14px; margin-top:12px; border:1px solid var(--hairline); border-radius:6px; background:var(--panel-alt); }
 .rb-board-offer-logo { display:flex; align-items:center; justify-content:center; flex:0 0 36px; }
 .rb-board-offer-scholarship > span { border-color:var(--gold) !important; }
