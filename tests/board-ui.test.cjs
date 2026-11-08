@@ -1883,8 +1883,8 @@ test('My Offers shows only active scholarships from other teams and composes all
   r3:[{id:'mine3',team:'Michigan State',text:'Scholarship'},{team:'Texas & A&M',text:'Scholarship'}]
  };
  const html=app.renderMyOffers();
- assert.match(html,/Other scholarships: Alabama<\/span>/);assert.match(html,/Other scholarships: Texas &amp; A&amp;M/);
- assert.doesNotMatch(html,/Other scholarships: (?:Michigan|USC)|Alabama, Alabama/);
+ assert.match(html,/Scholarships: Alabama<\/span>/);assert.match(html,/Other scholarships: Texas &amp; A&amp;M/);
+ assert.doesNotMatch(html,/(?:Other scholarships|Scholarships): (?:Michigan|USC)|Alabama, Alabama/);
  const cards=[...html.matchAll(/<div[^>]+data-my-offer-card="1"[^>]*>/g)].map(m=>element(Object.fromEntries([...m[0].matchAll(/([\w-]+)="([^"]*)"/g)].map(a=>[a[1],a[2]]))));
  const chip=element({'data-position-filter':'offers:michigan state','data-position-bucket':'QB'});chip.querySelector=()=>null;
  const walkon=element({'data-own-type-kind':'offers','data-own-type':'walkon'});
