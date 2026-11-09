@@ -14,6 +14,7 @@ function changes(before,after,path='',out=[]){
  return out;
 }
 export async function describeModeration(env,path,body,user){
+ if(path==='/api/admin/offer-window')return {action:body.locked?'Closed offers':'Opened offers',details:['Updated the recruiting offer window.']};
  if(path==='/api/league/state'){
   const before=await readLeagueState(env) || {},after=body.state || body,out=[];
   if(Object.hasOwn(body,'expectedUpdatedAt') && body.expectedUpdatedAt!==(before.updatedAt || null))return null;

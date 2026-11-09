@@ -949,16 +949,27 @@ async function saveSettingsChanges(){
   try {
     let payload = leagueStatePayload();
     if (apiAvailable()) {
-      const response = await fetch('/api/league/state', { credentials: 'include' });
-      if (!response.ok) throw new Error('Could not check current league data. Your draft is still here.');
-      const current = (await response.json()).state || {};
-      if (transaction.autoApplied && NZCFLAutoCommits.fingerprint(transaction.base) !== NZCFLAutoCommits.fingerprint(current)) throw Error('Offers or team limits changed after this auto preview. Discard this draft and produce the autos again.');
-      if (transaction.earlyDeclareesApplied && NZCFLAutoCommits.fingerprint(transaction.base) !== NZCFLAutoCommits.fingerprint(current)) throw Error('Offers, commitments, or team limits changed after the early-declaree import. Discard this draft, reopen Settings, and import again to review the latest balances and restored offers.');
-      payload = mergeSettingsValue(transaction.payload, payload, current);
-      const saved = await fetch('/api/league/state', { method:'PUT', credentials:'include', headers:{'content-type':'application/json'}, body:JSON.stringify({state:payload, expectedUpdatedAt:current.updatedAt || null}) });
-      const result = await saved.json().catch(function(){ return {}; });
-      if (!saved.ok) throw new Error(result.error || 'Settings could not be saved. Your draft is still here.');
-      payload = result.state || payload;
+      const draft=payload;
+      const changed=Object.keys({...transaction.payload,...draft}).filter(key=>JSON.stringify(transaction.payload[key])!==JSON.stringify(draft[key]));
+      if(changed.includes('offersLocked') && changed.every(key=>['offersLocked','offerSchedule'].includes(key))){
+        const saved=await fetch('/api/admin/offer-window',{method:'POST',credentials:'include',headers:{'content-type':'application/json'},body:JSON.stringify({locked:draft.offersLocked,classKey:conditionalClassKey()})});
+        const result=await saved.json().catch(function(){return {};});
+        if(!saved.ok || !result.state)throw Error(result.error || 'The offer window could not be saved. Your draft is still here.');
+        payload=result.state;
+      }else for(let attempt=0;attempt<4;attempt++){
+        const response = await fetch('/api/league/state', { credentials: 'include', cache:'no-store' });
+        if (!response.ok) throw new Error('Could not check current league data. Your draft is still here.');
+        const current = (await response.json()).state || {};
+        if (transaction.autoApplied && NZCFLAutoCommits.fingerprint(transaction.base) !== NZCFLAutoCommits.fingerprint(current)) throw Error('Offers or team limits changed after this auto preview. Discard this draft and produce the autos again.');
+        if (transaction.earlyDeclareesApplied && NZCFLAutoCommits.fingerprint(transaction.base) !== NZCFLAutoCommits.fingerprint(current)) throw Error('Offers, commitments, or team limits changed after the early-declaree import. Discard this draft, reopen Settings, and import again to review the latest balances and restored offers.');
+        payload = mergeSettingsValue(transaction.payload, draft, current);
+        const saved = await fetch('/api/league/state', { method:'PUT', credentials:'include', headers:{'content-type':'application/json'}, body:JSON.stringify({state:payload, expectedUpdatedAt:current.updatedAt || null}) });
+        const result = await saved.json().catch(function(){ return {}; });
+        if(saved.status===409 && attempt<3)continue;
+        if (!saved.ok) throw new Error(result.error || 'Settings could not be saved. Your draft is still here.');
+        payload = result.state || payload;
+        break;
+      }
     }
     Object.assign(DB, payload);
     transaction.base = copySettings(DB); transaction.payload = copySettings(leagueStatePayload()); transaction.typed = false;
@@ -4256,6 +4267,9 @@ function renderListPageHeading(title, subtitle){
 }
 
 let offerAutoPreviewCache=null,offerAutoWorker=null,offerAutoTimer=null;
+function autoPreviewStatus(preview){
+  return preview.pending?'Checking current autos…':preview.unavailable?'Auto preview unavailable. '+(preview.error || 'Refresh to retry.'):'Auto if closed now requires one eligible team with room. Competing active offers prevent the badge.';
+}
 function updateAutoPreviewBadges(){
   if(UI.view!=='myoffers' || !offerAutoPreviewCache)return;
   const preview=offerAutoPreviewCache;
@@ -4263,7 +4277,7 @@ function updateAutoPreviewBadges(){
     el.innerHTML=preview.offers.has(el.getAttribute('data-auto-offer'))?'<span class="rb-tag" style="font-size:11px;color:#91d6a4;border-color:#477d55;background:rgba(88,191,114,.1);">Auto if closed now</span>':'';
   });
   const status=document.getElementById('rb-auto-preview-status');
-  if(status)status.textContent=preview.pending?'Checking current autos…':preview.unavailable?'Auto preview unavailable. Check scholarship counts and team limits, or refresh to retry.':'Auto if closed now requires one eligible team with room. Competing active offers prevent the badge.';
+  if(status)status.textContent=autoPreviewStatus(preview);
 }
 function currentOfferAutoPreview(){
   const signature=[DB.updatedAt,lastLocalChangeAt,lastOfferWriteAt,recruitingStage()].join(':');
@@ -4279,20 +4293,21 @@ function currentOfferAutoPreview(){
       if(offerAutoPreviewCache!==result)return;
       clearTimeout(offerAutoTimer);worker.terminate();offerAutoWorker=null;
       result.pending=false;result.unavailable=!!data.unavailable;result.offers=new Set(data.offers || []);
+      result.error=data.error || '';
       updateAutoPreviewBadges();
     };
     worker.onmessage=function(event){if(event.data.signature===signature)finish(event.data);};
     worker.onerror=function(){finish({unavailable:true});};
-    offerAutoTimer=setTimeout(function(){finish({unavailable:true});},30000);
+    offerAutoTimer=setTimeout(function(){finish({unavailable:true,error:'The calculation timed out. Refresh to retry.'});},30000);
     // Exclude pitch bodies, history, roster imports, and branding from the simulation.
     const prospects={},offersByProspect={};
     for(const [id,p] of Object.entries(DB.prospects || {})){
       prospects[id]={};
       for(const key of ['id','name','position','rank','rating','overall','potential','commitTeam','commitType','everScholarship','offerMode'])prospects[id][key]=p[key];
-      offersByProspect[id]=(DB.offersByProspect[id] || []).map(o=>({id:o.id,team:o.team,rescinded:o.rescinded,offerType:o.offerType,text:String(o.text || '').trim().split(/\r?\n/).slice(0,5).join('\n')}));
+      offersByProspect[id]=(DB.offersByProspect[id] || []).map(o=>({id:o.id,team:o.team,rescinded:o.rescinded,text:NZCFLAutoCommits.offerKind(DB,p,o)==='scholarship'?'Scholarship':'Walk-On'}));
     }
     worker.postMessage({signature,state:{prospects,offersByProspect,recruitingStage:DB.recruitingStage,scholarshipCapacity:DB.scholarshipCapacity,bucksRemaining:DB.bucksRemaining,conditionalRescinds:DB.conditionalRescinds}});
-  }catch{result.pending=false;result.unavailable=true;}
+  }catch{clearTimeout(offerAutoTimer);if(offerAutoWorker)offerAutoWorker.terminate();offerAutoWorker=null;result.pending=false;result.unavailable=true;}
   return result;
 }
 let scholarshipTemplateState={owner:'',loaded:false,loading:false,saving:false,version:0,template:null,draft:null,error:''};
@@ -4668,7 +4683,7 @@ function renderMyOffers(){
   if (recruitingStage() === 'cpr') html += '<p class="rb-transfer-limit">Your offer goes to the matching player thread, or creates one from the free-agent list.</p>';
   const walkonCount=rows.filter(row=>NZCFLAutoCommits.offerKind(DB,row.prospect,row.offer)==='walkon').length;
   html += '<p style="font-size:13px;color:var(--slate);">'+walkonCount+' walk-on · '+(rows.length-walkonCount)+' scholarship</p>';
-  html += '<p id="rb-auto-preview-status" style="font-size:12px;color:var(--slate);">'+(autoPreview.pending?'Checking current autos…':autoPreview.unavailable?'Auto preview unavailable until scholarship counts and team limits are ready.':'Auto if closed now requires one eligible team with room. Competing active offers prevent the badge.')+'</p>';
+  html += '<p id="rb-auto-preview-status" style="font-size:12px;color:var(--slate);">'+escapeHtml(autoPreviewStatus(autoPreview))+'</p>';
   html += '<div class="rb-my-offer-filters"><div><span class="rb-offer-filter-label">Your offer</span>'+renderOwnTypeFilter('offers')+'</div><label class="rb-other-scholarship-filter"><span class="rb-offer-filter-label">Scholarships from other teams</span><select class="rb-input" id="rb-other-scholarship-filter" aria-label="Scholarships from other teams">'+[['','All recruits'],['with','With other scholarships'],['without','No other scholarships']].map(([value,label])=>'<option value="'+value+'"'+((UI.otherScholarshipFilter || '')===value?' selected':'')+'>'+label+'</option>').join('')+'</select></label></div>';
   html += '<input class="rb-input" id="rb-my-offer-search" placeholder="' + (recruitingStage() === 'transfer' ? 'Search offers by player name' : 'Search your offers by recruit name, rank, or hometown') + '" />';
   if (UI.rescindError) html += '<div style="font-size:12px;color:var(--alert);margin-top:8px;">' + escapeHtml(UI.rescindError) + '</div>';

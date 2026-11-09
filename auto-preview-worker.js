@@ -18,5 +18,5 @@ self.onmessage=function(event){
    result.commits.forEach(row=>{const key=row.prospectId+':'+row.offerId;if(uncontested.has(key))offers.push(key);});
   }
   self.postMessage({signature,offers,unavailable:false});
- }catch{self.postMessage({signature,offers:[],unavailable:true});}
+ }catch(error){self.postMessage({signature,offers:[],unavailable:true,error:error.message || 'Refresh to retry.'});}
 };

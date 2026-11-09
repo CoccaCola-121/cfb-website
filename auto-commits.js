@@ -181,28 +181,36 @@
     }
     const work=copy(state);
     const players=Object.entries(work.prospects || {}).map(([id,p])=>({...p,id})).sort(order);
+    const totals=counts(work),teams=new Map(),offerInfo=new Map(),committed=new Map();
+    for(const p of players){
+      if(p.commitTeam){const t=key(p.commitTeam);if(!committed.has(t))committed.set(t,[]);committed.get(t).push(p);}
+      for(const o of work.offersByProspect?.[p.id] || []){
+        const team=key(o.team),type=offerKind(work,p,o);
+        offerInfo.set(o,{team,type});
+        if(!teams.has(team))teams.set(team,[]);
+        teams.get(team).push({p,o});
+      }
+    }
     const missing=new Set();
-    for(const p of players)if(!p.commitTeam)for(const o of work.offersByProspect?.[p.id] || []){
-      if(!o.rescinded && remaining(work,o.team,'scholarship')===null) missing.add(o.team);
+    for(const rows of teams.values()){
+      const active=rows.find(({p,o})=>!p.commitTeam && !o.rescinded);
+      if(active && remaining(work,active.o.team,'scholarship',totals)===null)missing.add(active.o.team);
     }
     if(missing.size){result.errors.push('Missing scholarship counts or Bucks allowances: '+[...missing].sort().join(', ')+'.');return result;}
     function rescind(p,o,reason,ruleId){
       if(o.rescinded)return;o.rescinded=true;o.rescindedAt=now;o.rescindReason=reason;
       result.rescinds.push({prospectId:p.id,offerId:o.id,team:o.team,reason,...(ruleId?{conditionalRescindRuleId:ruleId}:{})});
     }
-    function applyLimits(){
-      const totals=counts(work);
-      for(const p of players){
-        if(work.prospects[p.id].commitTeam)continue;
-        for(const o of work.offersByProspect?.[p.id] || []){
-          if(o.rescinded)continue;
-          const type=offerKind(work,p,o);
-          if(type==='scholarship' && remaining(work,o.team,'scholarship',totals)===0)rescind(p,o,'Automatic rescind: scholarship cap reached.');
-          if(kind==='walkon' && type==='walkon' && remaining(work,o.team,'walkon',totals)===0)rescind(p,o,'Automatic rescind: 15 walk-on commitments reached.');
-        }
+    function applyLimits(team){
+      const groups=team===undefined?teams.values():[teams.get(team) || []];
+      for(const rows of groups)for(const {p,o} of rows){
+        if(work.prospects[p.id].commitTeam || o.rescinded)continue;
+        const type=offerInfo.get(o).type;
+        if(type==='scholarship' && remaining(work,o.team,'scholarship',totals)===0)rescind(p,o,'Automatic rescind: scholarship cap reached.');
+        if(kind==='walkon' && type==='walkon' && remaining(work,o.team,'walkon',totals)===0)rescind(p,o,'Automatic rescind: 15 walk-on commitments reached.');
       }
     }
-    function conditionalRules(){
+    function conditionalRules(team){
       const stars=p=>p.rank<=25?5:p.rank<=250?4:p.rank<=500?3:p.rank<=900?2:p.rank<=1700?1:0;
       function matches(rule,p,o){
         if(rule.excludedPlayerIds?.includes(p.id))return false;
@@ -218,27 +226,35 @@
       for(const rule of work.conditionalRescinds || []){
         if(!rule.enabled || !rule.team)continue;
         const t=key(rule.team);
-        const won=players.filter(p=>key(work.prospects[p.id].commitTeam)===t && matches(rule,p,(work.offersByProspect?.[p.id] || []).find(o=>!o.rescinded && key(o.team)===t)));
+        if(team!==undefined && team!==t)continue;
+        const won=(committed.get(t) || []).filter(p=>matches(rule,p,(work.offersByProspect?.[p.id] || []).find(o=>!o.rescinded && offerInfo.get(o).team===t)));
         if(won.length<Math.max(1,Number(rule.count)||0))continue;
         const targetRule=rescindTargetRule(rule,won);
         if(!targetRule)continue;
-        for(const p of players)if(!work.prospects[p.id].commitTeam)for(const o of work.offersByProspect?.[p.id] || [])if(!o.rescinded && key(o.team)===t && matches(targetRule,p,o))rescind(p,o,'Conditional rescind: '+(rule.name || 'rule met'),rule.id);
+        for(const {p,o} of teams.get(t) || [])if(!work.prospects[p.id].commitTeam && !o.rescinded && matches(targetRule,p,o))rescind(p,o,'Conditional rescind: '+(rule.name || 'rule met'),rule.id);
       }
     }
     function candidates(p){
       const all=(work.offersByProspect?.[p.id] || []).filter(o=>!o.rescinded);
-      const scholarships=all.filter(o=>offerKind(work,p,o)==='scholarship');
+      const scholarships=all.filter(o=>offerInfo.get(o).type==='scholarship');
       if(kind==='walkon' && (scholarshipOnly(work,p) || scholarships.length))return [];
-      const eligible=kind==='scholarship'?scholarships:all.filter(o=>offerKind(work,p,o)==='walkon');
-      return [...new Map(eligible.map(o=>[key(o.team),o])).values()];
+      const eligible=kind==='scholarship'?scholarships:all.filter(o=>offerInfo.get(o).type==='walkon');
+      return [...new Map(eligible.map(o=>[offerInfo.get(o).team,o])).values()];
     }
+    // Only the winning team's counts and conditional triggers can change after
+    // a commitment. Keep the league-wide ordering when looking for the next auto.
+    let changedTeam;
     while(true){
-      applyLimits();conditionalRules();
+      applyLimits(changedTeam);conditionalRules(changedTeam);
       const p=players.find(p=>!work.prospects[p.id].commitTeam && candidates(p).length===1);
       if(!p)break;
       if(rating(p)===null){result.errors.push('Missing overall for '+p.name+'. Correct it before producing autos.');result.commits=[];result.rescinds=[];return result;}
       const offer=candidates(p)[0];
       work.prospects[p.id].commitTeam=offer.team;work.prospects[p.id].commitType=kind;
+      changedTeam=offerInfo.get(offer).team;
+      totals[kind][changedTeam]=(totals[kind][changedTeam] || 0)+1;
+      if(!committed.has(changedTeam))committed.set(changedTeam,[]);
+      committed.get(changedTeam).push(p);
       result.commits.push({prospectId:p.id,name:p.name,position:p.position,overall:rating(p),potential:rating(p,1),team:offer.team,offerId:offer.id,kind});
     }
     result.contested=players.filter(p=>!work.prospects[p.id].commitTeam && candidates(p).length>1).length;

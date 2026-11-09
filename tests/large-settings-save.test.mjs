@@ -132,3 +132,63 @@ test('an incomplete Settings request is rejected without changing the board',asy
   assert.equal(response.status,400);assert.deepEqual(await readTransactionalState(db),before);
  }
 });
+
+test('closing a 10,168-offer board retries concurrent saves without losing offers or changing other settings',async t=>{
+ const {onRequestPost:close}=await import('../functions/api/admin/offer-window.js');
+ const {classKey}=await import('../functions/_lib/removed-players.js');
+ const {sanitizeState}=await import('../functions/_lib/league-state.js');
+ const db=database(t),seed=sanitizeState({recruitingStage:'hs',offersLocked:false,currentWeek:12,fullRoster:[],prospects:{},offersByProspect:{},scholarshipCapacity:{stage:'hs',sourceColumn:'D',teams:{}},conditionalRescinds:[]});
+ for(let i=0;i<2046;i++)seed.prospects['r'+i]={id:'r'+i,name:'Player '+i,rank:i+1,position:'QB'};
+ for(let i=0;i<10168;i++)(seed.offersByProspect['r'+(i%2046)] ||= []).push({id:'offer-'+i,team:'Team '+(i%120),text:'Scholarship\n'+('Original pitch. '.repeat(130))});
+ assert.ok(Buffer.byteLength(JSON.stringify(seed))>20_000_000);
+ await initializeTransactionalState(db,seed);db.batches=[];
+ const env={LEAGUE_DB:db,SESSION_SECRET:'test',AUTH_KV:{get:async()=>({discordId:'mod',accessLevel:'moderator'}),put:async()=>{}}};
+ const cookie='nzcfl_session='+await signSession(env,{discordId:'mod'}),tasks=[];
+ let races=0,injecting=false;
+ db.beforeBatch=async statements=>{
+  if(!injecting && races<2 && statements.some(s=>s.query.startsWith('UPDATE league_head'))){
+   injecting=true;const n=++races,latest=await readTransactionalState(db);
+   latest.offersByProspect.r2045.push({id:'concurrent-'+n,team:'Coach '+n,text:'Walk-On'});
+   latest.currentWeek=13;await writeTransactionalState(db,latest,latest);injecting=false;
+  }
+ };
+ const request=()=>new Request('https://test/api/admin/offer-window',{method:'POST',headers:{cookie},body:JSON.stringify({locked:true,classKey:classKey(seed)})});
+ const context={env,request:request(),waitUntil:task=>tasks.push(task)};
+ const response=await moderation({...context,next:()=>close(context)}),result=await response.json();
+ assert.equal(response.status,200,result.error);assert.equal(races,2);assert.equal(result.state.offersLocked,true);
+ assert.equal(result.state.currentWeek,13);assert.equal(Object.values(result.state.offersByProspect).flat().length,10170);
+ assert.deepEqual(result.state.prospects,seed.prospects);assert.deepEqual(result.state.scholarshipCapacity,seed.scholarshipCapacity);
+ assert.deepEqual(result.state.offersByProspect.r2045.slice(0,-2),seed.offersByProspect.r2045);
+ assert.ok(db.batches.every(b=>!b.queries.some(q=>q.startsWith('INSERT INTO league_pending_chunks'))),'A lock should only rewrite the changed tail chunks');
+ const before=await readTransactionalState(db),batches=db.batches.length;
+ assert.equal((await close({...context,request:request()})).status,200);assert.equal(db.batches.length,batches,'Retry after a lost response is idempotent');
+ assert.deepEqual(await readTransactionalState(db),before);
+ const logs=await db.prepare('SELECT action,status FROM moderation_log').all();assert.deepEqual(logs.results.map(r=>({...r})),[{action:'Closed offers',status:'completed'}]);
+ await Promise.all(tasks);
+});
+
+test('offer-window commands enforce moderator access and class identity, and reopening clears a past schedule',async t=>{
+ const {onRequestPost:change}=await import('../functions/api/admin/offer-window.js');
+ const {onRequestPost:submit}=await import('../functions/api/offers/high-school.js');
+ const {classKey}=await import('../functions/_lib/removed-players.js');
+ const db=database(t),seed={updatedAt:1,recruitingStage:'hs',offersLocked:true,offerSchedule:{closesAt:'2026-01-01T00:00:00Z'},prospects:{r1:{id:'r1',name:'Player',rank:501}},offersByProspect:{},fullRoster:[]};
+ await initializeTransactionalState(db,seed);
+ let role='coach';
+ const env={LEAGUE_DB:db,SESSION_SECRET:'test',AUTH_KV:{get:async()=>({discordId:'test',team:'UCLA',accessLevel:role}),put:async()=>{}}};
+ const cookie='nzcfl_session='+await signSession(env,{discordId:'test'});
+ const request=body=>new Request('https://test/api/admin/offer-window',{method:'POST',headers:{cookie},body:JSON.stringify(body)});
+ const body={locked:false,classKey:classKey(seed)};
+ assert.equal((await change({env,request:request(body)})).status,403);
+ const rejected=await submit({env,request:request({requestId:'new-offer-1234',prospectId:'r1',text:'Walk-On'})});
+ assert.equal(rejected.status,403);assert.match((await rejected.json()).error,/locked/);
+ role='moderator';
+ assert.equal((await change({env,request:request({...body,classKey:'wrong'})})).status,409);
+ assert.equal((await change({env,request:request({...body,locked:'false'})})).status,400);
+ assert.deepEqual(await readTransactionalState(db),seed);
+ const opened=await change({env,request:request(body)});assert.equal(opened.status,200);
+ const saved=(await opened.json()).state;assert.equal(saved.offersLocked,false);assert.equal(saved.offerSchedule,null);
+ // A class switch that wins the first attempted close must not close the new class.
+ let race=true;db.beforeBatch=async statements=>{if(race && statements.some(s=>s.query.startsWith('UPDATE league_head'))){race=false;const live=await readTransactionalState(db);live.recruitingStage='transfer';await writeTransactionalState(db,live,live);}};
+ assert.equal((await change({env,request:request({...body,locked:true})})).status,409);
+ assert.equal((await readTransactionalState(db)).offersLocked,false);
+});

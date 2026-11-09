@@ -10,7 +10,7 @@ const script = page.match(/<script>([\s\S]*?)<\/script>/)[1];
 const boot = script.lastIndexOf('\napplyRoute(routeFromPath(window.location.pathname));');
 assert(boot > 0, 'The app bootstrap must be identifiable without executing network requests.');
 const source = script.slice(0, boot) + `
-  globalThis.app = { DB, UI, updateConditionalRulePreview, importEarlyDeclarees, renderEarlyDeclareesSettings, expireSuspendedRequests, saveSuspendedOffer, restoreSuspendedOffer, renderProspectDetail, renderProspectVisits, syncLeagueState, syncSubmitModalLock, offerRequest, watchlistNumbers, renderWatchlist, submitHighSchoolOffer, ownOfferTypeBadge, renderOwnTypeFilter, mergeLeagueState, renderOfferAmendments, captureOfferDraft, readOfferDraft, clearOfferDraft, offerDraftKey, applyConditionalRescinds, readRescindRuleForm, validateRescindRuleDraft, requestQuickWalkon, renderQuickWalkonConfirm, canQuickOfferWalkon, quickOfferWalkon, renderQuickWalkon, renderProspectBoardCard, scheduleSummaryCountdown, dismissSummaryBanner, bindFloatingSubmit, extractPromises, cleanDisplayPromises, readCprBoard, updateBucksEntries, renderBucksSettings, renderCprProfile, cprPreviousSchool, ensureCprScholarshipThreads, renderAutoCommitSettings, stageAutoCommits, readScholarshipCapacity, buildPromiseArchive, parseCsvRows, offerCountForProspect, refreshScholarshipHistory, submitCprOffer, renderSubmitModal, createCprPlayer, loadClassData, resetOfferWindow, setOffersLocked, offersLocked, pendingCommitChanges, restoreSettingsDraft, renderOfferBlock, renderRescindFilterFields, renderVisitLedger, visibleBoardProspectIds, setRecruitingStage, requestReset, approveDangerReset, beginSettingsDraft, hasSettingsChanges, canLeaveSettings, saveSettingsChanges, saveDBNow, leagueStatePayload, mergeSettingsValue, updateCommitsFromSheet, runBackupNow, setTransferFilter, renderTransferFilters, renderClassSetup, requestManualCommitOverride, applyManualCommitOverride, requestClearCommit, clearManualCommitOverride, applyManualCommitOverrides, clearRecruitingBoard, findProspectFromSheetRow, transferCardStyle, parseFullClass, prospectFromRosterRow, confirmTransferImport, releaseSingleStageBoard, addOfferDirect, render, renderNav, navigateTo, applyRoute, setReady(){ dbReady = true; sessionReady = true; }, renderFeed, renderBoardSearchResults, renderTeamsPage,
+  globalThis.app = { DB, UI, currentOfferAutoPreview, autoPreviewStatus, updateConditionalRulePreview, importEarlyDeclarees, renderEarlyDeclareesSettings, expireSuspendedRequests, saveSuspendedOffer, restoreSuspendedOffer, renderProspectDetail, renderProspectVisits, syncLeagueState, syncSubmitModalLock, offerRequest, watchlistNumbers, renderWatchlist, submitHighSchoolOffer, ownOfferTypeBadge, renderOwnTypeFilter, mergeLeagueState, renderOfferAmendments, captureOfferDraft, readOfferDraft, clearOfferDraft, offerDraftKey, applyConditionalRescinds, readRescindRuleForm, validateRescindRuleDraft, requestQuickWalkon, renderQuickWalkonConfirm, canQuickOfferWalkon, quickOfferWalkon, renderQuickWalkon, renderProspectBoardCard, scheduleSummaryCountdown, dismissSummaryBanner, bindFloatingSubmit, extractPromises, cleanDisplayPromises, readCprBoard, updateBucksEntries, renderBucksSettings, renderCprProfile, cprPreviousSchool, ensureCprScholarshipThreads, renderAutoCommitSettings, stageAutoCommits, readScholarshipCapacity, buildPromiseArchive, parseCsvRows, offerCountForProspect, refreshScholarshipHistory, submitCprOffer, renderSubmitModal, createCprPlayer, loadClassData, resetOfferWindow, setOffersLocked, offersLocked, pendingCommitChanges, restoreSettingsDraft, renderOfferBlock, renderRescindFilterFields, renderVisitLedger, visibleBoardProspectIds, setRecruitingStage, requestReset, approveDangerReset, beginSettingsDraft, hasSettingsChanges, canLeaveSettings, saveSettingsChanges, saveDBNow, leagueStatePayload, mergeSettingsValue, updateCommitsFromSheet, runBackupNow, setTransferFilter, renderTransferFilters, renderClassSetup, requestManualCommitOverride, applyManualCommitOverride, requestClearCommit, clearManualCommitOverride, applyManualCommitOverrides, clearRecruitingBoard, findProspectFromSheetRow, transferCardStyle, parseFullClass, prospectFromRosterRow, confirmTransferImport, releaseSingleStageBoard, addOfferDirect, render, renderNav, navigateTo, applyRoute, setReady(){ dbReady = true; sessionReady = true; }, renderFeed, renderBoardSearchResults, renderTeamsPage,
     renderThreadProspectList, renderProspectDetail, builtInTeamBranding, getTeamBranding, activeTeamBrands,
     mobileRecruitName, renderRecruitName, renderMyOffers, renderCommitsForTeam, renderTeamOffers, renderConditionalRescinds, renderRecruitValues, teamBorderColor, bindEvents, applyDefaultClassData, releaseWave1, releaseWave2,
     openHeaderEdit, renderHeaderEditModal, saveHeaderEdit, syncHSVisitDraft, renderEditOfferModal, saveOfferEdit, currentHSPitches, findHSPitchPlayer, renderHSPitchEditor, renderHSPitchBuilder, buildHSPitchDraft, applyHSVisits, hsBuilderVisits, parseOfferSheet, bindHSPitches, fitHSPitchOptions,
@@ -497,7 +497,7 @@ test('Save settings is the write boundary and keeps drafts after a server failur
   app.setReady();
   app.beginSettingsDraft();
   const live=JSON.parse(JSON.stringify(app.leagueStatePayload()));
-  app.DB.offersLocked=true;
+  app.DB.offersLocked=true;app.DB.currentWeek=12;
   context.window.location.protocol='https:';
   let puts=0;
   context.fetch=async(url,options={})=>{
@@ -1926,4 +1926,53 @@ test('conditional rule summary refreshes restored trigger, target and exception 
  app.updateConditionalRulePreview();
  assert.equal(counts.trigger.textContent,'1 selected');assert.equal(counts.target.textContent,'Choose players');assert.equal(counts.exclude.textContent,'1 selected');
  assert.equal(elements['rb-rule-preview'].textContent,'After 1 total commitment from 1 selected recruit, rescind offers matching your filters, keeping 1 selected exception.');
+});
+
+test('closing offers saves a small command and keeps the draft if it fails',async()=>{
+ const {app,context}=harness();app.setSession({accessLevel:'moderator'});app.setReady();app.UI.view='setup';
+ app.DB.offersLocked=false;app.beginSettingsDraft();app.setOffersLocked(true);
+ context.window.location.protocol='https:';
+ let calls=0,fail=true;
+ context.fetch=async(url,options)=>{
+  calls++;assert.equal(url,'/api/admin/offer-window');assert.equal(options.method,'POST');
+  const body=JSON.parse(options.body);assert.equal(body.locked,true);assert.equal(typeof body.classKey,'string');
+  assert.ok(options.body.length<300,'No board snapshot should be uploaded');
+  return fail?{ok:false,json:async()=>({error:'Try again'})}:{ok:true,json:async()=>({state:{...app.leagueStatePayload(),currentWeek:18,offersByProspect:{r2:[{id:'concurrent',team:'UCLA'}]}}})};
+ };
+ await app.saveSettingsChanges();assert.equal(app.hasSettingsChanges(),true);assert.match(app.UI.settingsError,/Try again/);
+ fail=false;await app.saveSettingsChanges();assert.equal(calls,2);assert.equal(app.hasSettingsChanges(),false);
+ assert.equal(app.DB.currentWeek,18);assert.equal(app.DB.offersByProspect.r2[0].id,'concurrent');assert.equal(app.DB.offersLocked,true);
+});
+
+test('mixed Settings saves remerge the original draft after a concurrent offer write',async()=>{
+ const {app,context}=harness();app.setSession({accessLevel:'moderator'});app.setReady();app.UI.view='setup';
+ app.DB.offersLocked=false;app.beginSettingsDraft();
+ const live=JSON.parse(JSON.stringify(app.leagueStatePayload()));
+ app.setOffersLocked(true);app.DB.currentWeek=12;context.window.location.protocol='https:';
+ let puts=0,reads=0;
+ context.fetch=async(url,options)=>{
+  assert.equal(url,'/api/league/state');
+  if(options.method==='PUT'){
+   const body=JSON.parse(options.body);puts++;
+   if(puts===1){live.updatedAt=100;(live.offersByProspect.r2 ||= []).push({id:'concurrent',team:'UCLA'});return {ok:false,status:409,json:async()=>({error:'The league changed before saving.'})};}
+   assert.equal(body.expectedUpdatedAt,100);assert.equal(body.state.offersByProspect.r2.at(-1).id,'concurrent');
+   assert.equal(body.state.offersLocked,true);assert.equal(body.state.currentWeek,12);
+   return {ok:true,json:async()=>({state:body.state})};
+  }
+  reads++;assert.equal(options.cache,'no-store');return {ok:true,json:async()=>({state:JSON.parse(JSON.stringify(live))})};
+ };
+ await app.saveSettingsChanges();assert.equal(puts,2);assert.equal(reads,2);assert.equal(app.hasSettingsChanges(),false);assert.equal(app.UI.settingsError,null);
+});
+
+test('auto preview compacts parsed offer types without losing blank-line scholarship headers',()=>{
+ const {app,context,elements}=harness();let worker;
+ context.Worker=class {constructor(){worker=this;}terminate(){this.terminated=true;}postMessage(data){this.data=data;}};
+ app.UI.view='myoffers';elements['rb-auto-preview-status']=element();
+ app.DB.offersByProspect.r2=[{id:'offer',team:'UCLA',text:'UCLA\n\nMorgan Baker\n\nWR\n\nScholarship\n'+('Long pitch. '.repeat(1000))}];
+ const result=app.currentOfferAutoPreview();assert.equal(result.pending,true);
+ assert.equal(worker.data.state.offersByProspect.r2[0].text,'Scholarship');
+ worker.onmessage({data:{signature:worker.data.signature,unavailable:true,error:'Read scholarship counts for this class first.'}});
+ assert.equal(result.pending,false);assert.equal(worker.terminated,true);
+ assert.match(elements['rb-auto-preview-status'].textContent,/Read scholarship counts for this class first/);
+ assert.match(app.renderMyOffers(),/Read scholarship counts for this class first/);
 });
