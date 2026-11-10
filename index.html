@@ -732,7 +732,7 @@ function visibleBoardProspectIds(t){
     const offered = (DB.offersByProspect[pid] || []).some(function(o){ return activeValidOffer(pid,o); });
     if (UI.boardOfferFilter === 'offered' && !offered) return false;
     if (UI.boardOfferFilter === 'unoffered' && offered) return false;
-    if(recruitingStage()==='hs' && UI.hsOfferTypeFilter && !threadOffers.some(o=>activeValidOffer(pid,o) && NZCFLAutoCommits.offerKind(DB,p,o)===UI.hsOfferTypeFilter))return false;
+    if(recruitingStage()==='hs' && !(t.stars>=3) && UI.hsOfferTypeFilter && !threadOffers.some(o=>activeValidOffer(pid,o) && NZCFLAutoCommits.offerKind(DB,p,o)===UI.hsOfferTypeFilter))return false;
     const ownActive = SESSION && threadOffers.some(o=>o && !o.rescinded && teamKey(o.team)===teamKey(SESSION.team));
     if(UI.view==='watchlist'){
       if(UI.watchlistOfferFilter==='active' && !ownActive)return false;
@@ -5252,7 +5252,7 @@ function renderThreadProspectList(t, options){
   });
   html += '</div></div>';
   html += '<div class="rb-filter-row"><div class="rb-segmented" aria-label="Offer status">' + [['offered','Offered'],['all','All'],['unoffered','Unoffered']].map(function(option){ return '<button type="button" data-board-offer-filter="' + option[0] + '" aria-pressed="' + ((UI.boardOfferFilter || 'all') === option[0]) + '">' + option[1] + '</button>'; }).join('') + '</div></div>';
-  if(recruitingStage()==='hs')html += '<div class="rb-filter-row"><div class="rb-segmented" role="group" aria-label="Active offer type from any team">'+[['scholarship','Scholarship','Players with an active scholarship offer from any team'],['','All','All offer types, including players without offers'],['walkon','Walk-On','Players with an active walk-on offer from any team']].map(([value,label,hint])=>'<button type="button" data-hs-offer-type="'+value+'" aria-pressed="'+((UI.hsOfferTypeFilter || '')===value)+'" title="'+hint+'">'+label+'</button>').join('')+'</div></div>';
+  if(recruitingStage()==='hs' && !(t.stars>=3))html += '<div class="rb-filter-row"><div class="rb-segmented" role="group" aria-label="Active offer type from any team">'+[['scholarship','Scholarship','Players with an active scholarship offer from any team'],['','All','All offer types, including players without offers'],['walkon','Walk-On','Players with an active walk-on offer from any team']].map(([value,label,hint])=>'<button type="button" data-hs-offer-type="'+value+'" aria-pressed="'+((UI.hsOfferTypeFilter || '')===value)+'" title="'+hint+'">'+label+'</button>').join('')+'</div></div>';
   html += '</div>';
   if (recruitingStage() !== 'hs') html += '</div>';
   html += '</div>';
