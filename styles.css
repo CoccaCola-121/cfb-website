@@ -439,8 +439,8 @@ button, a, input, select, textarea, summary { -webkit-tap-highlight-color: trans
 .rb-brand-name > span { color: #A0A3A6; font-weight: 500; }
 .rb-home { min-height: 100vh; min-height: 100svh; display: grid; grid-template-columns: minmax(0, 2fr) minmax(360px, 1fr); }
 .rb-home-hero { position: relative; isolation: isolate; overflow: hidden; display: flex; flex-direction: column; justify-content: space-between; padding: 40px clamp(32px, 5vw, 88px); background: #171819; border-top: 5px solid var(--accent); min-width: 0; }
-/* Keep the supplied stadium photograph intact; blend it into the league masthead. */
-.rb-home-hero::before { content: ""; position: absolute; z-index: -2; inset: 20% 0 0; background: url('./assets/wvu-stadium.webp') center 55% / cover no-repeat; filter: saturate(.65); opacity: .8; pointer-events: none; }
+/* Keep the supplied football photograph intact; blend it into the league masthead. */
+.rb-home-hero::before { content: ""; position: absolute; z-index: -2; inset: 20% 0 0; background: url('./assets/michigan-state.webp') center 55% / cover no-repeat; filter: saturate(.65); opacity: .8; pointer-events: none; }
 .rb-home-hero::after { content: ""; position: absolute; z-index: -1; inset: 0; background: linear-gradient(180deg, #171819 18%, rgba(23,24,25,.96) 33%, rgba(23,24,25,.72) 52%, rgba(23,24,25,.4) 76%, rgba(23,24,25,.9) 100%), linear-gradient(90deg, rgba(23,24,25,.32), transparent 75%); pointer-events: none; }
 .rb-home-masthead { display: flex; align-items: center; justify-content: space-between; gap: 24px; }
 .rb-home-editorial { padding: 76px 0 88px; }
