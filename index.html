@@ -88,11 +88,12 @@
 <script src="/promise-lists.js" onerror="this.onerror=null;this.src='/promise-lists.js?retry=1'"></script>
 <script src="/visit-rules.js" onerror="this.onerror=null;this.src='/visit-rules.js?retry=1'"></script>
 <script src="/hs-pitch-library.js" onerror="this.onerror=null;this.src='/hs-pitch-library.js?retry=1'"></script>
+<script src="/archive-season.js" onerror="this.onerror=null;this.src='/archive-season.js?retry=1'"></script>
 <script>
 (function(){
 
 // Do not open an editor that cannot finish rendering after a successful save.
-if(typeof NZCFLOfferAmendments === 'undefined'){
+if(typeof NZCFLOfferAmendments === 'undefined' || typeof NZCFLArchiveSeason === 'undefined'){
   document.getElementById('rb-app').innerHTML='<main style="padding:32px;font-family:sans-serif;"><h1>Some site files could not load</h1><p>Reconnect and reload this page. Your saved offer drafts are kept.</p><button onclick="window.location.reload()">Reload RecruitHQ</button></main>';
   return;
 }
@@ -3378,13 +3379,19 @@ async function approveDangerReset(){
   await confirmReset();
 }
 
+function archiveSeasonValue(){
+ return UI.archiveSeasonDraft?.classKey===conditionalClassKey()?UI.archiveSeasonDraft.value:NZCFLArchiveSeason.suggested(DB);
+}
 async function archiveCurrentCycle(automatic=false){
+ if(!canUseDangerZone() || UI.archiveSaving)return false;
  try{
-  const response=await fetch('/api/admin/archive-cycle',{method:'POST',credentials:'include',headers:{'content-type':'application/json'},body:JSON.stringify({expectedUpdatedAt:DB.updatedAt})});
+  const season=NZCFLArchiveSeason.resolve(DB,archiveSeasonValue());
+  UI.archiveSaving=true;UI.archiveStatus='Archiving cycle…';if(!automatic)render();
+  const response=await fetch('/api/admin/archive-cycle',{method:'POST',credentials:'include',headers:{'content-type':'application/json'},body:JSON.stringify({expectedUpdatedAt:DB.updatedAt,season,classKey:conditionalClassKey()})});
   const data=await response.json();if(!response.ok || !data.ok)throw Error(data.error || 'Archive failed.');
-  UI.archiveStatus='Archived '+data.season+' '+data.stage.toUpperCase()+'.';return true;
+  UI.archiveStatus='Archived '+data.season+' '+data.stage.toUpperCase()+'.';UI.settingsError=null;return true;
  }catch(error){UI.archiveStatus=error.message;UI.settingsError=error.message;return false;}
- finally{if(!automatic)render();}
+ finally{UI.archiveSaving=false;if(!automatic)render();}
 }
 
 async function confirmReset(){
@@ -5604,8 +5611,9 @@ function renderClassSetup(){
   html += '<div class="rb-card" style="padding:20px 24px;max-width:640px;margin-top:14px;">';
   html += '<div class="rb-h" style="font-size:16px;margin-bottom:8px;">Archive Center</div>';
   html += '<div class="rb-mono" style="font-size:12px;color:var(--slate);margin-bottom:12px;">Browse past cycles or export committed players and promises. Latest 20 seasons retained.</div>';
+  if(canUseDangerZone())html+='<label for="rb-archive-season" style="display:block;margin-bottom:6px;">Recruiting season</label><input class="rb-input" id="rb-archive-season" type="number" min="1900" max="9999" step="1" required placeholder="League season" aria-describedby="rb-archive-season-help" value="'+escapeHtml(archiveSeasonValue())+'"'+(UI.archiveSaving?' disabled':'')+' style="max-width:180px;"><p id="rb-archive-season-help" style="font-size:12px;color:var(--slate);margin:6px 0 14px;">Use the in-game season for this recruiting class, not the calendar year. Filled automatically when the roster includes it.</p>';
   html += '<div style="display:flex;gap:10px;flex-wrap:wrap;"><a class="rb-btn" href="/archives.html">Browse archives</a>';
-  if(canUseDangerZone())html+='<button class="rb-btn" id="rb-archive-cycle">Archive current cycle</button>';
+  if(canUseDangerZone())html+='<button class="rb-btn" id="rb-archive-cycle"'+(UI.archiveSaving?' disabled':'')+'>'+(UI.archiveSaving?'Archiving…':'Archive current cycle')+'</button>';
   html += '<button class="rb-btn rb-btn-gold" id="rb-export-promise-archive">Export promises CSV</button>';
   html+='</div><p role="status">'+escapeHtml(UI.archiveStatus || '')+'</p>';
   html += '</div>';
@@ -6216,7 +6224,8 @@ function bindEvents(){
 
 
 
-  const archiveButton=document.getElementById('rb-archive-cycle');if(archiveButton)archiveButton.onclick=async function(){archiveButton.disabled=true;await archiveCurrentCycle();};
+  const archiveSeason=document.getElementById('rb-archive-season');if(archiveSeason)archiveSeason.oninput=function(){UI.archiveSeasonDraft={classKey:conditionalClassKey(),value:archiveSeason.value};};
+  const archiveButton=document.getElementById('rb-archive-cycle');if(archiveButton)archiveButton.onclick=function(){return archiveCurrentCycle();};
   restoreRescindDraft();
   bindScholarshipTemplates();
   bindHSPitches();
