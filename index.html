@@ -2565,11 +2565,11 @@ async function saveRescinds(offers, mass=false){
   if(!SESSION || UI.submitting)return;
   UI.submitting=true;UI.rescindError=null;UI.massRescindError=null;render();
   try{
-    const response=await fetch('/api/offers/rescind',{method:'POST',credentials:'include',headers:{'content-type':'application/json'},body:JSON.stringify({offers,classKey:conditionalClassKey()})});
+    const response=await fetch('/api/offers/rescind',{method:'POST',credentials:'include',headers:{'content-type':'application/json'},body:JSON.stringify({offers,mass,classKey:conditionalClassKey()})});
     const data=await response.json().catch(()=>{throw Error('Rescind was not confirmed. Please retry.');});
     if(!response.ok || !data.ok)throw Error(data.error || 'Rescind was not confirmed.');
     mergeLeagueState(data.state);
-    if(mass){UI.massRescindStatus='Rescinds saved on server.';UI.pendingMassRescind=null;UI.pendingMassRescindFinal=null;}
+    if(mass){UI.massRescindStatus=data.count+' offer'+(data.count===1?'':'s')+' rescinded.'+(data.skippedCommitted?' '+data.skippedCommitted+' committed player'+(data.skippedCommitted===1?' was':'s were')+' skipped.':'');UI.pendingMassRescind=null;UI.pendingMassRescindFinal=null;}
   }catch(error){if(mass)UI.massRescindError=error.message;else UI.rescindError=error.message;}
   finally{UI.submitting=false;render();}
 }
@@ -2771,13 +2771,20 @@ function titleForPromise(offer, promise){
   return 'Promise';
 }
 
+function committedPromiseOffers(prospect){
+  if(!prospect?.commitTeam)return [];
+  const offers=(DB.offersByProspect[prospect.id] || []).filter(o=>o && teamKey(o.team)===teamKey(prospect.commitTeam));
+  const active=offers.filter(o=>!o.rescinded);
+  // Imported commitments can arrive after a rescind. Keep their winning
+  // offer's promises without reopening the offer or including other teams.
+  return active.length ? active : offers;
+}
+
 function buildPromiseArchive(){
   const rows = [['Name', 'Committed Team', 'Promise 1', 'Promise 2', 'Promise 3']];
   Object.values(DB.prospects || {}).filter(function(p){ return p && p.commitTeam; }).sort(function(a,b){ return a.rank - b.rank; }).forEach(function(p){
     const promises = [];
-    (DB.offersByProspect[p.id] || []).filter(function(o){
-      return !o.rescinded && o.team && teamKey(o.team) === teamKey(p.commitTeam);
-    }).forEach(function(o){
+    committedPromiseOffers(p).forEach(function(o){
       cleanDisplayPromises(o).forEach(function(pr){ if (!promises.includes(pr.text)) promises.push(pr.text); });
     });
     rows.push([p.name, p.commitTeam, promises[0] || '', promises[1] || '', promises[2] || '']);
@@ -4769,8 +4776,9 @@ function renderCommitsForTeam(team, title){
   }
   html += '<div style="display:flex;flex-direction:column;gap:10px;">';
   commits.forEach(function(p){
-    const offers = (DB.offersByProspect[p.id] || []).filter(function(o){ return o.team === team; });
-    const promiseSearch = offers.map(function(o){ return cleanDisplayPromises(o).map(function(pr){ return [pr.text, titleForPromise(o,pr), pr.category].filter(Boolean).join(' ').replace(/_/g,' '); }).join(' '); }).join(' ');
+    const offers = (DB.offersByProspect[p.id] || []).filter(function(o){ return teamKey(o.team) === teamKey(team); });
+    const promiseOffers=committedPromiseOffers(p);
+    const promiseSearch = promiseOffers.map(function(o){ return cleanDisplayPromises(o).map(function(pr){ return [pr.text, titleForPromise(o,pr), pr.category].filter(Boolean).join(' ').replace(/_/g,' '); }).join(' '); }).join(' ');
     const bucket = positionBucket(p.position);
     const searchText = [p.rank, '#' + p.rank, p.name, p.hometown, promiseSearch].join(' ').toLowerCase();
     html += '<div class="rb-card rb-mobile-tight" data-my-commit-card="1" data-own-offer-type="' + NZCFLAutoCommits.commitKind(DB,p.id,p) + '" data-position-bucket="' + escapeHtml(bucket) + '" data-search="' + escapeHtml(searchText) + '" style="padding:14px 18px;">';
@@ -4778,7 +4786,7 @@ function renderCommitsForTeam(team, title){
     html += '<summary class="rb-offer-summary" style="list-style:none;cursor:pointer;">';
     html += '<div class="rb-commit-summary-layout">';
     html += '<div class="rb-commit-identity" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;"><span class="rb-list-identity"><span class="rb-mono" style="color:var(--slate);">' + recruitNumber(p) + '</span> <strong data-open-prospect="' + escapeHtml(p.id) + '" title="' + escapeHtml(p.name) + '" style="color:var(--chalk);cursor:pointer;">' + renderRecruitName(p.name, 24) + '</strong> <span class="rb-mono" style="color:var(--slate);font-size:13px;">' + escapeHtml(p.position || '') + (p.rating ? '<span class="rb-recruit-rating"> &middot; ' + escapeHtml(p.rating) + '</span>' : '') + (p.hometown ? '<span class="rb-desktop-only"> &middot; <span title="' + escapeHtml(p.hometown) + '">' + escapeHtml(shortText(p.hometown, 24)) + '</span></span>' : '') + '</span></span></div>';
-    html += '<span class="rb-commit-promises">' + renderPromiseChips(offers) + '</span>';
+    html += '<span class="rb-commit-promises">' + renderPromiseChips(promiseOffers) + '</span>';
     html += '</div>';
     html += '</summary>';
     html += '<div style="margin-top:12px;">';
@@ -5851,7 +5859,7 @@ function renderOfferBlock(o, opts){
   html += '<div style="font-size:13px;color:var(--chalk);margin-top:6px;white-space:pre-wrap;overflow-wrap:anywhere;max-height:none;overflow:visible;resize:none;" class="rb-offer-body">' + formatOfferText(o.text, cleanDisplayPromises(o)) + '</div>';
   html += renderOfferAmendments(o,opts.prospect,opts.hideUpgrade);
   if(canUseDangerZone() && o.id==='o_638767694988050432_fe7a8a75-d6dc-47dc-b2c9-384dae25732d' && o.team==='Michigan State')html+='<div style="margin-top:12px;"><button class="rb-btn rb-btn-danger" data-remove-kenny-test="1">Remove test offer</button></div>';
-  const displayPromises = !o.rescinded ? cleanDisplayPromises(o) : [];
+  const displayPromises = !o.rescinded || committedPromiseOffers(opts.prospect).includes(o) ? cleanDisplayPromises(o) : [];
   if (displayPromises.length){
     html += '<div style="margin-top:8px;">';
     displayPromises.forEach(function(p){
@@ -6069,6 +6077,7 @@ function renderMassRescindFinalModal(){
       '<div class="rb-h" style="font-size:20px;margin-bottom:8px;color:#FFF2F1;">Are you sure?</div>' +
       '<div style="font-size:14px;color:var(--text);line-height:1.5;margin-bottom:10px;">You are about to rescind <strong>' + count + ' offer' + (count === 1 ? '' : 's') + '</strong>.</div>' +
       '<div class="rb-card rb-mono" style="padding:10px 12px;background:var(--ink);font-size:12px;color:var(--slate);margin-bottom:14px;">' + escapeHtml(rescindFilterSummary(rule)) + '</div>' +
+      '<p>Committed players are protected, including commitments recorded since this preview.</p>' +
       '<div style="font-size:13px;color:var(--alert);line-height:1.45;margin-bottom:18px;">This cannot be undone. The offers will still show on the record as rescinded.</div>' +
       '<div style="display:flex;justify-content:flex-end;gap:8px;flex-wrap:wrap;">' +
         '<button class="rb-btn" id="rb-back-mass-rescind">Back to checklist</button>' +

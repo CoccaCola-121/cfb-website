@@ -71,6 +71,7 @@ export async function onRequestPut({ request, env, waitUntil }) {
     const prospect = (incoming.prospects || {})[pid];
     for (const offer of (Array.isArray(offers) ? offers : [])) {
       const old = ((previous && previous.offersByProspect || {})[pid] || []).find(item => item.id === offer.id);
+      if(!classReset && old && !old.rescinded && offer.rescinded && (previous?.prospects?.[pid]?.commitTeam || prospect?.commitTeam))return json({ok:false,error:'Committed players cannot be rescinded. Refresh your selection.'},{status:409});
       const visitError=globalThis.NZCFLVisitRules.error(previous || incoming,offer,old);
       if(visitError)return json({ok:false,error:visitError},{status:400});
       if (!old && !offer.rescinded && previous && globalThis.NZCFLOfferWindow.locked(previous)) return json({ok:false,error:'Offers are locked.'},{status:403});

@@ -10,7 +10,7 @@ const script = page.match(/<script>([\s\S]*?)<\/script>/)[1];
 const boot = script.lastIndexOf('\napplyRoute(routeFromPath(window.location.pathname));');
 assert(boot > 0, 'The app bootstrap must be identifiable without executing network requests.');
 const source = script.slice(0, boot) + `
-  globalThis.app = { DB, UI, archiveCurrentCycle, archiveSeasonValue, currentOfferAutoPreview, autoPreviewStatus, updateConditionalRulePreview, importEarlyDeclarees, renderEarlyDeclareesSettings, expireSuspendedRequests, saveSuspendedOffer, restoreSuspendedOffer, renderProspectDetail, renderProspectVisits, syncLeagueState, syncSubmitModalLock, offerRequest, watchlistNumbers, renderWatchlist, submitHighSchoolOffer, ownOfferTypeBadge, renderOwnTypeFilter, mergeLeagueState, renderOfferAmendments, captureOfferDraft, readOfferDraft, clearOfferDraft, offerDraftKey, applyConditionalRescinds, readRescindRuleForm, validateRescindRuleDraft, requestQuickWalkon, renderQuickWalkonConfirm, canQuickOfferWalkon, quickOfferWalkon, renderQuickWalkon, renderProspectBoardCard, scheduleSummaryCountdown, dismissSummaryBanner, bindFloatingSubmit, extractPromises, cleanDisplayPromises, readCprBoard, updateBucksEntries, renderBucksSettings, renderCprProfile, cprPreviousSchool, ensureCprScholarshipThreads, renderAutoCommitSettings, stageAutoCommits, readScholarshipCapacity, buildPromiseArchive, parseCsvRows, offerCountForProspect, refreshScholarshipHistory, submitCprOffer, renderSubmitModal, createCprPlayer, loadClassData, resetOfferWindow, setOffersLocked, offersLocked, pendingCommitChanges, restoreSettingsDraft, renderOfferBlock, renderRescindFilterFields, renderVisitLedger, visibleBoardProspectIds, setRecruitingStage, requestReset, approveDangerReset, beginSettingsDraft, hasSettingsChanges, canLeaveSettings, saveSettingsChanges, saveDBNow, leagueStatePayload, mergeSettingsValue, updateCommitsFromSheet, runBackupNow, setTransferFilter, renderTransferFilters, renderClassSetup, requestManualCommitOverride, applyManualCommitOverride, requestClearCommit, clearManualCommitOverride, applyManualCommitOverrides, clearRecruitingBoard, findProspectFromSheetRow, transferCardStyle, parseFullClass, prospectFromRosterRow, confirmTransferImport, releaseSingleStageBoard, addOfferDirect, render, renderNav, navigateTo, applyRoute, setReady(){ dbReady = true; sessionReady = true; }, renderFeed, renderBoardSearchResults, renderTeamsPage,
+  globalThis.app = { DB, UI, committedPromiseOffers, massRescindMatches, confirmMassRescind, saveRescinds, archiveCurrentCycle, archiveSeasonValue, currentOfferAutoPreview, autoPreviewStatus, updateConditionalRulePreview, importEarlyDeclarees, renderEarlyDeclareesSettings, expireSuspendedRequests, saveSuspendedOffer, restoreSuspendedOffer, renderProspectDetail, renderProspectVisits, syncLeagueState, syncSubmitModalLock, offerRequest, watchlistNumbers, renderWatchlist, submitHighSchoolOffer, ownOfferTypeBadge, renderOwnTypeFilter, mergeLeagueState, renderOfferAmendments, captureOfferDraft, readOfferDraft, clearOfferDraft, offerDraftKey, applyConditionalRescinds, readRescindRuleForm, validateRescindRuleDraft, requestQuickWalkon, renderQuickWalkonConfirm, canQuickOfferWalkon, quickOfferWalkon, renderQuickWalkon, renderProspectBoardCard, scheduleSummaryCountdown, dismissSummaryBanner, bindFloatingSubmit, extractPromises, cleanDisplayPromises, readCprBoard, updateBucksEntries, renderBucksSettings, renderCprProfile, cprPreviousSchool, ensureCprScholarshipThreads, renderAutoCommitSettings, stageAutoCommits, readScholarshipCapacity, buildPromiseArchive, parseCsvRows, offerCountForProspect, refreshScholarshipHistory, submitCprOffer, renderSubmitModal, createCprPlayer, loadClassData, resetOfferWindow, setOffersLocked, offersLocked, pendingCommitChanges, restoreSettingsDraft, renderOfferBlock, renderRescindFilterFields, renderVisitLedger, visibleBoardProspectIds, setRecruitingStage, requestReset, approveDangerReset, beginSettingsDraft, hasSettingsChanges, canLeaveSettings, saveSettingsChanges, saveDBNow, leagueStatePayload, mergeSettingsValue, updateCommitsFromSheet, runBackupNow, setTransferFilter, renderTransferFilters, renderClassSetup, requestManualCommitOverride, applyManualCommitOverride, requestClearCommit, clearManualCommitOverride, applyManualCommitOverrides, clearRecruitingBoard, findProspectFromSheetRow, transferCardStyle, parseFullClass, prospectFromRosterRow, confirmTransferImport, releaseSingleStageBoard, addOfferDirect, render, renderNav, navigateTo, applyRoute, setReady(){ dbReady = true; sessionReady = true; }, renderFeed, renderBoardSearchResults, renderTeamsPage,
     renderThreadProspectList, renderProspectDetail, builtInTeamBranding, getTeamBranding, activeTeamBrands,
     mobileRecruitName, renderRecruitName, renderMyOffers, renderCommitsForTeam, renderTeamOffers, renderConditionalRescinds, renderRecruitValues, teamBorderColor, bindEvents, applyDefaultClassData, releaseWave1, releaseWave2,
     openHeaderEdit, renderHeaderEditModal, saveHeaderEdit, syncHSVisitDraft, renderEditOfferModal, saveOfferEdit, currentHSPitches, findHSPitchPlayer, renderHSPitchEditor, renderHSPitchBuilder, buildHSPitchDraft, applyHSVisits, hsBuilderVisits, parseOfferSheet, bindHSPitches, fitHSPitchOptions,
@@ -922,6 +922,58 @@ test('promise CSV contains only winner names, teams, and three escaped promises'
  assert.equal(rows[1][2],'I promise a role in the rotation.');
  assert.equal(rows[1][3],'I promise weekly film sessions.');
  assert.equal(rows[1][4],'');
+});
+
+test('committed players retain rescinded winning-offer promises on their page, commit list, search and CSV',()=>{
+ const {app}=harness();
+ const p={id:'r104',rank:104,name:'C.J. Mabry',position:'CB',commitTeam:'UCLA'};
+ const texts=['I promise you’ll be on the long list of UCLA draftee’s come the end of your college career.','I promise I will not cut any scholarship recruits who commit to UCLA in the same recruiting year as you.'];
+ const winner={id:'ucla',team:' ucla ',rescinded:true,rescindReason:'Mass rescind',rescindedAt:123,text:'UCLA offers #104 C.J. Mabry\nScholarship\n\nPro Potential:\n**'+texts[0]+'**\n\nCoach:\n**'+texts[1]+'**'};
+ const loser={id:'usc',team:'USC',rescinded:false,text:'Scholarship\n\nI promise you a different role.'};
+ app.DB.prospects={r104:p};app.DB.offersByProspect={r104:[loser,winner]};app.DB.offersLocked=true;
+ const before=JSON.stringify(app.DB);
+ const rows=app.parseCsvRows(app.buildPromiseArchive());
+ assert.deepEqual(Array.from(rows[1]),[p.name,'UCLA',...texts,'']);
+ const html=app.renderOfferBlock(winner,{prospect:p,fullText:true});
+ assert.match(html,/rb-rescinded-badge/);assert.match(html,/Pro Potential:<\/span> I promise/);assert.match(html,/Coach:<\/span> I promise/);
+ const commits=app.renderCommitsForTeam('UCLA','Commits');
+ assert.match(commits,/rb-commit-promises[^]*?Pro Potential:<\/span> I promise/);
+ assert.match(commits,/data-search="[^"]*ucla draftee/);assert.doesNotMatch(commits,/different role/);
+ assert.equal(JSON.stringify(app.DB),before,'Promise recovery must not reactivate offers or change commitments');
+ delete p.commitTeam;
+ assert.equal(app.committedPromiseOffers(p).length,0);
+ assert.doesNotMatch(app.renderOfferBlock(winner,{prospect:p,fullText:true}),/Pro Potential:<\/span> I promise/);
+});
+
+test('commit promises prefer active winning offers and exclude rescinded alternatives and losing teams',()=>{
+ const {app}=harness(),p=app.DB.prospects.r1;
+ const old={team:'Boise State',rescinded:true,text:'',promises:[{text:'I promise an old starting role.'}]};
+ const active={team:'Boise State',text:'',promises:[{text:'I promise a role in the rotation.'}]};
+ app.DB.offersByProspect.r1=[old,active,{team:'Alabama',text:'',promises:[{text:'I promise weekly film sessions.'}]}];
+ assert.deepEqual(Array.from(app.committedPromiseOffers(p)),[active]);
+ const summary=app.renderCommitsForTeam('Boise State','Commits').match(/<span class="rb-commit-promises">([^]*?)<\/span>\s*<\/div>/)[1];
+ assert.match(summary,/role in the rotation/);assert.doesNotMatch(summary,/old starting role|weekly film sessions/);
+ assert.doesNotMatch(app.buildPromiseArchive(),/old starting role|weekly film sessions/);
+ // The fallback also covers automated rescinds preceding a later imported commitment.
+ active.rescinded=true;active.rescindReason='Automatic rescind: scholarship cap reached.';
+ app.DB.offersByProspect.r1=[active];
+ assert.match(app.buildPromiseArchive(),/role in the rotation/);
+});
+
+test('mass rescind confirmation drops newly committed players and reports server-protected commits',async()=>{
+ const {app,context}=harness();app.setSession({team:'Michigan State',username:'Coach'});
+ const rule={positions:[],stars:'',rankMode:'worse',rankValue:0,scholarship:''};
+ for(const id of ['r1','r2','r3'])app.DB.offersByProspect[id]=[{id:'o-'+id,team:'Michigan State',text:'Scholarship'}];
+ assert.deepEqual(Array.from(app.massRescindMatches(rule),r=>r.prospectId),['r2','r3']);
+ app.UI.pendingMassRescindFinal={rule,selectedKeys:['r2:o-r2','r3:o-r3']};
+ app.DB.prospects.r2.commitTeam='Michigan State';
+ let sent;
+ context.fetch=async(url,options)=>{sent=JSON.parse(options.body);const state=JSON.parse(JSON.stringify(app.DB));state.prospects.r3.commitTeam='USC';return {ok:true,json:async()=>({ok:true,state,count:0,skippedCommitted:1})};};
+ await app.confirmMassRescind();
+ assert.deepEqual(sent.offers,[{prospectId:'r3',offerId:'o-r3'}]);assert.equal(sent.mass,true);
+ assert.equal(app.UI.massRescindStatus,'0 offers rescinded. 1 committed player was skipped.');
+ assert.equal(app.UI.pendingMassRescindFinal,null);
+ assert(!app.DB.offersByProspect.r2[0].rescinded);assert(!app.DB.offersByProspect.r3[0].rescinded);
 });
 
 test('auto settings preview, staged commitments, and discard use the settings draft',()=>{
