@@ -10,7 +10,7 @@ export async function onRequestPost({ request, env, waitUntil }) {
   }
   const body = await request.json().catch(() => ({}));
   const discordId = String(body.discordId || '').trim();
-  const team = await findTeam(env, body.team);
+  const team = await findTeam(env, body.team, {coachable:true});
   if (!discordId) return json({ ok: false, error: 'Enter a Discord ID.' }, { status: 400 });
   if (!team) return json({ ok: false, error: 'That team is not available.' }, { status: 400 });
 

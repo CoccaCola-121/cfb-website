@@ -1,3 +1,4 @@
+import {isContractedTeam} from './teams-util.js';
 const SESSION_COOKIE = 'nzcfl_session';
 const STATE_COOKIE = 'nzcfl_oauth_state';
 
@@ -136,7 +137,9 @@ export async function getCurrentUser(request, env) {
   if (!session || !session.discordId || !env.AUTH_KV) return null;
   const user = await env.AUTH_KV.get(`discord:user:${session.discordId}`, 'json');
   if (!user) return null;
-  return user;
+  // Keep historical account/offer records, but existing sessions cannot act as
+  // a contracted team. The coach can link an available team on their next visit.
+  return isContractedTeam(user.team) ? {...user,team:''} : user;
 }
 
 export function isAdmin(env, discordId) {

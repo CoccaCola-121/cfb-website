@@ -76,6 +76,7 @@
 <noscript><p style="padding:24px;color:#F2F2F0;font-family:sans-serif;">RecruitHQ needs JavaScript to load the league and sign you in. Enable JavaScript, then reload this page.</p></noscript>
 
 <script src="/team-branding.js" onerror="this.onerror=null;this.src='/team-branding.js?retry=1'"></script>
+<script src="/team-status.js" onerror="this.onerror=null;this.src='/team-status.js?retry=1'"></script>
 <script src="/offer-amendments.js" onerror="this.onerror=null;this.src='/offer-amendments.js?retry=1'"></script>
 <script src="/scholarship-template.js" onerror="this.onerror=null;this.src='/scholarship-template.js?retry=1'"></script>
 <script src="/default-class-2062.js" onerror="this.onerror=null;this.src='/default-class-2062.js?retry=1'"></script>
@@ -93,7 +94,7 @@
 (function(){
 
 // Do not open an editor that cannot finish rendering after a successful save.
-if(typeof NZCFLOfferAmendments === 'undefined' || typeof NZCFLArchiveSeason === 'undefined'){
+if(typeof NZCFLOfferAmendments === 'undefined' || typeof NZCFLArchiveSeason === 'undefined' || typeof NZCFLTeamStatus === 'undefined'){
   document.getElementById('rb-app').innerHTML='<main style="padding:32px;font-family:sans-serif;"><h1>Some site files could not load</h1><p>Reconnect and reload this page. Your saved offer drafts are kept.</p><button onclick="window.location.reload()">Reload RecruitHQ</button></main>';
   return;
 }
@@ -252,7 +253,7 @@ function teamNameForRouteSegment(segment){
   const direct = canonicalTeamName(raw);
   if (direct && direct !== raw) return direct;
   const slug = teamRouteSlug(raw);
-  const brand = activeTeamBrands().find(function(team){
+  const brand = allTeamBrands().find(function(team){
     return teamRouteSlug(team.region) === slug || teamRouteSlug(team.abbrev) === slug || teamRouteSlug(team.displayName) === slug;
   });
   return brand && brand.region ? brand.region : direct;
@@ -559,7 +560,7 @@ function canonicalTeamName(teamName){
   return brand && brand.region ? brand.region : String(teamName || '').trim();
 }
 
-function activeTeamBrands(){
+function allTeamBrands(){
   const seen = {};
   const brands = [];
   const branding = allTeamBranding();
@@ -570,6 +571,10 @@ function activeTeamBrands(){
     brands.push(brand);
   });
   return brands.sort(function(a,b){ return a.region.localeCompare(b.region); });
+}
+
+function activeTeamBrands(){
+  return allTeamBrands().filter(brand=>!NZCFLTeamStatus.isContracted(brand.region));
 }
 
 function fallbackTeamBrand(teamName){
@@ -607,6 +612,7 @@ function teamsPageBrands(){
     const link = UI.teamLinks[key];
     if (!link || !link.team) return;
     const brand = getTeamBranding(link.team) || fallbackTeamBrand(link.team);
+    if(NZCFLTeamStatus.isContracted(brand.region))return;
     const brandKey = teamKey(brand.region || link.team);
     if (!brandKey || seen[brandKey]) return;
     seen[brandKey] = true;
@@ -617,7 +623,7 @@ function teamsPageBrands(){
 
 function isTeamAvailable(teamName){
   const brand = getTeamBranding(teamName);
-  if (!brand) return false;
+  if (!brand || NZCFLTeamStatus.isContracted(brand.region)) return false;
   if ((UI.unavailableTeamKeys || []).indexOf(teamKey(brand.region || teamName)) !== -1) return false;
   return true;
 }
@@ -862,7 +868,7 @@ async function loadTeamAvailability(){
     UI.teamLinks = data.links || {};
     if (Array.isArray(data.teams)){
       const branding = Object.assign({}, DB.teamBranding || {});
-      data.teams.forEach(function(brand){
+      [...data.teams,...(data.historicalTeams || [])].forEach(function(brand){
         if (!brand || !brand.region) return;
         teamBrandKeys(brand).forEach(function(key){ branding[key] = brand; });
       });
@@ -1454,7 +1460,7 @@ async function loadTransferPdf(file){
   try {
     const importer = await import('./transfer-import.mjs');
     const lines = await importer.extractTransferPdfLines(new Uint8Array(await file.arrayBuffer()));
-    const schools = activeTeamBrands().flatMap(function(b){ return [b.region, b.abbrev, b.displayName].filter(Boolean); });
+    const schools = allTeamBrands().flatMap(function(b){ return [b.region, b.abbrev, b.displayName].filter(Boolean); });
     const rows = importer.parseTransferLines(lines, schools);
     if (recruitingStage() !== 'transfer' || (draftAtStart && settingsDraft !== draftAtStart)) return;
     UI.transferDraft = rows;
@@ -4869,7 +4875,8 @@ function renderTeamsPage(){
     if (UI.teamFilterCoached && !link) return false;
     return !q || haystack.indexOf(q) !== -1;
   });
-  let html = renderListPageHeading('Teams', teams.length + ' teams · ' + Object.keys(UI.teamLinks || {}).length + ' linked Discord account' + (Object.keys(UI.teamLinks || {}).length === 1 ? '' : 's'));
+  const linkedCount=teams.filter(brand=>teamLinkForBrand(brand)).length;
+  let html = renderListPageHeading('Teams', teams.length + ' teams · ' + linkedCount + ' linked Discord account' + (linkedCount === 1 ? '' : 's'));
   html += '<div class="rb-card" style="padding:18px 20px;margin-bottom:14px;">';
   html += '<input class="rb-input" id="rb-team-search" placeholder="Search teams or linked Discord accounts" value="' + escapeHtml(UI.teamSearch || '') + '" />';
   html += '<div class="rb-filter-row rb-team-filter-row"><label class="rb-toggle"><span>Coached teams only</span><input type="checkbox" id="rb-team-filter-coached" ' + (UI.teamFilterCoached ? 'checked' : '') + ' /><span class="rb-switch-track"><span class="rb-switch-thumb"></span></span></label></div>';

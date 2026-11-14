@@ -1,5 +1,5 @@
 import { accessLevel, canCommission, canModerate, getCurrentUser, json } from '../_lib/auth.js';
-import { getAllTeams, teamKey } from '../_lib/teams-util.js';
+import { getAllTeams, teamKey, isContractedTeam } from '../_lib/teams-util.js';
 
 async function listAllKeys(env, prefix) {
   const keys = [];
@@ -31,7 +31,7 @@ export async function onRequestGet({ request, env }) {
   const links = {};
   for (const key of teamKeys) {
     const row = await env.AUTH_KV.get(key.name, 'json');
-    if (!row || !row.team || !row.discordId) continue;
+    if (!row || !row.team || !row.discordId || isContractedTeam(row.team)) continue;
     const linkedUser = await env.AUTH_KV.get(`discord:user:${row.discordId}`, 'json');
     links[teamKey(row.team)] = linkRow(env, {
       team: row.team,
@@ -46,15 +46,17 @@ export async function onRequestGet({ request, env }) {
   const userKeys = await listAllKeys(env, 'discord:user:');
   for (const key of userKeys) {
     const row = await env.AUTH_KV.get(key.name, 'json');
-    if (!row || !row.team || !row.discordId) continue;
+    if (!row || !row.team || !row.discordId || isContractedTeam(row.team)) continue;
     const keyName = teamKey(row.team);
     if (!links[keyName]) links[keyName] = linkRow(env, row);
   }
   const claimed = Object.keys(links).filter((key) => {
     return !user || links[key].discordId !== user.discordId;
   });
+  const teams=await getAllTeams(env);
   return json({
-    teams: await getAllTeams(env),
+    teams: teams.filter(t=>!isContractedTeam(t.region)),
+    historicalTeams: teams.filter(t=>isContractedTeam(t.region)),
     claimedTeams: claimed,
     links,
   });

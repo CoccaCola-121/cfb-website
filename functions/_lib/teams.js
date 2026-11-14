@@ -1,4 +1,5 @@
-export const ACTIVE_TEAMS = [
+import '../../team-status.js';
+export const TEAM_METADATA = [
   {
     "region": "Boston College",
     "nickname": "Eagles",
@@ -1080,3 +1081,4 @@ export const ACTIVE_TEAMS = [
     "logoUrl": "https://upload.wikimedia.org/wikipedia/en/2/2b/Bowling_Green_Falcons_logo.svg"
   }
 ];
+export const ACTIVE_TEAMS = TEAM_METADATA.filter(team=>!globalThis.NZCFLTeamStatus.isContracted(team.region));

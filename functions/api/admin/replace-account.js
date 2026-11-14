@@ -8,7 +8,7 @@ export async function onRequestPost({ request, env }) {
   const body = await request.json().catch(() => ({}));
   const discordId = String(body.discordId || '').trim();
   const previousDiscordId = String(body.previousDiscordId || '').trim();
-  const team = await findTeam(env, body.team);
+  const team = await findTeam(env, body.team, {coachable:true});
   if (!team || !/^\d{17,20}$/.test(discordId) || !/^\d{17,20}$/.test(previousDiscordId) || discordId === previousDiscordId) {
     return json({ ok: false, error: 'Enter the new Discord user ID and the currently linked account.' }, { status: 400 });
   }

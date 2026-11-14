@@ -11,7 +11,7 @@ const boot = script.lastIndexOf('\napplyRoute(routeFromPath(window.location.path
 assert(boot > 0, 'The app bootstrap must be identifiable without executing network requests.');
 const source = script.slice(0, boot) + `
   globalThis.app = { DB, UI, committedPromiseOffers, massRescindMatches, confirmMassRescind, saveRescinds, archiveCurrentCycle, archiveSeasonValue, currentOfferAutoPreview, autoPreviewStatus, updateConditionalRulePreview, importEarlyDeclarees, renderEarlyDeclareesSettings, expireSuspendedRequests, saveSuspendedOffer, restoreSuspendedOffer, renderProspectDetail, renderProspectVisits, syncLeagueState, syncSubmitModalLock, offerRequest, watchlistNumbers, renderWatchlist, submitHighSchoolOffer, ownOfferTypeBadge, renderOwnTypeFilter, mergeLeagueState, renderOfferAmendments, captureOfferDraft, readOfferDraft, clearOfferDraft, offerDraftKey, applyConditionalRescinds, readRescindRuleForm, validateRescindRuleDraft, requestQuickWalkon, renderQuickWalkonConfirm, canQuickOfferWalkon, quickOfferWalkon, renderQuickWalkon, renderProspectBoardCard, scheduleSummaryCountdown, dismissSummaryBanner, bindFloatingSubmit, extractPromises, cleanDisplayPromises, readCprBoard, updateBucksEntries, renderBucksSettings, renderCprProfile, cprPreviousSchool, ensureCprScholarshipThreads, renderAutoCommitSettings, stageAutoCommits, readScholarshipCapacity, buildPromiseArchive, parseCsvRows, offerCountForProspect, refreshScholarshipHistory, submitCprOffer, renderSubmitModal, createCprPlayer, loadClassData, resetOfferWindow, setOffersLocked, offersLocked, pendingCommitChanges, restoreSettingsDraft, renderOfferBlock, renderRescindFilterFields, renderVisitLedger, visibleBoardProspectIds, setRecruitingStage, requestReset, approveDangerReset, beginSettingsDraft, hasSettingsChanges, canLeaveSettings, saveSettingsChanges, saveDBNow, leagueStatePayload, mergeSettingsValue, updateCommitsFromSheet, runBackupNow, setTransferFilter, renderTransferFilters, renderClassSetup, requestManualCommitOverride, applyManualCommitOverride, requestClearCommit, clearManualCommitOverride, applyManualCommitOverrides, clearRecruitingBoard, findProspectFromSheetRow, transferCardStyle, parseFullClass, prospectFromRosterRow, confirmTransferImport, releaseSingleStageBoard, addOfferDirect, render, renderNav, navigateTo, applyRoute, setReady(){ dbReady = true; sessionReady = true; }, renderFeed, renderBoardSearchResults, renderTeamsPage,
-    renderThreadProspectList, renderProspectDetail, builtInTeamBranding, getTeamBranding, activeTeamBrands,
+    renderThreadProspectList, renderProspectDetail, builtInTeamBranding, getTeamBranding, allTeamBrands, activeTeamBrands, isTeamAvailable, teamMatchesForQuery,
     mobileRecruitName, renderRecruitName, renderMyOffers, renderCommitsForTeam, renderTeamOffers, renderConditionalRescinds, renderRecruitValues, teamBorderColor, bindEvents, applyDefaultClassData, releaseWave1, releaseWave2,
     openHeaderEdit, renderHeaderEditModal, saveHeaderEdit, syncHSVisitDraft, renderEditOfferModal, saveOfferEdit, currentHSPitches, findHSPitchPlayer, renderHSPitchEditor, renderHSPitchBuilder, buildHSPitchDraft, applyHSVisits, hsBuilderVisits, parseOfferSheet, bindHSPitches, fitHSPitchOptions,
     setSession(value){ SESSION = value; } };
@@ -63,6 +63,7 @@ function harness() {
   });
   vm.runInContext(fs.readFileSync(path.join(rootDir, 'offer-amendments.js'), 'utf8'), context);
   vm.runInContext(fs.readFileSync(path.join(rootDir, 'team-branding.js'), 'utf8'), context);
+  vm.runInContext(fs.readFileSync(path.join(rootDir, 'team-status.js'), 'utf8'), context);
   vm.runInContext(fs.readFileSync(path.join(rootDir, 'cpr-rules.js'), 'utf8'), context);
   vm.runInContext(fs.readFileSync(path.join(rootDir, 'walkon-limit.js'), 'utf8'), context);
   vm.runInContext(fs.readFileSync(path.join(rootDir, 'scholarship-history.js'), 'utf8'), context);
@@ -203,12 +204,43 @@ test('coached and uncoached teams share row sizing and retain commissioner contr
   app.UI.teamLinks = { 'bowling green': { team: 'Bowling Green', discordId: 'coach-1', displayName: 'adm', accessLevel: 'moderator' } };
   const html = app.renderTeamsPage();
   const openings = [...html.matchAll(/<div class="rb-card rb-team-card"[^>]+>/g)].map(match => match[0]);
-  assert(openings.length > 100);
+  assert.equal(openings.length, 100);
   assert(openings.every(tag => !/padding:|height:|border-color:/.test(tag)), 'Team rows must share CSS sizing instead of per-team dimensions.');
   assert.match(html, /data-admin-unlink-team="Bowling Green"/);
   assert.match(html, /data-admin-change-team="coach-1"/);
   assert.match(html, /data-admin-access-level="coach-1"/);
   assert.match(html, /No Discord linked/);
+});
+
+test('contracted schools stay off Teams and team selection even with stale coach links and branding overrides',()=>{
+ const {app,context}=harness();
+ app.UI.teamLinks={toledo:{team:'Toledo',discordId:'old'},princeton:{team:'Princeton',discordId:'another'}};
+ app.DB.teamBranding={toledo:{...app.getTeamBranding('Toledo'),logoUrl:'/historical-toledo.svg'}};
+ const html=app.renderTeamsPage();
+ assert.match(html,/100 teams · 0 linked Discord accounts/);
+ assert.match(html,/Northern Illinois/);
+ assert.equal(app.allTeamBrands().length,120);
+ for(const name of context.NZCFLTeamStatus.contracted){
+  assert.ok(!html.includes('data-open-team-commits="'+name+'"'),name);
+  assert.equal(app.isTeamAvailable(name),false);
+  assert.equal(app.isTeamAvailable(app.getTeamBranding(name).abbrev),false);
+  assert.ok(app.teamMatchesForQuery(name).every(brand=>!context.NZCFLTeamStatus.isContracted(brand.region)));
+ }
+ assert.equal(app.isTeamAvailable('NIU'),true);
+ assert.equal(app.teamMatchesForQuery('Northern Illinois')[0].region,'Northern Illinois');
+});
+
+test('contracted team logos remain on transfer and CPR profiles and historical commitments',()=>{
+ const {app,context}=harness();
+ for(const team of context.NZCFLTeamStatus.contracted){
+  const brand=app.getTeamBranding(team),p=app.DB.prospects.r1;
+  Object.assign(p,{grade:'JR',yearsLeft:2,transferFrom:team,previousTeam:team,commitTeam:team});
+  app.UI.prospectId='r1';app.DB.recruitingStage='transfer';
+  assert.ok(app.renderProspectDetail().includes(brand.logoUrl.replace(/&/g,'&amp;')),team+' transfer logo');
+  app.DB.recruitingStage='cpr';
+  assert.ok(app.renderCprProfile(p).includes(brand.logoUrl.replace(/&/g,'&amp;')),team+' CPR logo');
+  assert.ok(app.renderCommitsForTeam(team).includes(p.name),team+' commitment');
+ }
 });
 
 test('the full bundled class stays lightweight before a search', () => {

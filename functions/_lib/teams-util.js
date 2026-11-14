@@ -1,4 +1,4 @@
-import { ACTIVE_TEAMS } from './teams.js';
+import { TEAM_METADATA } from './teams.js';
 
 const TEAM_KEY_ALIASES = {
   'alabama birmingham': 'uab',
@@ -13,21 +13,29 @@ export function teamKey(value) {
   return TEAM_KEY_ALIASES[key] || key;
 }
 
+export function isContractedTeam(value){
+  const key=teamKey(value);
+  if(!key)return false;
+  const brand=TEAM_METADATA.find(t=>[t.region,t.abbrev,t.displayName].some(v=>teamKey(v)===key));
+  return globalThis.NZCFLTeamStatus.isContracted(brand?.region || value);
+}
+
 export async function getAllTeams(env) {
   const extras = env && env.AUTH_KV ? await env.AUTH_KV.get('teams:extra', 'json') : null;
   const byKey = new Map();
-  ACTIVE_TEAMS.forEach((team) => byKey.set(teamKey(team.region), team));
+  TEAM_METADATA.forEach((team) => byKey.set(teamKey(team.region), team));
   (Array.isArray(extras) ? extras : []).forEach((team) => {
     if (team && team.region) byKey.set(teamKey(team.region), team);
   });
   return Array.from(byKey.values()).sort((a, b) => a.region.localeCompare(b.region));
 }
 
-export async function findTeam(env, value) {
+export async function findTeam(env, value, {coachable=false}={}) {
   const key = teamKey(value);
   if (!key) return null;
   const teams = await getAllTeams(env);
   return teams.find((team) => {
+    if(coachable && isContractedTeam(team.region))return false;
     return [team.region, team.nickname, team.abbrev, team.displayName]
       .some((candidate) => teamKey(candidate) === key);
   }) || null;

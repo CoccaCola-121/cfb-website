@@ -7,7 +7,7 @@ export async function onRequestPost({ request, env, waitUntil }) {
   const user = await getCurrentUser(request, env);
   if (!user) return json({ ok: false, error: 'Discord login required.' }, { status: 401 });
   const body = await request.json().catch(() => ({}));
-  const team = await findTeam(env, body.team);
+  const team = await findTeam(env, body.team, {coachable:true});
   if (!team) return json({ ok: false, error: 'That team is not available.' }, { status: 400 });
 
   if (user.team && user.team !== team.region) {
