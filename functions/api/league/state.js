@@ -6,6 +6,7 @@ import '../../../cpr-rules.js';
 import '../../../walkon-limit.js';
 import '../../../visit-rules.js';
 import '../../../auto-commits.js';
+import '../../../watchlist-scope.js';
 import { json, getCurrentUser, canModerate, accessLevel } from '../../_lib/auth.js';
 import { queueLeagueBackup } from '../../_lib/backup.js';
 import { readLeagueState, writeLeagueState } from '../../_lib/league-state.js';
@@ -31,6 +32,9 @@ export async function onRequestPut({ request, env, waitUntil }) {
   if(!body || typeof body!=='object' || Array.isArray(body) || body.state!==undefined && (!body.state || typeof body.state!=='object' || Array.isArray(body.state)))return json({ok:false,error:'The save request was incomplete. Your draft is preserved; retry Save changes.'},{status:400});
   const incoming = body.state || body;
   const previous = await readLeagueState(env);
+  // This token belongs to the saved cycle, not to a caller's stale snapshot.
+  if(previous?.watchlistCycleId)incoming.watchlistCycleId=previous.watchlistCycleId;
+  else delete incoming.watchlistCycleId;
   // Only the commissioner removal endpoint can add removal records. Never trust a board snapshot to clear them.
   incoming.removedPlayers=previous?.removedPlayers || {};
   if(env.LEAGUE_DB && !Object.prototype.hasOwnProperty.call(body,'expectedUpdatedAt'))return json({ok:false,error:'Refresh the page before saving; this tab uses an older version.'},{status:409});
@@ -97,6 +101,7 @@ export async function onRequestPut({ request, env, waitUntil }) {
     const error = globalThis.NZCFLTransferRules.pitchLimitError(item.offerText, null, incoming.recruitingStage);
     if (error) return json({ ok: false, error }, { status: 400 });
   }
+  if(previous && globalThis.NZCFLWatchlistScope.identity(previous)!==globalThis.NZCFLWatchlistScope.identity(incoming))incoming.watchlistCycleId=crypto.randomUUID();
   const state = await writeLeagueState(env, incoming, previous);
   queueLeagueBackup(env, state, waitUntil, { source: 'league-state-save' });
   return json({ ok: true, state });

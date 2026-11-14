@@ -1,17 +1,14 @@
 import {getCurrentUser,json} from '../_lib/auth.js';
 import {teamKey} from '../_lib/teams-util.js';
 import {readLeagueState} from '../_lib/league-state.js';
+import '../../watchlist-scope.js';
 
 // Private to the authenticated coach's linked team; never part of public league state.
 // Lists are scoped to the current recruiting stage and class identity so recycled
 // prospect IDs in a new class do not inherit another class's flags.
 const cacheHeaders = {'cache-control':'private, no-store'};
 function namespace(team, state) {
-  const first = state.fullRoster?.[0] || {};
-  const last = state.fullRoster?.at(-1) || {};
-  const classId = [state.recruitingStage || 'hs', state.fullRoster?.length || 0,
-    first.metadataSeason || first.season || '', first.name || '', last.name || ''].join('|');
-  return 'team-watchlist:v1:' + encodeURIComponent(teamKey(team)) + ':' + encodeURIComponent(classId);
+  return 'team-watchlist:v1:' + encodeURIComponent(teamKey(team)) + ':' + encodeURIComponent(globalThis.NZCFLWatchlistScope.key(state));
 }
 async function context(request, env) {
   const user = await getCurrentUser(request, env);
@@ -19,8 +16,9 @@ async function context(request, env) {
   if (!env.AUTH_KV) return {error:json({ok:false,error:'Watchlist storage is unavailable.'},{status:503,headers:cacheHeaders})};
   const state = await readLeagueState(env);
   if (!state) return {error:json({ok:false,error:'The recruiting board is unavailable.'},{status:503,headers:cacheHeaders})};
-  return {state, key:namespace(user.team,state)};
+  return {state, key:namespace(user.team,state),cycleKey:globalThis.NZCFLWatchlistScope.key(state)};
 }
+function changedCycle(){return json({ok:false,error:'The recruiting cycle changed. Refresh the board before updating your watchlist.'},{status:409,headers:cacheHeaders});}
 function present(ids, state) {
   return [...new Set(Array.isArray(ids) ? ids : [])].filter(id =>
     typeof id === 'string' && Object.prototype.hasOwnProperty.call(state.prospects || {},id));
@@ -39,14 +37,17 @@ async function stored(ctx,env){
 export async function onRequestGet({request,env}){
  try{
   const ctx=await context(request,env);if(ctx.error)return ctx.error;
+  const expected=new URL(request.url).searchParams.get('cycleKey');
+  if(expected!==null && expected!==ctx.cycleKey)return changedCycle();
   const row=await stored(ctx,env);
-  return json({ok:true,ids:present(JSON.parse(row.ids),ctx.state),version:row.version},{headers:cacheHeaders});
+  return json({ok:true,ids:present(JSON.parse(row.ids),ctx.state),version:row.version,cycleKey:ctx.cycleKey},{headers:cacheHeaders});
  }catch{return json({ok:false,error:'Could not load your team watchlist.'},{status:503,headers:cacheHeaders});}
 }
 export async function onRequestPost({request,env}){
  try{
   const ctx=await context(request,env);if(ctx.error)return ctx.error;
   const body=await request.json().catch(()=>({}));
+  if(body.cycleKey!==ctx.cycleKey)return changedCycle();
   const valid=id=>typeof id==='string' && Object.prototype.hasOwnProperty.call(ctx.state.prospects || {},id);
   if(body.action!=='clear' && (body.action==='add-many' ? !Array.isArray(body.ids) || body.ids.length>5000 || !body.ids.every(valid) : !valid(body.prospectId) || typeof body.flagged!=='boolean'))return json({ok:false,error:'Select valid players and an action.'},{status:400,headers:cacheHeaders});
   let row=await stored(ctx,env);
@@ -54,7 +55,7 @@ export async function onRequestPost({request,env}){
     const ids=present(JSON.parse(row.ids),ctx.state);
     const next=body.action==='clear'?[]:body.action==='add-many'?[...new Set([...ids,...body.ids])]:body.flagged?[...new Set([...ids,body.prospectId])]:ids.filter(id=>id!==body.prospectId);
     const result=await env.LEAGUE_DB.prepare('UPDATE private_watchlists SET ids=?,version=version+1 WHERE key=? AND version=?').bind(JSON.stringify(next),ctx.key,row.version).run();
-    if(result.meta.changes)return json({ok:true,ids:next,version:row.version+1},{headers:cacheHeaders});
+    if(result.meta.changes)return json({ok:true,ids:next,version:row.version+1,cycleKey:ctx.cycleKey},{headers:cacheHeaders});
     row=await env.LEAGUE_DB.prepare('SELECT ids,version FROM private_watchlists WHERE key=?').bind(ctx.key).first();
   }
   return json({ok:false,error:'Watchlist changed elsewhere. Please retry.'},{status:409,headers:cacheHeaders});

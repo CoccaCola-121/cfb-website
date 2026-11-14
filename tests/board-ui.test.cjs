@@ -12,6 +12,7 @@ assert(boot > 0, 'The app bootstrap must be identifiable without executing netwo
 const source = script.slice(0, boot) + `
   globalThis.app = { DB, UI, committedPromiseOffers, massRescindMatches, confirmMassRescind, saveRescinds, archiveCurrentCycle, archiveSeasonValue, currentOfferAutoPreview, autoPreviewStatus, updateConditionalRulePreview, importEarlyDeclarees, renderEarlyDeclareesSettings, expireSuspendedRequests, saveSuspendedOffer, restoreSuspendedOffer, renderProspectDetail, renderProspectVisits, syncLeagueState, syncSubmitModalLock, offerRequest, watchlistNumbers, renderWatchlist, submitHighSchoolOffer, ownOfferTypeBadge, renderOwnTypeFilter, mergeLeagueState, renderOfferAmendments, captureOfferDraft, readOfferDraft, clearOfferDraft, offerDraftKey, applyConditionalRescinds, readRescindRuleForm, validateRescindRuleDraft, requestQuickWalkon, renderQuickWalkonConfirm, canQuickOfferWalkon, quickOfferWalkon, renderQuickWalkon, renderProspectBoardCard, scheduleSummaryCountdown, dismissSummaryBanner, bindFloatingSubmit, extractPromises, cleanDisplayPromises, readCprBoard, updateBucksEntries, renderBucksSettings, renderCprProfile, cprPreviousSchool, ensureCprScholarshipThreads, renderAutoCommitSettings, stageAutoCommits, readScholarshipCapacity, buildPromiseArchive, parseCsvRows, offerCountForProspect, refreshScholarshipHistory, submitCprOffer, renderSubmitModal, createCprPlayer, loadClassData, resetOfferWindow, setOffersLocked, offersLocked, pendingCommitChanges, restoreSettingsDraft, renderOfferBlock, renderRescindFilterFields, renderVisitLedger, visibleBoardProspectIds, setRecruitingStage, requestReset, approveDangerReset, beginSettingsDraft, hasSettingsChanges, canLeaveSettings, saveSettingsChanges, saveDBNow, leagueStatePayload, mergeSettingsValue, updateCommitsFromSheet, runBackupNow, setTransferFilter, renderTransferFilters, renderClassSetup, requestManualCommitOverride, applyManualCommitOverride, requestClearCommit, clearManualCommitOverride, applyManualCommitOverrides, clearRecruitingBoard, findProspectFromSheetRow, transferCardStyle, parseFullClass, prospectFromRosterRow, confirmTransferImport, releaseSingleStageBoard, addOfferDirect, render, renderNav, navigateTo, applyRoute, setReady(){ dbReady = true; sessionReady = true; }, renderFeed, renderBoardSearchResults, renderTeamsPage,
     renderThreadProspectList, renderProspectDetail, builtInTeamBranding, getTeamBranding, allTeamBrands, activeTeamBrands, isTeamAvailable, teamMatchesForQuery,
+    loadWatchlist, toggleWatchlist, confirmWatchlistBulk, syncWatchlistScope, watchlistCycleKey, renderWatchlistFlag,
     mobileRecruitName, renderRecruitName, renderMyOffers, renderCommitsForTeam, renderTeamOffers, renderConditionalRescinds, renderRecruitValues, teamBorderColor, bindEvents, applyDefaultClassData, releaseWave1, releaseWave2,
     openHeaderEdit, renderHeaderEditModal, saveHeaderEdit, syncHSVisitDraft, renderEditOfferModal, saveOfferEdit, currentHSPitches, findHSPitchPlayer, renderHSPitchEditor, renderHSPitchBuilder, buildHSPitchDraft, applyHSVisits, hsBuilderVisits, parseOfferSheet, bindHSPitches, fitHSPitchOptions,
     setSession(value){ SESSION = value; } };
@@ -64,6 +65,7 @@ function harness() {
   vm.runInContext(fs.readFileSync(path.join(rootDir, 'offer-amendments.js'), 'utf8'), context);
   vm.runInContext(fs.readFileSync(path.join(rootDir, 'team-branding.js'), 'utf8'), context);
   vm.runInContext(fs.readFileSync(path.join(rootDir, 'team-status.js'), 'utf8'), context);
+  vm.runInContext(fs.readFileSync(path.join(rootDir, 'watchlist-scope.js'), 'utf8'), context);
   vm.runInContext(fs.readFileSync(path.join(rootDir, 'cpr-rules.js'), 'utf8'), context);
   vm.runInContext(fs.readFileSync(path.join(rootDir, 'walkon-limit.js'), 'utf8'), context);
   vm.runInContext(fs.readFileSync(path.join(rootDir, 'scholarship-history.js'), 'utf8'), context);
@@ -228,6 +230,9 @@ test('contracted schools stay off Teams and team selection even with stale coach
  }
  assert.equal(app.isTeamAvailable('NIU'),true);
  assert.equal(app.teamMatchesForQuery('Northern Illinois')[0].region,'Northern Illinois');
+ app.setSession({team:'Michigan State',accessLevel:'commissioner'});
+ assert.match(app.renderClassSetup(),/100 default teams loaded/);
+ assert.doesNotMatch(app.renderClassSetup(),/120 default teams loaded/);
 });
 
 test('contracted team logos remain on transfer and CPR profiles and historical commitments',()=>{
@@ -773,6 +778,37 @@ test('public transfer offer counts exclude headers and update with pitch text', 
   offer.rescinded = false;
   app.DB.recruitingStage = 'hs';
   assert.doesNotMatch(app.renderOfferBlock(offer,{prospect}),/800 words/);
+});
+
+test('transfer pages omit visits and offer-type and competing-scholarship filters while HS keeps them',()=>{
+ const {app}=harness();app.UI.prospectId='r2';
+ app.DB.prospects.r2.rank=501;
+ app.DB.offersByProspect.r2=[{id:'mine',team:'Michigan State',text:'Scholarship\nPitch',visits:{coach:true,campus:true,campusLabel:'Week 4'}},{id:'other',team:'UCLA',text:'Scholarship'}];
+ app.DB.recruitingStage='hs';
+ assert.match(app.renderProspectDetail(),/aria-label="Visit summary"/);
+ assert.match(app.renderMyOffers(),/id="rb-other-scholarship-filter"/);
+ assert.match(app.renderMyOffers(),/Other scholarships: UCLA/);
+ assert.match(app.renderOwnTypeFilter('commits'),/data-own-type="walkon"/);
+ app.DB.recruitingStage='transfer';
+ assert.doesNotMatch(app.renderProspectDetail(),/aria-label="Visit summary"/);
+ assert.doesNotMatch(app.renderMyOffers(),/rb-own-type-filter|rb-other-scholarship-filter|Other scholarships:|Scholarships:|walk-on ·/);
+ app.DB.prospects.r2.commitTeam='Michigan State';
+ assert.doesNotMatch(app.renderCommitsForTeam('Michigan State','My Commits'),/rb-own-type-filter|rb-other-scholarship-filter/);
+ app.UI.teamOffersTeam='Michigan State';
+ assert.doesNotMatch(app.renderTeamOffers(),/rb-own-type-filter/);
+});
+
+test('hidden transfer offer filters cannot hide players using selections left over from high school',()=>{
+ const {app,context,elements}=harness();app.DB.recruitingStage='transfer';
+ app.UI.ownTypeFilters={offers:'walkon',commits:'walkon',teamoffers:'walkon'};app.UI.otherScholarshipFilter='with';
+ const card=element({'data-search':'transfer recruit','data-position-bucket':'QB','data-own-offer-type':'scholarship','data-other-scholarships':'false'});
+ const original=context.document.querySelectorAll;
+ context.document.querySelectorAll=selector=>selector==='[data-my-offer-card]' || selector==='[data-my-commit-card]'?[card]:original(selector);
+ elements['rb-my-offer-search']=element();elements['rb-my-commit-search']=element();app.bindEvents();
+ for(const id of ['rb-my-offer-search','rb-my-commit-search']){
+  elements[id].value='transfer';elements[id].oninput();assert.equal(card.style.display,'');
+  elements[id].value='unmatched';elements[id].oninput();assert.equal(card.style.display,'none');
+ }
 });
 
 test('settings save enables for drafts and discard restores the saved settings', () => {
@@ -1807,6 +1843,58 @@ test('watchlist column paste validates ranks and renders in rank order',()=>{
  assert(html.includes('rb-watchlist-numbers'));
 });
 
+test('watchlist flags clear immediately on stage and class changes while ordinary refreshes preserve them',async()=>{
+ const {app,context}=harness();context.window.location.protocol='https:';
+ let loads=0;context.fetch=async url=>{loads++;const cycleKey=new URL(url,'https://test').searchParams.get('cycleKey');return {ok:true,headers:{get:()=> 'application/json'},json:async()=>({ok:true,ids:loads===1?['r1']:[],version:loads===1?9:0,cycleKey})};};
+ await app.loadWatchlist();assert.deepEqual(Array.from(app.UI.watchlistIds),['r1']);
+ app.mergeLeagueState({...app.leagueStatePayload(),updatedAt:2,offersLocked:true});
+ assert.equal(loads,1);assert.deepEqual(Array.from(app.UI.watchlistIds),['r1']);
+ app.UI.pendingWatchlistBulk={action:'add-many',ids:['r1']};app.UI.watchlistNumbers='1';
+ app.mergeLeagueState({...app.leagueStatePayload(),updatedAt:3,recruitingStage:'transfer',watchlistCycleId:'next-cycle'});
+ assert.equal(loads,2);assert.deepEqual(Array.from(app.UI.watchlistIds),[]);assert.equal(app.UI.watchlistLoaded,false);
+ assert.equal(app.UI.pendingWatchlistBulk,null);assert.equal(app.UI.watchlistNumbers,'');assert.equal(app.UI.watchlistVersion,-1);
+ assert.match(app.renderWatchlistFlag('r1'),/aria-pressed="false"/);
+ await new Promise(resolve=>setImmediate(resolve));assert.equal(app.UI.watchlistLoaded,true);assert.equal(app.UI.watchlistVersion,0);
+ app.UI.watchlistIds=['r1'];
+ app.mergeLeagueState({...app.leagueStatePayload(),updatedAt:4,watchlistCycleId:'new-season'});
+ assert.deepEqual(Array.from(app.UI.watchlistIds),[]);assert.equal(loads,3);
+ await new Promise(resolve=>setImmediate(resolve));
+});
+
+test('late watchlist loads from an older cycle cannot restore flags or replace the new cycle version',async()=>{
+ const {app,context}=harness();context.window.location.protocol='https:';const requests=[];
+ context.fetch=async url=>new Promise(resolve=>requests.push({url,resolve}));
+ const oldLoad=app.loadWatchlist();assert.equal(requests.length,1);
+ app.mergeLeagueState({...app.leagueStatePayload(),updatedAt:2,watchlistCycleId:'new-season'});
+ assert.equal(requests.length,2);
+ const reply=(request,ids,version)=>request.resolve({ok:true,headers:{get:()=> 'application/json'},json:async()=>({ok:true,ids,version,cycleKey:new URL(request.url,'https://test').searchParams.get('cycleKey')})});
+ reply(requests[1],[],0);await new Promise(resolve=>setImmediate(resolve));
+ reply(requests[0],['r1'],999);await oldLoad;
+ assert.deepEqual(Array.from(app.UI.watchlistIds),[]);assert.equal(app.UI.watchlistVersion,0);assert.equal(app.UI.watchlistLoaded,true);
+});
+
+test('late single and bulk watchlist saves cannot carry reused recruit numbers into the next cycle',async()=>{
+ for(const bulk of [false,true]){
+  const {app,context}=harness();context.window.location.protocol='https:';let finish,oldCycle;
+  context.fetch=async(url,options={})=>{
+   if(options.method==='POST'){
+    oldCycle=JSON.parse(options.body).cycleKey;
+    return new Promise(resolve=>{finish=resolve;});
+   }
+   return {ok:true,headers:{get:()=> 'application/json'},json:async()=>({ok:true,ids:[],version:0,cycleKey:new URL(url,'https://test').searchParams.get('cycleKey')})};
+  };
+  await app.loadWatchlist();
+  app.UI.pendingWatchlistBulk={action:'add-many',ids:['r1'],count:1};
+  const save=bulk?app.confirmWatchlistBulk():app.toggleWatchlist('r1');
+  assert.equal(oldCycle,app.watchlistCycleKey());
+  app.mergeLeagueState({...app.leagueStatePayload(),updatedAt:2,watchlistCycleId:'next-season'});
+  await new Promise(resolve=>setImmediate(resolve));
+  finish({ok:true,headers:{get:()=> 'application/json'},json:async()=>({ok:true,ids:['r1'],version:99,cycleKey:oldCycle})});await save;
+  assert.deepEqual(Array.from(app.UI.watchlistIds),[]);assert.equal(app.UI.watchlistVersion,0);
+  assert.equal(app.UI.watchlistBulkSaving,false);assert.equal(app.UI.pendingWatchlistBulk,null);
+ }
+});
+
 
 test('HS pasted top-500 offer submits scholarship with current edited body',async()=>{
  const {app,context,elements}=harness();
@@ -1963,7 +2051,10 @@ test('forced league refresh bypasses stale cached CPR state',async()=>{
  const {app,context}=harness();context.window.location.protocol='https:';context.AbortController=AbortController;
  app.DB.recruitingStage='cpr';app.DB.updatedAt=123;app.UI.strongStorage=true;
  let request;
- context.fetch=async(url,options)=>{request={url,options};return {ok:true,status:200,json:async()=>({state:{recruitingStage:'hs',updatedAt:124},storage:'d1'})};};
+ context.fetch=async(url,options)=>{
+  if(url.startsWith('/api/watchlist'))return {ok:true,headers:{get:()=> 'application/json'},json:async()=>({ok:true,ids:[],version:0,cycleKey:new URL(url,'https://test').searchParams.get('cycleKey')})};
+  request={url,options};return {ok:true,status:200,json:async()=>({state:{recruitingStage:'hs',updatedAt:124},storage:'d1'})};
+ };
  await app.syncLeagueState(false,{force:true});
  assert(request.url.includes('?refresh='));assert.equal(request.options.cache,'no-store');assert.equal(request.options.headers['if-none-match'],undefined);
  assert.equal(app.DB.recruitingStage,'hs');assert.equal(app.UI.leagueVerified,true);

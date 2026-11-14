@@ -77,6 +77,7 @@
 
 <script src="/team-branding.js" onerror="this.onerror=null;this.src='/team-branding.js?retry=1'"></script>
 <script src="/team-status.js" onerror="this.onerror=null;this.src='/team-status.js?retry=1'"></script>
+<script src="/watchlist-scope.js" onerror="this.onerror=null;this.src='/watchlist-scope.js?retry=1'"></script>
 <script src="/offer-amendments.js" onerror="this.onerror=null;this.src='/offer-amendments.js?retry=1'"></script>
 <script src="/scholarship-template.js" onerror="this.onerror=null;this.src='/scholarship-template.js?retry=1'"></script>
 <script src="/default-class-2062.js" onerror="this.onerror=null;this.src='/default-class-2062.js?retry=1'"></script>
@@ -94,7 +95,7 @@
 (function(){
 
 // Do not open an editor that cannot finish rendering after a successful save.
-if(typeof NZCFLOfferAmendments === 'undefined' || typeof NZCFLArchiveSeason === 'undefined' || typeof NZCFLTeamStatus === 'undefined'){
+if(typeof NZCFLOfferAmendments === 'undefined' || typeof NZCFLArchiveSeason === 'undefined' || typeof NZCFLTeamStatus === 'undefined' || typeof NZCFLWatchlistScope === 'undefined'){
   document.getElementById('rb-app').innerHTML='<main style="padding:32px;font-family:sans-serif;"><h1>Some site files could not load</h1><p>Reconnect and reload this page. Your saved offer drafts are kept.</p><button onclick="window.location.reload()">Reload RecruitHQ</button></main>';
   return;
 }
@@ -1017,6 +1018,7 @@ function saveDB(){
 
 function leagueStatePayload(){
   return {
+    ...(DB.watchlistCycleId ? {watchlistCycleId:DB.watchlistCycleId} : {}),
     fullRoster: DB.fullRoster,
     scholarshipHistory: DB.scholarshipHistory || {},
     scholarshipSource: DB.scholarshipSource || null,
@@ -1055,6 +1057,8 @@ function mergeLeagueState(state){
     if (Object.prototype.hasOwnProperty.call(state, field)) DB[field] = state[field];
   });
   DB.updatedAt=state.updatedAt;
+  DB.watchlistCycleId=state.watchlistCycleId;
+  syncWatchlistScope();
   applyManualCommitOverrides();
   setStored(DB_KEY, JSON.stringify(DB), true);
   return previousVersion !== state.updatedAt;
@@ -3548,6 +3552,7 @@ function render(){
     bindEvents();
     return;
   }
+  syncWatchlistScope();
   let html = renderNav();
   if(UI.leagueSyncError)html+='<div class="rb-card" role="alert" style="padding:14px;margin-bottom:14px;">'+escapeHtml(UI.leagueSyncError)+' <button class="rb-btn" id="rb-retry-league">Refresh board</button></div>';
   if (UI.lastSummary) html += renderSummaryBanner();
@@ -4280,11 +4285,12 @@ function visitLineForOffer(row){
 }
 
 function renderOwnTypeFilter(kind){
+  if(recruitingStage()==='transfer')return '';
   const value=(UI.ownTypeFilters || {})[kind] || '';
   return '<div class="rb-segmented rb-own-type-filter" aria-label="Offer type">'+[['','All'],['walkon','Walk-On'],['scholarship','Scholarship']].map(([type,label])=>'<button type="button" data-own-type-kind="'+kind+'" data-own-type="'+type+'" aria-pressed="'+(value===type)+'">'+label+'</button>').join('')+'</div>';
 }
 function otherScholarshipTeams(p){
-  if(!p || !SESSION?.team)return [];
+  if(recruitingStage()==='transfer' || !p || !SESSION?.team)return [];
   return [...new Map((DB.offersByProspect[p.id] || []).filter(o=>!o.rescinded && teamKey(o.team)!==teamKey(SESSION.team) && NZCFLCprRules.scholarshipOffer(o)).map(o=>[teamKey(o.team),o.team])).values()].sort((a,b)=>a.localeCompare(b));
 }
 function ownOfferTypeBadge(o,p){
@@ -4713,9 +4719,9 @@ function renderMyOffers(){
   html += '<div style="margin-bottom:12px;"><button class="rb-btn rb-btn-gold" id="rb-open-submit" ' + (offersLocked() ? 'disabled title="Offers are locked"' : '') + '>' + (offersLocked() ? 'Offers locked' : 'Submit offer') + '</button></div>';
   if (recruitingStage() === 'cpr') html += '<p class="rb-transfer-limit">Your offer goes to the matching player thread, or creates one from the free-agent list.</p>';
   const walkonCount=rows.filter(row=>NZCFLAutoCommits.offerKind(DB,row.prospect,row.offer)==='walkon').length;
-  html += '<p style="font-size:13px;color:var(--slate);">'+walkonCount+' walk-on · '+(rows.length-walkonCount)+' scholarship</p>';
+  if(recruitingStage()!=='transfer')html += '<p style="font-size:13px;color:var(--slate);">'+walkonCount+' walk-on · '+(rows.length-walkonCount)+' scholarship</p>';
   html += '<p id="rb-auto-preview-status" style="font-size:12px;color:var(--slate);">'+escapeHtml(autoPreviewStatus(autoPreview))+'</p>';
-  html += '<div class="rb-my-offer-filters"><div><span class="rb-offer-filter-label">Your offer</span>'+renderOwnTypeFilter('offers')+'</div><label class="rb-other-scholarship-filter"><span class="rb-offer-filter-label">Scholarships from other teams</span><select class="rb-input" id="rb-other-scholarship-filter" aria-label="Scholarships from other teams">'+[['','All recruits'],['with','With other scholarships'],['without','No other scholarships']].map(([value,label])=>'<option value="'+value+'"'+((UI.otherScholarshipFilter || '')===value?' selected':'')+'>'+label+'</option>').join('')+'</select></label></div>';
+  if(recruitingStage()!=='transfer')html += '<div class="rb-my-offer-filters"><div><span class="rb-offer-filter-label">Your offer</span>'+renderOwnTypeFilter('offers')+'</div><label class="rb-other-scholarship-filter"><span class="rb-offer-filter-label">Scholarships from other teams</span><select class="rb-input" id="rb-other-scholarship-filter" aria-label="Scholarships from other teams">'+[['','All recruits'],['with','With other scholarships'],['without','No other scholarships']].map(([value,label])=>'<option value="'+value+'"'+((UI.otherScholarshipFilter || '')===value?' selected':'')+'>'+label+'</option>').join('')+'</select></label></div>';
   html += '<input class="rb-input" id="rb-my-offer-search" placeholder="' + (recruitingStage() === 'transfer' ? 'Search offers by player name' : 'Search your offers by recruit name, rank, or hometown') + '" />';
   if (UI.rescindError) html += '<div style="font-size:12px;color:var(--alert);margin-top:8px;">' + escapeHtml(UI.rescindError) + '</div>';
   html += '</div>';
@@ -5035,25 +5041,38 @@ function createCprPlayer(input){
   return id;
 }
 function renderAfterWatchlist(){if(!UI.showSubmitModal && !UI.editOfferTarget && !UI.headerEdit && !UI.missingPitchEdit)render();}
-async function loadWatchlist(){
-  if (!SESSION?.team || !apiAvailable()) return;
-  const team = teamKey(SESSION.team), stage = recruitingStage();
-  if (UI.watchlistTeam !== team || UI.watchlistStage !== stage) {
-    UI.watchlistIds = []; UI.watchlistLoaded = false; UI.watchlistPending = {}; UI.watchlistVersion=-1;
+function watchlistCycleKey(){return NZCFLWatchlistScope.key(DB);}
+function watchlistContextMatches(team,cycleKey){return !!SESSION && teamKey(SESSION.team)===team && watchlistCycleKey()===cycleKey;}
+function syncWatchlistScope(load=true){
+  const team=teamKey(SESSION?.team),cycleKey=watchlistCycleKey();
+  if(UI.watchlistTeam!==team || UI.watchlistCycleKey!==cycleKey){
+    UI.watchlistIds=[];UI.watchlistLoaded=false;UI.watchlistPending={};UI.watchlistVersion=-1;
+    UI.watchlistTeam=team;UI.watchlistStage=recruitingStage();UI.watchlistCycleKey=cycleKey;
+    UI.watchlistError='';UI.watchlistLoadingScope='';UI.pendingWatchlistBulk=null;UI.watchlistBulkSaving=false;
+    UI.watchlistNumbers='';UI.watchlistNumberStatus='';UI.watchlistOfferFilter='all';
   }
-  UI.watchlistTeam = team; UI.watchlistStage = stage; UI.watchlistError = '';
+  if(load && team && UI.view!=='setup' && !settingsDraft && !UI.watchlistLoaded && !UI.watchlistError && apiAvailable())void loadWatchlist();
+}
+async function loadWatchlist(){
+  if (!SESSION?.team || !apiAvailable() || settingsDraft) return;
+  syncWatchlistScope(false);
+  const team=teamKey(SESSION.team),cycleKey=watchlistCycleKey(),scope=JSON.stringify([team,cycleKey]);
+  if(UI.watchlistLoadingScope===scope)return;
+  UI.watchlistLoadingScope=scope;
+  UI.watchlistError='';
   try {
-    const response = await fetch('/api/watchlist',{credentials:'include',cache:'no-store'});
+    const response = await fetch('/api/watchlist?cycleKey='+encodeURIComponent(cycleKey),{credentials:'include',cache:'no-store'});
     const type = response.headers.get('content-type') || '';
     if (!type.includes('application/json')) throw Error('Watchlist is temporarily unavailable. Please retry shortly.');
     const data = await response.json();
     if (!response.ok || !data.ok) throw Error(data.error || 'Watchlist could not be loaded.');
-    if (!SESSION || teamKey(SESSION.team) !== team || recruitingStage() !== stage) return;
+    if (!watchlistContextMatches(team,cycleKey) || data.cycleKey!==cycleKey) return;
     if((data.version ?? 0)<(UI.watchlistVersion ?? -1))return;
     UI.watchlistVersion=data.version ?? 0;
     UI.watchlistIds = Array.isArray(data.ids) ? data.ids : [];
     UI.watchlistLoaded = true;
-  } catch(error) { if (SESSION && teamKey(SESSION.team) === team) { UI.watchlistLoaded = false; UI.watchlistError = error.message || 'Watchlist unavailable.'; } }
+  } catch(error) { if (watchlistContextMatches(team,cycleKey)) { UI.watchlistLoaded = false; UI.watchlistError = error.message || 'Watchlist unavailable.'; } }
+  finally{if(UI.watchlistLoadingScope===scope)UI.watchlistLoadingScope='';}
   renderAfterWatchlist();
 }
 function renderWatchlistFlag(pid){
@@ -5121,35 +5140,36 @@ function renderWatchlistBulkConfirm(){
 async function confirmWatchlistBulk(){
   const pending=UI.pendingWatchlistBulk;
   if (!pending || UI.watchlistBulkSaving || !SESSION || !UI.watchlistLoaded) return;
-  const team=teamKey(SESSION.team), stage=recruitingStage();
+  const team=teamKey(SESSION.team),cycleKey=watchlistCycleKey();
+  const pendingMap=UI.watchlistPending;
   UI.watchlistBulkSaving=true;
   UI.pendingWatchlistBulk=null;
   renderAfterWatchlist();
   try {
-    const response=await fetch('/api/watchlist',{method:'POST',credentials:'include',headers:{'content-type':'application/json'},body:JSON.stringify(pending.action==='clear'?{action:'clear'}:{action:'add-many',ids:pending.ids})});
+    const response=await fetch('/api/watchlist',{method:'POST',credentials:'include',headers:{'content-type':'application/json'},body:JSON.stringify({cycleKey,...(pending.action==='clear'?{action:'clear'}:{action:'add-many',ids:pending.ids})})});
     if (!(response.headers.get('content-type') || '').includes('application/json')) throw Error('Watchlist is temporarily unavailable. Please retry shortly.');
     const data=await response.json();
     if (!response.ok || !data.ok) throw Error(data.error || 'Could not update watchlist.');
-    if (SESSION && teamKey(SESSION.team)===team && recruitingStage()===stage && (data.version ?? 0)>=(UI.watchlistVersion ?? -1)){UI.watchlistIds=Array.isArray(data.ids)?data.ids:[];UI.watchlistVersion=data.version ?? 0;}
-  } catch(error) { UI.lastSummary={errorText:error.message || 'Could not update watchlist.'}; }
-  finally { UI.watchlistBulkSaving=false; renderAfterWatchlist(); }
+    if (watchlistContextMatches(team,cycleKey) && data.cycleKey===cycleKey && (data.version ?? 0)>=(UI.watchlistVersion ?? -1)){UI.watchlistIds=Array.isArray(data.ids)?data.ids:[];UI.watchlistVersion=data.version ?? 0;}
+  } catch(error) { if(watchlistContextMatches(team,cycleKey))UI.lastSummary={errorText:error.message || 'Could not update watchlist.'}; }
+  finally { if(UI.watchlistPending===pendingMap)UI.watchlistBulkSaving=false; renderAfterWatchlist(); }
 }
 async function toggleWatchlist(pid){
   if (!SESSION || !UI.watchlistLoaded || UI.watchlistBulkSaving || UI.watchlistPending[pid] || !DB.prospects[pid]) return;
-  const team=teamKey(SESSION.team), stage=recruitingStage();
+  const team=teamKey(SESSION.team),cycleKey=watchlistCycleKey(),pendingMap=UI.watchlistPending;
   UI.watchlistPending[pid]=true;
   document.querySelectorAll('[data-watchlist-flag="' + cssEscape(pid) + '"]').forEach(btn=>{btn.disabled=true;});
   try {
-    const response=await fetch('/api/watchlist',{method:'POST',credentials:'include',headers:{'content-type':'application/json'},body:JSON.stringify({prospectId:pid,flagged:!UI.watchlistIds.includes(pid)})});
+    const response=await fetch('/api/watchlist',{method:'POST',credentials:'include',headers:{'content-type':'application/json'},body:JSON.stringify({cycleKey,prospectId:pid,flagged:!UI.watchlistIds.includes(pid)})});
     const type=response.headers.get('content-type') || '';
     if (!type.includes('application/json')) throw Error('Watchlist API returned a webpage instead of saving.');
     const data=await response.json();
     if (!response.ok || !data.ok) throw Error(data.error || 'Watchlist change was not saved.');
-    if (!SESSION || teamKey(SESSION.team)!==team || recruitingStage()!==stage) return;
+    if (!watchlistContextMatches(team,cycleKey) || data.cycleKey!==cycleKey) return;
     if((data.version ?? 0)>=(UI.watchlistVersion ?? -1)){UI.watchlistIds=Array.isArray(data.ids)?data.ids:[];UI.watchlistVersion=data.version ?? 0;}
   } catch(error) {
-    UI.lastSummary={errorText:error.message || 'Could not save watchlist change.'};
-  } finally { delete UI.watchlistPending[pid]; renderAfterWatchlist(); }
+    if(watchlistContextMatches(team,cycleKey))UI.lastSummary={errorText:error.message || 'Could not save watchlist change.'};
+  } finally { delete pendingMap[pid]; renderAfterWatchlist(); }
 }
 function watchlistNumbers(text){
   const tokens=String(text).replace(/^[ \t]*\|?[ :\-]+\|?[ \t]*$/gm,'').replace(/[|*]/g,' ').trim().split(/\s+/).filter(Boolean);
@@ -5625,7 +5645,7 @@ function renderClassSetup(){
   html += '<div class="rb-card" style="padding:20px 24px;max-width:640px;margin-top:14px;">';
   html += '<div class="rb-h" style="font-size:16px;margin-bottom:12px;">Team Branding</div>';
   html += '<p style="font-size:12px;color:var(--slate);margin:0 0 12px;">Only update when logos change or teams move up from FCS.</p>';
-  html += '<div class="rb-mono" style="font-size:12px;color:var(--slate);margin-bottom:12px;">' + escapeHtml((window.NZCFL_TEAM_BRANDS || []).length) + ' default teams loaded.</div>';
+  html += '<div class="rb-mono" style="font-size:12px;color:var(--slate);margin-bottom:12px;">' + escapeHtml((window.NZCFL_TEAM_BRANDS || []).filter(brand=>!NZCFLTeamStatus.isContracted(brand.region)).length) + ' default teams loaded.</div>';
   html += '<input class="rb-file-input" type="file" id="rb-branding-file" accept=".json,.gz,application/json" />';
   html += '<label class="rb-file-label" for="rb-branding-file">Import branding update</label>';
   if (UI.brandingFileName) html += '<span class="rb-mono" style="font-size:12px;color:var(--slate);margin-left:10px;">' + escapeHtml(UI.brandingFileName) + '</span>';
@@ -5666,6 +5686,7 @@ function renderTransferProfile(p, full){
 }
 
 function renderProspectVisits(offers){
+  if(recruitingStage()==='transfer')return '';
   const rows=offers.filter(o=>!o.rescinded).map(o=>({offer:o,visits:detectVisits(o.text,o.visits)}));
   const coaches=[...new Set(rows.filter(r=>r.visits.coach).map(r=>r.offer.team))].sort((a,b)=>a.localeCompare(b));
   const weeks=new Map(),unknown=[];
@@ -6711,8 +6732,8 @@ function bindEvents(){
       const eligible = !p || ((!UI.transferGrade || (p.grade || 'Not listed') === UI.transferGrade) && (!UI.transferYears || String(p.yearsLeft) === String(UI.transferYears)));
       const recruitType = p && (isPitchRecruit(p) ? 'pitch' : (NZCFLCprRules.scholarshipRecruit(p, DB.offersByProspect[p.id] || []) ? 'scholarship' : 'walkon'));
       const matchesType = recruitingStage() !== 'cpr' || !p || !UI.cprTypeFilter || recruitType === UI.cprTypeFilter;
-      const ownType=(UI.ownTypeFilters || {})[kind];
-      const otherScholarships=kind==='offers' && UI.otherScholarshipFilter;
+      const ownType=recruitingStage()!=='transfer' && (UI.ownTypeFilters || {})[kind];
+      const otherScholarships=recruitingStage()!=='transfer' && kind==='offers' && UI.otherScholarshipFilter;
       const matchesOtherScholarships=!otherScholarships || (card.getAttribute('data-other-scholarships')==='true')===(otherScholarships==='with');
       const matches = (!q || haystack.indexOf(q) !== -1) && eligible && matchesType && matchesOtherScholarships && (!ownType || card.getAttribute('data-own-offer-type')===ownType);
       if (matches) filteredCounts[bucket] = (filteredCounts[bucket] || 0) + 1;

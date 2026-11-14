@@ -11,6 +11,7 @@ import { teamKey } from './teams-util.js';
 export const STATE_KEY = 'league:state';
 
 const STATE_FIELDS = [
+  'watchlistCycleId',
   'removedPlayers',
   'fullRoster',
   'scholarshipHistory',
