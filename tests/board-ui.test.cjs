@@ -910,18 +910,19 @@ test('rescinded offer retains its text and header status',()=>{
  assert.equal((html.match(/>Rescinded</g)||[]).length,1);
 });
 
-test('promise CSV contains only winner names, teams, and three escaped promises',()=>{
+test('promise CSV starts with recruit numbers, followed by winner names, teams, and three escaped promises',()=>{
  const {app}=harness();
  app.DB.prospects.r1.name='Jordan "Jay", Able';
  app.DB.offersByProspect.r1=[{team:'Alabama',text:'',promises:[{text:'I promise weekly film sessions.'}]},{team:'Boise State',rescinded:true,text:'',promises:[{text:'I promise a starting role.'}]},{team:'Boise State',text:'',promises:[{text:'I promise a role in the rotation.'},{text:'I promise weekly film sessions.'}]}];
  const rows=app.parseCsvRows(app.buildPromiseArchive());
  assert.equal(rows.length,2);
- assert.equal(rows[0].join('|'),'Name|Committed Team|Promise 1|Promise 2|Promise 3');
- assert.equal(rows[1][0],'Jordan "Jay", Able');
- assert.equal(rows[1][1],'Boise State');
- assert.equal(rows[1][2],'I promise a role in the rotation.');
- assert.equal(rows[1][3],'I promise weekly film sessions.');
- assert.equal(rows[1][4],'');
+ assert.equal(rows[0].join('|'),'Recruit Number|Name|Committed Team|Promise 1|Promise 2|Promise 3');
+ assert.equal(rows[1][0],'1');
+ assert.equal(rows[1][1],'Jordan "Jay", Able');
+ assert.equal(rows[1][2],'Boise State');
+ assert.equal(rows[1][3],'I promise a role in the rotation.');
+ assert.equal(rows[1][4],'I promise weekly film sessions.');
+ assert.equal(rows[1][5],'');
 });
 
 test('promise exports omit ranks 501+ only when the committed team made no promises',()=>{
@@ -932,8 +933,9 @@ test('promise exports omit ranks 501+ only when the committed team made no promi
  }
  app.DB.offersByProspect.r503.push({team:'UCLA',text:'',promises:[{text:'I promise you will start as a senior.'}]});
  const rows=app.parseCsvRows(app.buildPromiseArchive());
- assert.deepEqual(Array.from(rows.slice(1),r=>r[0]),['Player 499','Player 500','Player 502']);
- assert.equal(rows[3][2],'I promise you will start as a junior.');
+ assert.deepEqual(Array.from(rows.slice(1),r=>r[0]),['499','500','502']);
+ assert.deepEqual(Array.from(rows.slice(1),r=>r[1]),['Player 499','Player 500','Player 502']);
+ assert.equal(rows[3][3],'I promise you will start as a junior.');
 });
 
 test('committed players retain rescinded winning-offer promises on their page, commit list, search and CSV',()=>{
@@ -945,7 +947,7 @@ test('committed players retain rescinded winning-offer promises on their page, c
  app.DB.prospects={r104:p};app.DB.offersByProspect={r104:[loser,winner]};app.DB.offersLocked=true;
  const before=JSON.stringify(app.DB);
  const rows=app.parseCsvRows(app.buildPromiseArchive());
- assert.deepEqual(Array.from(rows[1]),[p.name,'UCLA',...texts,'']);
+ assert.deepEqual(Array.from(rows[1]),['104',p.name,'UCLA',...texts,'']);
  const html=app.renderOfferBlock(winner,{prospect:p,fullText:true});
  assert.match(html,/rb-rescinded-badge/);assert.match(html,/Pro Potential:<\/span> I promise/);assert.match(html,/Coach:<\/span> I promise/);
  const commits=app.renderCommitsForTeam('UCLA','Commits');
@@ -1368,7 +1370,7 @@ test('explicit promise lists replace inline promises in existing offers and prom
   const offer={team:'Boise State',text,promises:[{text:'I promise an outdated inline promise.'}]};
   assert.deepEqual(Array.from(app.cleanDisplayPromises(offer),p=>p.text),expected);
   app.DB.offersByProspect.r1=[offer];
-  assert.deepEqual(Array.from(app.parseCsvRows(app.buildPromiseArchive())[1].slice(2)),expected);
+  assert.deepEqual(Array.from(app.parseCsvRows(app.buildPromiseArchive())[1].slice(3)),expected);
   const formatted=text.replace('Promises:','### **Promises:**').replace(/^- /gm,'1. ').replace(/\n/g,'\r\n');
   assert.deepEqual(Array.from(app.extractPromises(formatted),p=>p.text),expected);
   assert.equal(app.extractPromises(inline+'\nPromises:\nWe care about your future.').length,2);

@@ -2781,14 +2781,14 @@ function committedPromiseOffers(prospect){
 }
 
 function buildPromiseArchive(){
-  const rows = [['Name', 'Committed Team', 'Promise 1', 'Promise 2', 'Promise 3']];
+  const rows = [['Recruit Number', 'Name', 'Committed Team', 'Promise 1', 'Promise 2', 'Promise 3']];
   Object.values(DB.prospects || {}).filter(function(p){ return p && p.commitTeam; }).sort(function(a,b){ return a.rank - b.rank; }).forEach(function(p){
     const promises = [];
     committedPromiseOffers(p).forEach(function(o){
       cleanDisplayPromises(o).forEach(function(pr){ if (!promises.includes(pr.text)) promises.push(pr.text); });
     });
     if(Number(p.rank)>500 && !promises.length)return;
-    rows.push([p.name, p.commitTeam, promises[0] || '', promises[1] || '', promises[2] || '']);
+    rows.push([p.rank || '', p.name, p.commitTeam, promises[0] || '', promises[1] || '', promises[2] || '']);
   });
   return rows.map(function(row){
     return row.map(function(value){ return '"' + String(value || '').replace(/"/g, '""') + '"'; }).join(',');
