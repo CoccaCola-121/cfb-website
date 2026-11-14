@@ -6147,8 +6147,9 @@ function renderResetConfirmModal(){
     'This will remove every posted offer, rescinded offer, visit usage record, and unmatched review item while keeping the loaded class and boards.';
   const approvals = dangerApprovalList(UI.confirmReset);
   const hasApproved = REQUIRED_DANGER_APPROVALS > 1 && !!(SESSION && approvals.some(function(row){ return row.discordId === SESSION.discordId; }));
+  const canDismiss = isStage && hasApproved;
   const btn = REQUIRED_DANGER_APPROVALS === 1 ? 'Confirm change' : approvals.length >= 1 && !hasApproved ? 'Approve and execute' : (hasApproved ? 'Approved' : 'Approve reset');
-  return '<div style="position:fixed;inset:0;background:rgba(0,0,0,0.68);display:flex;align-items:center;justify-content:center;z-index:60;">' +
+  return '<div id="rb-reset-overlay" data-dismiss-reset="' + (canDismiss ? '1' : '0') + '" style="position:fixed;inset:0;background:rgba(0,0,0,0.68);display:flex;align-items:center;justify-content:center;z-index:60;">' +
     '<div class="rb-card" style="padding:24px;width:520px;max-width:90vw;border-color:#B33A32;">' +
       '<div class="rb-h" style="font-size:18px;margin-bottom:8px;color:#FFF2F1;">' + escapeHtml(title) + '</div>' +
       '<div style="font-size:13px;color:var(--slate);line-height:1.5;margin-bottom:18px;">' + escapeHtml(body) + '</div>' +
@@ -6156,8 +6157,9 @@ function renderResetConfirmModal(){
         '<div class="rb-mono" style="font-size:12px;color:var(--gold);margin-bottom:6px;">Commissioner approvals: ' + approvals.length + '/' + REQUIRED_DANGER_APPROVALS + '</div>' +
         (approvals.length ? approvals.map(function(row){ return '<div style="font-size:12px;color:var(--slate);">' + escapeHtml(row.name || row.team || 'Commissioner') + '</div>'; }).join('') : '<div style="font-size:12px;color:var(--slate);">No commissioner has approved this yet.</div>') +
       '</div>' +
+      (canDismiss ? '<p style="font-size:13px;color:var(--slate);">You can click outside to close this window. Your approval will be kept.</p>' : '') +
       '<div style="display:flex;justify-content:flex-end;gap:8px;flex-wrap:wrap;">' +
-        '<button class="rb-btn" id="rb-cancel-reset">Cancel</button>' +
+        '<button class="rb-btn" id="rb-cancel-reset">' + (canDismiss ? 'Close' : 'Cancel') + '</button>' +
         '<button class="rb-btn rb-btn-danger" id="rb-confirm-reset" ' + (hasApproved ? 'disabled' : '') + '>' + escapeHtml(btn) + '</button>' +
       '</div>' +
     '</div>' +
@@ -6484,6 +6486,10 @@ function bindEvents(){
 
   const cancelResetBtn = document.getElementById('rb-cancel-reset');
   if (cancelResetBtn) cancelResetBtn.onclick = cancelReset;
+  const resetOverlay = document.getElementById('rb-reset-overlay');
+  if (resetOverlay) resetOverlay.onclick = function(e){
+    if(e.target===resetOverlay && resetOverlay.getAttribute('data-dismiss-reset')==='1' && !UI.archiveSaving && !settingsSaving)cancelReset();
+  };
   const confirmResetBtn = document.getElementById('rb-confirm-reset');
   if (confirmResetBtn) confirmResetBtn.onclick = approveDangerReset;
 

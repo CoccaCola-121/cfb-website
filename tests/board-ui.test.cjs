@@ -600,6 +600,28 @@ for (const stage of ['transfer','cpr']) test(stage + ' position counts follow sl
   assert.equal(Object.keys(app.DB.offersByProspect).length,0);
 });
 
+test('commissioners can click outside an approved stage change without losing the approval or executing it',async()=>{
+ const {app,elements}=harness();
+ app.setReady();
+ app.setSession({accessLevel:'commissioner',discordId:'first',username:'First'});
+ app.beginSettingsDraft();app.setRecruitingStage('transfer');
+ assert.match(elements['rb-app'].innerHTML,/id="rb-reset-overlay" data-dismiss-reset="0"/);
+ await app.approveDangerReset();
+ assert.match(elements['rb-app'].innerHTML,/id="rb-reset-overlay" data-dismiss-reset="1"/);
+ assert.match(elements['rb-app'].innerHTML,/id="rb-cancel-reset">Close<\/button>/);
+ const before=JSON.stringify(app.DB);
+ const overlay=elements['rb-reset-overlay']=element({'data-dismiss-reset':'1'});
+ app.bindEvents();
+ overlay.onclick({target:{}});assert.equal(app.UI.confirmReset,'stage:transfer','Clicks inside the dialog must not dismiss it');
+ app.UI.archiveSaving=true;overlay.onclick({target:overlay});assert.equal(app.UI.confirmReset,'stage:transfer');app.UI.archiveSaving=false;
+ overlay.onclick({target:overlay});
+ assert.equal(app.UI.confirmReset,null);assert.equal(JSON.stringify(app.DB),before);
+ assert.equal(app.hasSettingsChanges(),true);assert.equal(app.DB.recruitingStage,'hs');
+ app.setRecruitingStage('transfer');
+ assert.match(elements['rb-app'].innerHTML,/Commissioner approvals: 1\/2/);
+ assert.match(elements['rb-app'].innerHTML,/id="rb-confirm-reset" disabled>Approved/);
+});
+
 test('only high school settings expose commit sheets; all stages retain manual overrides', () => {
   for (const stage of ['hs','transfer','cpr']) {
     const {app} = harness();
