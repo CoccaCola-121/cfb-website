@@ -3363,34 +3363,40 @@ function dangerApprovalList(kind){
 
 function requestReset(kind){
   UI.confirmReset = kind;
+  UI.resetError = null;
   render();
 }
 
 function cancelReset(){
+  if(UI.resetBusy || UI.archiveSaving || settingsSaving)return;
   UI.confirmReset = null;
   render();
 }
 
 async function approveDangerReset(){
-  if (!canUseDangerZone() || !SESSION || !UI.confirmReset) return;
-  if (!SESSION.discordId) { UI.settingsError='Sign in with Discord to approve a reset.'; render(); return; }
+  if (!canUseDangerZone() || !SESSION || !UI.confirmReset || UI.resetBusy || UI.archiveSaving || settingsSaving) return;
+  if (!SESSION.discordId) { UI.resetError='Sign in with Discord to approve a reset.'; render(); return; }
   const kind = UI.confirmReset;
-  DB.dangerApprovals = DB.dangerApprovals || {};
-  const current = activeDangerApproval(kind) || { kind: kind, requestedAt: Date.now(), approvals: {} };
-  current.approvals = current.approvals || {};
-  current.approvals[SESSION.discordId] = {
-    name: SESSION.username || SESSION.team || 'Commissioner',
-    team: SESSION.team || '',
-    approvedAt: Date.now()
-  };
-  DB.dangerApprovals[kind] = current;
-  const approvals = Object.keys(current.approvals);
-  if (approvals.length < REQUIRED_DANGER_APPROVALS){
-    await saveDBNow();
+  UI.resetBusy=true;UI.resetError=null;
+  try{
+    DB.dangerApprovals = DB.dangerApprovals || {};
+    const current = activeDangerApproval(kind) || { kind: kind, requestedAt: Date.now(), approvals: {} };
+    current.approvals = current.approvals || {};
+    // A failed archive must be retryable without replacing the saved approvals
+    // or requiring a third commissioner to approve the same change.
+    if(Object.keys(current.approvals).length<REQUIRED_DANGER_APPROVALS && !current.approvals[SESSION.discordId]){
+      current.approvals[SESSION.discordId] = {
+        name: SESSION.username || SESSION.team || 'Commissioner',
+        team: SESSION.team || '',
+        approvedAt: Date.now()
+      };
+    }
+    DB.dangerApprovals[kind] = current;
     render();
-    return;
-  }
-  await confirmReset();
+    if(Object.keys(current.approvals).length<REQUIRED_DANGER_APPROVALS)await saveDBNow();
+    else await confirmReset(kind);
+  }catch(error){UI.resetError=error.message || 'The change could not be prepared. Your approvals are kept; retry.';}
+  finally{UI.resetBusy=false;render();}
 }
 
 function archiveSeasonValue(){
@@ -3408,15 +3414,15 @@ async function archiveCurrentCycle(automatic=false){
  finally{UI.archiveSaving=false;if(!automatic)render();}
 }
 
-async function confirmReset(){
-  if (!canUseDangerZone()) return;
-  if(Object.keys(DB.prospects || {}).length && !(await archiveCurrentCycle(true))){render();return;}
-  if (UI.confirmReset && UI.confirmReset.startsWith('stage:')) {
-    const stage = UI.confirmReset.slice(6);
+async function confirmReset(kind){
+  if (!canUseDangerZone() || !kind || dangerApprovalList(kind).length<REQUIRED_DANGER_APPROVALS) return;
+  if(Object.keys(DB.prospects || {}).length && !(await archiveCurrentCycle(true))){UI.resetError=UI.archiveStatus;return;}
+  if (kind.startsWith('stage:')) {
+    const stage = kind.slice(6);
     if (!RECRUITING_STAGES[stage]) return;
     clearRecruitingBoard();
     DB.recruitingStage = stage;
-  } else if (UI.confirmReset === 'offers'){
+  } else if (kind === 'offers'){
     DB.offersByProspect = {};
     DB.unmatched = [];
     DB.conditionalRescinds = [];
@@ -3426,7 +3432,7 @@ async function confirmReset(){
     UI.lastSummary = null;
     UI.rescindError = null;
     UI.assignError = {};
-  } else if (UI.confirmReset === 'class'){
+  } else if (kind === 'class'){
     DB.scholarshipCapacity = null;
     UI.earlyDeclareesStatus=null; UI.earlyDeclareesError=null; UI.earlyDeclareesResult=null;
     DB.manualCommitOverrides = {};
@@ -3452,8 +3458,10 @@ async function confirmReset(){
     UI.rescindError = null;
     UI.assignError = {};
   }
-  if (DB.dangerApprovals) delete DB.dangerApprovals[UI.confirmReset];
+  if (DB.dangerApprovals) delete DB.dangerApprovals[kind];
   UI.confirmReset = null;
+  UI.resetError = null;
+  if(settingsDraft)UI.settingsStatus='Change prepared. Press Save changes to publish it.';
   await saveDBNow(); render();
 }
 
@@ -6154,20 +6162,25 @@ function renderResetConfirmModal(){
     'This will remove every posted offer, rescinded offer, visit usage record, and unmatched review item while keeping the loaded class and boards.';
   const approvals = dangerApprovalList(UI.confirmReset);
   const hasApproved = REQUIRED_DANGER_APPROVALS > 1 && !!(SESSION && approvals.some(function(row){ return row.discordId === SESSION.discordId; }));
+  const ready = approvals.length >= REQUIRED_DANGER_APPROVALS;
+  const busy = UI.resetBusy || UI.archiveSaving || settingsSaving;
   const canDismiss = isStage && hasApproved;
-  const btn = REQUIRED_DANGER_APPROVALS === 1 ? 'Confirm change' : approvals.length >= 1 && !hasApproved ? 'Approve and execute' : (hasApproved ? 'Approved' : 'Approve reset');
+  const btn = busy ? 'Preparing change…' : ready ? (isStage ? 'Switch to '+RECRUITING_STAGES[UI.confirmReset.slice(6)].label : 'Execute reset') : REQUIRED_DANGER_APPROVALS === 1 ? 'Confirm change' : approvals.length >= 1 && !hasApproved ? 'Approve and execute' : (hasApproved ? 'Approved' : 'Approve reset');
   return '<div id="rb-reset-overlay" data-dismiss-reset="' + (canDismiss ? '1' : '0') + '" style="position:fixed;inset:0;background:rgba(0,0,0,0.68);display:flex;align-items:center;justify-content:center;z-index:60;">' +
-    '<div class="rb-card" style="padding:24px;width:520px;max-width:90vw;border-color:#B33A32;">' +
+    '<div class="rb-card" style="padding:24px;width:520px;max-width:90vw;max-height:90vh;overflow:auto;border-color:#B33A32;">' +
       '<div class="rb-h" style="font-size:18px;margin-bottom:8px;color:#FFF2F1;">' + escapeHtml(title) + '</div>' +
       '<div style="font-size:13px;color:var(--slate);line-height:1.5;margin-bottom:18px;">' + escapeHtml(body) + '</div>' +
       '<div class="rb-card" style="padding:10px 12px;margin-bottom:14px;background:var(--ink);">' +
         '<div class="rb-mono" style="font-size:12px;color:var(--gold);margin-bottom:6px;">Commissioner approvals: ' + approvals.length + '/' + REQUIRED_DANGER_APPROVALS + '</div>' +
         (approvals.length ? approvals.map(function(row){ return '<div style="font-size:12px;color:var(--slate);">' + escapeHtml(row.name || row.team || 'Commissioner') + '</div>'; }).join('') : '<div style="font-size:12px;color:var(--slate);">No commissioner has approved this yet.</div>') +
       '</div>' +
+      (Object.keys(DB.prospects || {}).length ? '<label for="rb-reset-archive-season" style="display:block;margin-bottom:6px;">Recruiting season to archive</label><input class="rb-input" id="rb-reset-archive-season" type="number" min="1900" max="9999" step="1" required placeholder="League season" value="'+escapeHtml(archiveSeasonValue())+'"'+(busy?' disabled':'')+' style="max-width:180px;"><p style="font-size:12px;color:var(--slate);">The current cycle must be archived before this change. Enter its in-game season.</p>' : '') +
+      (UI.resetError ? '<p role="alert" style="color:var(--alert);">'+escapeHtml(UI.resetError)+'</p>' : '') +
+      (ready && !busy ? '<p style="font-size:13px;color:var(--gold);">Both commissioners have approved. Continue below, then press Save changes in Settings to publish.</p>' : '') +
       (canDismiss ? '<p style="font-size:13px;color:var(--slate);">You can click outside to close this window. Your approval will be kept.</p>' : '') +
       '<div style="display:flex;justify-content:flex-end;gap:8px;flex-wrap:wrap;">' +
-        '<button class="rb-btn" id="rb-cancel-reset">' + (canDismiss ? 'Close' : 'Cancel') + '</button>' +
-        '<button class="rb-btn rb-btn-danger" id="rb-confirm-reset" ' + (hasApproved ? 'disabled' : '') + '>' + escapeHtml(btn) + '</button>' +
+        '<button class="rb-btn" id="rb-cancel-reset"'+(busy?' disabled':'')+'>' + (canDismiss ? 'Close' : 'Cancel') + '</button>' +
+        '<button class="rb-btn rb-btn-danger" id="rb-confirm-reset" ' + (busy || (hasApproved && !ready) ? 'disabled' : '') + '>' + escapeHtml(btn) + '</button>' +
       '</div>' +
     '</div>' +
   '</div>';
@@ -6243,7 +6256,13 @@ function bindEvents(){
 
 
 
-  const archiveSeason=document.getElementById('rb-archive-season');if(archiveSeason)archiveSeason.oninput=function(){UI.archiveSeasonDraft={classKey:conditionalClassKey(),value:archiveSeason.value};};
+  ['rb-archive-season','rb-reset-archive-season'].forEach(function(id){
+    const input=document.getElementById(id);if(!input)return;
+    input.oninput=function(){
+      UI.archiveSeasonDraft={classKey:conditionalClassKey(),value:input.value};
+      const other=document.getElementById(id==='rb-archive-season'?'rb-reset-archive-season':'rb-archive-season');if(other)other.value=input.value;
+    };
+  });
   const archiveButton=document.getElementById('rb-archive-cycle');if(archiveButton)archiveButton.onclick=function(){return archiveCurrentCycle();};
   restoreRescindDraft();
   bindScholarshipTemplates();

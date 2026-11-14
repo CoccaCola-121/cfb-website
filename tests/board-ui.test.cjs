@@ -607,7 +607,9 @@ for (const stage of ['transfer','cpr']) test(stage + ' position counts follow sl
 });
 
  test('two distinct commissioners must approve resets and stage switches; coaches cannot', async () => {
-  const {app} = harness();
+  const {app,context} = harness();
+  app.DB.fullRoster=[{name:'Current recruit',season:2064}];
+  context.fetch=async url=>{assert.equal(url,'/api/admin/archive-cycle');return {ok:true,json:async()=>({ok:true,season:2064,stage:'hs'})};};
   app.setRecruitingStage('transfer');
   assert.ok(!app.UI.confirmReset);
   app.setSession({accessLevel:'commissioner',discordId:'test'});
@@ -652,6 +654,76 @@ test('commissioners can click outside an approved stage change without losing th
  app.setRecruitingStage('transfer');
  assert.match(elements['rb-app'].innerHTML,/Commissioner approvals: 1\/2/);
  assert.match(elements['rb-app'].innerHTML,/id="rb-confirm-reset" disabled>Approved/);
+});
+
+test('two saved approvals can retry a failed archive, enter the season in the dialog, then publish the stage change',async()=>{
+ const {app,context,elements}=harness();app.setReady();app.UI.view='setup';
+ app.setSession({accessLevel:'commissioner',discordId:'first',username:'First'});
+ app.DB.updatedAt=15;app.DB.fullRoster=[{name:'Current recruit',rank:1}];
+ app.DB.offersByProspect={r1:[{id:'winning',team:'Boise State',text:'Scholarship',promises:[{text:'Start as a junior.'}]}]};
+ const approvals={kind:'stage:transfer',requestedAt:Date.now(),approvals:{first:{name:'First',approvedAt:Date.now()-1000},second:{name:'Second',approvedAt:Date.now()-500}}};
+ app.DB.dangerApprovals={'stage:transfer':approvals};
+ const before=JSON.stringify(app.leagueStatePayload());let live=JSON.parse(before);live.updatedAt=15;
+ app.beginSettingsDraft();app.setRecruitingStage('transfer');
+ const html=()=>elements['rb-app'].innerHTML;
+ assert.match(html(),/Commissioner approvals: 2\/2/);
+ assert.match(html(),/id="rb-confirm-reset" >Switch to Transfers/);
+ assert.match(html(),/id="rb-reset-archive-season"[^>]*value=""/);
+ let archives=0,writes=0;
+ context.window.location.protocol='https:';
+ context.fetch=async(url,options={})=>{
+  if(url==='/api/admin/archive-cycle'){
+   archives++;const body=JSON.parse(options.body);assert.equal(body.season,2064);assert.equal(body.expectedUpdatedAt,15);
+   assert.equal(JSON.stringify(app.leagueStatePayload()),before,'No class, offer, promise or approval may change before archiving succeeds');
+   return archives===1?{ok:false,json:async()=>({ok:false,error:'Archive storage is temporarily unavailable.'})}:{ok:true,json:async()=>({ok:true,season:2064,stage:'hs'})};
+  }
+  assert.equal(url,'/api/league/state');
+  if(options.method==='PUT'){
+   writes++;const body=JSON.parse(options.body);assert.equal(archives,2);assert.equal(body.expectedUpdatedAt,15);
+   assert.equal(body.state.recruitingStage,'transfer');assert.deepEqual(body.state.prospects,{});assert.deepEqual(body.state.offersByProspect,{});
+   live={...body.state,updatedAt:16};
+  }
+  return {ok:true,json:async()=>({ok:true,state:live})};
+ };
+ await app.approveDangerReset();
+ assert.equal(archives,0);assert.equal(JSON.stringify(app.leagueStatePayload()),before);
+ assert.match(html(),/role="alert"[^>]*>Enter the recruiting season before archiving/);
+ assert.match(html(),/id="rb-confirm-reset" >Switch to Transfers/);
+ elements['rb-reset-archive-season']=element();elements['rb-archive-season']=element();app.bindEvents();
+ elements['rb-reset-archive-season'].value='2064';elements['rb-reset-archive-season'].oninput();
+ assert.equal(elements['rb-archive-season'].value,'2064');assert.equal(app.archiveSeasonValue(),'2064');
+ await app.approveDangerReset();
+ assert.equal(archives,1);assert.equal(JSON.stringify(app.leagueStatePayload()),before);
+ assert.match(html(),/role="alert"[^>]*>Archive storage is temporarily unavailable/);
+ assert.match(html(),/id="rb-confirm-reset" >Switch to Transfers/);
+ assert.equal(app.UI.resetBusy,false);
+ // Either original approver can retry; neither approval needs to be replaced.
+ app.setSession({accessLevel:'commissioner',discordId:'second',username:'Second'});
+ await app.approveDangerReset();
+ assert.equal(archives,2);assert.equal(writes,0);assert.equal(app.DB.recruitingStage,'transfer');
+ assert.equal(app.UI.confirmReset,null);assert.equal(app.DB.dangerApprovals['stage:transfer'],undefined);
+ assert.equal(app.hasSettingsChanges(),true);assert.match(app.UI.settingsStatus,/Press Save changes/);
+ await app.saveSettingsChanges();
+ assert.equal(writes,1);assert.equal(app.DB.updatedAt,16);assert.equal(app.hasSettingsChanges(),false);
+ assert.equal(app.UI.settingsStatus,'Settings changes saved.');
+});
+
+test('stage execution cannot be duplicated or dismissed while its archive is in flight',async()=>{
+ const {app,context,elements}=harness();app.setReady();app.UI.view='setup';
+ app.setSession({accessLevel:'commissioner',discordId:'second'});
+ app.DB.fullRoster=[{name:'Current recruit',season:2064}];
+ app.DB.dangerApprovals={'stage:transfer':{requestedAt:Date.now(),approvals:{first:{name:'First'},second:{name:'Second'}}}};
+ app.beginSettingsDraft();app.setRecruitingStage('transfer');
+ let finish,calls=0;context.fetch=async()=>{calls++;return new Promise(resolve=>{finish=resolve;});};
+ const work=app.approveDangerReset();assert.equal(calls,1);assert.equal(app.UI.resetBusy,true);
+ assert.match(elements['rb-app'].innerHTML,/id="rb-confirm-reset" disabled>Preparing change/);
+ assert.match(elements['rb-app'].innerHTML,/id="rb-cancel-reset" disabled>Close/);
+ await app.approveDangerReset();assert.equal(calls,1);
+ elements['rb-cancel-reset']=element();elements['rb-reset-overlay']=element({'data-dismiss-reset':'1'});app.bindEvents();
+ elements['rb-cancel-reset'].onclick();elements['rb-reset-overlay'].onclick({target:elements['rb-reset-overlay']});
+ assert.equal(app.UI.confirmReset,'stage:transfer');assert.equal(app.DB.recruitingStage,'hs');
+ finish({ok:true,json:async()=>({ok:true,season:2064,stage:'hs'})});await work;
+ assert.equal(app.DB.recruitingStage,'transfer');assert.equal(app.UI.resetBusy,false);assert.equal(app.UI.confirmReset,null);
 });
 
 test('only high school settings expose commit sheets; all stages retain manual overrides', () => {
