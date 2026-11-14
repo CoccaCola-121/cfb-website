@@ -82,27 +82,30 @@ export async function writeLeagueState(env, state, previous = state) {
   return clean;
 }
 
-export async function purgeOffersForTeam(env, teamName) {
-  const targetKey = teamKey(teamName);
-  if (!targetKey) return { state: null, purgedOffers: 0 };
-  const state = await readLeagueState(env);
-  if (!state || !state.offersByProspect) return { state, purgedOffers: 0 };
-  const nextOffers = {};
-  let purgedOffers = 0;
-  Object.keys(state.offersByProspect || {}).forEach((pid) => {
-    const offers = Array.isArray(state.offersByProspect[pid]) ? state.offersByProspect[pid] : [];
-    const kept = offers.filter((offer) => {
-      const purge = offer && teamKey(offer.team) === targetKey;
-      if (purge) purgedOffers++;
-      return !purge;
-    });
-    if (kept.length) nextOffers[pid] = kept;
-  });
-  if (!purgedOffers) return { state, purgedOffers: 0 };
-  const clean = await writeLeagueState(env, {
-    ...state,
-    offersByProspect: nextOffers,
-    teamOfferPurgedAt: Date.now(),
-  },state);
-  return { state: clean, purgedOffers };
+export async function rescindOffersForTeams(env, teamNames) {
+  const targets = new Set(teamNames.map(teamKey).filter(Boolean));
+  if (!targets.size) return { state: null, rescindedOffers: 0 };
+  for(let attempt=0;attempt<16;attempt++){
+    const state = await readLeagueState(env);
+    if (!state) return { state, rescindedOffers: 0 };
+    let rescindedOffers = 0;
+    const now=Date.now();
+    for(const [pid,offers] of Object.entries(state.offersByProspect || {})){
+      const prospect=state.prospects?.[pid];
+      // Preserve the full record for all commits, including commits to another
+      // school. Recheck after conflicts so a concurrent commitment stays safe.
+      if(!prospect || prospect.commitTeam)continue;
+      for(const offer of offers){
+        if(!offer || offer.rescinded || !targets.has(teamKey(offer.team)) || globalThis.NZCFLAutoCommits.invalidOffer(state,prospect,offer))continue;
+        offer.rescinded=true;offer.rescindedAt=now;offer.rescindReason='Rescinded after coaching change.';
+        rescindedOffers++;
+      }
+    }
+    if(!rescindedOffers)return {state,rescindedOffers:0};
+    try{return {state:await writeLeagueState(env,state),rescindedOffers};}
+    catch(error){
+      if(error.status!==409 || attempt===15)throw error;
+      await new Promise(resolve=>setTimeout(resolve,40+Math.random()*180));
+    }
+  }
 }

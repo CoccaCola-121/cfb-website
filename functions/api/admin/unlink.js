@@ -1,12 +1,14 @@
 import { canModerate, getCurrentUser, json } from '../../_lib/auth.js';
 import { deleteTeamClaim, readTeamClaim, teamKey } from '../../_lib/teams-util.js';
+import { rescindOffersForTeams } from '../../_lib/league-state.js';
+import { queueLeagueBackup } from '../../_lib/backup.js';
 
 async function findDiscordIdByTeam(env, team) {
   const claim = await readTeamClaim(env, team);
   return claim && claim.discordId ? claim.discordId : '';
 }
 
-export async function onRequestPost({ request, env }) {
+export async function onRequestPost({ request, env, waitUntil }) {
   const admin = await getCurrentUser(request, env);
   if (!admin || !canModerate(env, admin)) {
     return json({ ok: false, error: 'Moderator access required.' }, { status: 403 });
@@ -20,6 +22,9 @@ export async function onRequestPost({ request, env }) {
   if (!user) return json({ ok: false, error: 'No linked account found.' }, { status: 404 });
 
   const oldTeam = user.team;
+  let rescinds;
+  try{rescinds=await rescindOffersForTeams(env,[oldTeam]);}
+  catch{return json({ok:false,error:'The coaching change could not be saved. No account was unlinked; please retry.'},{status:503});}
   if (oldTeam) await deleteTeamClaim(env, oldTeam);
   user.team = '';
   user.updatedAt = Date.now();
@@ -29,5 +34,6 @@ export async function onRequestPost({ request, env }) {
     await deleteTeamClaim(env, body.team);
   }
 
-  return json({ ok: true, user });
+  if(rescinds.rescindedOffers)queueLeagueBackup(env,rescinds.state,waitUntil,{source:'coach-vacated-team'});
+  return json({ ok: true, user, rescindedOffers: rescinds.rescindedOffers });
 }

@@ -1,6 +1,6 @@
 import { getCurrentUser, json } from '../../_lib/auth.js';
 import { queueLeagueBackup } from '../../_lib/backup.js';
-import { purgeOffersForTeam } from '../../_lib/league-state.js';
+import { rescindOffersForTeams } from '../../_lib/league-state.js';
 import { findTeam, readTeamClaim, writeTeamClaim } from '../../_lib/teams-util.js';
 
 export async function onRequestPost({ request, env, waitUntil }) {
@@ -18,12 +18,14 @@ export async function onRequestPost({ request, env, waitUntil }) {
     return json({ ok: false, error: `${team.region} is already linked to another Discord account.` }, { status: 409 });
   }
   const takeover = !claim;
-  const purge = takeover ? await purgeOffersForTeam(env, team.region) : { purgedOffers: 0 };
+  let rescinds;
+  try{rescinds=await rescindOffersForTeams(env,takeover?[team.region]:[]);}
+  catch{return json({ok:false,error:'The coaching change could not be saved. No account was linked; please retry.'},{status:503});}
 
   user.team = team.region;
   user.updatedAt = Date.now();
   await env.AUTH_KV.put(`discord:user:${user.discordId}`, JSON.stringify(user));
   await writeTeamClaim(env, team.region, user.discordId);
-  if (purge.purgedOffers) queueLeagueBackup(env, purge.state, waitUntil, { source: 'team-takeover-purge' });
-  return json({ ok: true, user, purgedOffers: purge.purgedOffers });
+  if (rescinds.rescindedOffers) queueLeagueBackup(env, rescinds.state, waitUntil, { source: 'team-takeover-rescind' });
+  return json({ ok: true, user, rescindedOffers: rescinds.rescindedOffers });
 }

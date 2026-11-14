@@ -924,6 +924,18 @@ test('promise CSV contains only winner names, teams, and three escaped promises'
  assert.equal(rows[1][4],'');
 });
 
+test('promise exports omit ranks 501+ only when the committed team made no promises',()=>{
+ const {app}=harness();app.DB.prospects={};app.DB.offersByProspect={};
+ for(const [rank,promises] of [[499,[]],[500,[]],[501,[]],[502,[{text:'I promise you will start as a junior.'}]],[503,[]]]){
+  const id='r'+rank;app.DB.prospects[id]={id,rank,name:'Player '+rank,commitTeam:'North Texas'};
+  app.DB.offersByProspect[id]=[{team:'North Texas',text:'',promises,rescinded:rank===502}];
+ }
+ app.DB.offersByProspect.r503.push({team:'UCLA',text:'',promises:[{text:'I promise you will start as a senior.'}]});
+ const rows=app.parseCsvRows(app.buildPromiseArchive());
+ assert.deepEqual(Array.from(rows.slice(1),r=>r[0]),['Player 499','Player 500','Player 502']);
+ assert.equal(rows[3][2],'I promise you will start as a junior.');
+});
+
 test('committed players retain rescinded winning-offer promises on their page, commit list, search and CSV',()=>{
  const {app}=harness();
  const p={id:'r104',rank:104,name:'C.J. Mabry',position:'CB',commitTeam:'UCLA'};
