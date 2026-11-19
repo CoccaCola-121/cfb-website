@@ -4802,7 +4802,7 @@ function renderCommitsForTeam(team, title){
     const promiseSearch = promiseOffers.map(function(o){ return cleanDisplayPromises(o).map(function(pr){ return [pr.text, titleForPromise(o,pr), pr.category].filter(Boolean).join(' ').replace(/_/g,' '); }).join(' '); }).join(' ');
     const bucket = positionBucket(p.position);
     const searchText = [p.rank, '#' + p.rank, p.name, p.hometown, promiseSearch].join(' ').toLowerCase();
-    html += '<div class="rb-card rb-mobile-tight" data-my-commit-card="1" data-own-offer-type="' + NZCFLAutoCommits.commitKind(DB,p.id,p) + '" data-position-bucket="' + escapeHtml(bucket) + '" data-search="' + escapeHtml(searchText) + '" style="padding:14px 18px;">';
+    html += '<div class="rb-card rb-mobile-tight" data-my-commit-card="1" data-own-offer-type="' + NZCFLAutoCommits.commitKind(DB,p.id,p) + '" data-position-bucket="' + escapeHtml(bucket) + '" data-search="' + escapeHtml(searchText) + '" style="padding:14px 18px;' + (recruitingStage()==='transfer' && p.transferFrom ? transferCardStyle(p) : '') + '">';
     html += '<details>';
     html += '<summary class="rb-offer-summary" style="list-style:none;cursor:pointer;">';
     html += '<div class="rb-commit-summary-layout">';
@@ -5334,7 +5334,7 @@ function renderProspectBoardCard(pid, searchAttr, context){
   const ended = context ? context.ended : recruitingEndedForCurrentStage();
   const currentThread = context ? context.thread : (UI.view === 'thread' ? DB.threads.find(function(t){ return t.id === UI.threadId; }) : null);
   const commitReturn = currentThread ? { view: 'thread', threadId: currentThread.id, label: currentThread.title } : { view: 'feed', label: 'Prospect Board' };
-  let html = '<div class="rb-card rb-mobile-tight" data-prospect-card="1" data-position-bucket="' + escapeHtml(bucket) + '" data-search="' + escapeHtml(searchText) + '" data-open-prospect="' + pid + '" style="padding:14px 18px;cursor:pointer;' + (p.transferFrom ? transferCardStyle(p) : (p.commitTeam ? committedCardStyle(p.commitTeam) : '')) + (p.commitTeam ? 'background:linear-gradient(' + teamBorderColor(getTeamBranding(p.commitTeam)) + '28,' + teamBorderColor(getTeamBranding(p.commitTeam)) + '28),var(--panel);' : '') + '">';
+  let html = '<div class="rb-card rb-mobile-tight" data-prospect-card="1" data-position-bucket="' + escapeHtml(bucket) + '" data-search="' + escapeHtml(searchText) + '" data-open-prospect="' + pid + '" style="padding:14px 18px;cursor:pointer;' + (p.transferFrom ? transferCardStyle(p) : (p.commitTeam ? committedCardStyle(p.commitTeam) : '')) + (p.commitTeam && !p.transferFrom ? 'background:linear-gradient(' + teamBorderColor(getTeamBranding(p.commitTeam)) + '28,' + teamBorderColor(getTeamBranding(p.commitTeam)) + '28),var(--panel);' : '') + '">';
   html += '<div class="rb-prospect-card-header">';
   html += '<div class="rb-list-identity" style="min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">' +
     renderWatchlistFlag(pid) + '<span class="rb-mono" style="color:var(--slate);">' + recruitNumber(p) + '</span> ' +
