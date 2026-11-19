@@ -4807,7 +4807,7 @@ function renderCommitsForTeam(team, title){
     html += '<summary class="rb-offer-summary" style="list-style:none;cursor:pointer;">';
     html += '<div class="rb-commit-summary-layout">';
     html += '<div class="rb-commit-identity" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;"><span class="rb-list-identity"><span class="rb-mono" style="color:var(--slate);">' + recruitNumber(p) + '</span> <strong data-open-prospect="' + escapeHtml(p.id) + '" title="' + escapeHtml(p.name) + '" style="color:var(--chalk);cursor:pointer;">' + renderRecruitName(p.name, 24) + '</strong> <span class="rb-mono" style="color:var(--slate);font-size:13px;">' + escapeHtml(p.position || '') + (p.rating ? '<span class="rb-recruit-rating"> &middot; ' + escapeHtml(p.rating) + '</span>' : '') + (p.hometown ? '<span class="rb-desktop-only"> &middot; <span title="' + escapeHtml(p.hometown) + '">' + escapeHtml(shortText(p.hometown, 24)) + '</span></span>' : '') + '</span></span></div>';
-    html += '<span class="rb-commit-promises">' + renderPromiseChips(promiseOffers) + '</span>';
+    if(recruitingStage()!=='transfer')html += '<span class="rb-commit-promises">' + renderPromiseChips(promiseOffers) + '</span>';
     html += '</div>';
     html += '</summary>';
     html += '<div style="margin-top:12px;">';
@@ -5897,7 +5897,7 @@ function renderOfferBlock(o, opts){
   html += renderOfferAmendments(o,opts.prospect,opts.hideUpgrade);
   if(canUseDangerZone() && o.id==='o_638767694988050432_fe7a8a75-d6dc-47dc-b2c9-384dae25732d' && o.team==='Michigan State')html+='<div style="margin-top:12px;"><button class="rb-btn rb-btn-danger" data-remove-kenny-test="1">Remove test offer</button></div>';
   const displayPromises = !o.rescinded || committedPromiseOffers(opts.prospect).includes(o) ? cleanDisplayPromises(o) : [];
-  if (displayPromises.length){
+  if (recruitingStage()!=='transfer' && displayPromises.length){
     html += '<div style="margin-top:8px;">';
     displayPromises.forEach(function(p){
       const title = titleForPromise(o, p);
